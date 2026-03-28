@@ -1,0 +1,18 @@
+packages:
+  "framer-motion": "Animations for the floating notepad and dialogs"
+  "recharts": "Charts for the dashboard"
+  "date-fns": "Date formatting and manipulation"
+  "lucide-react": "Icons for the UI"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility function to efficiently merge Tailwind CSS classes"
+  "@hookform/resolvers": "Zod validation for forms"
+  "react-hook-form": "Form state management"
+
+images:
+  - path: "artifacts/gestion/public/images/auth-bg.png"
+    description: "Abstract dark blue and slate geometric background with subtle glowing light leaks, professional business software aesthetic"
+    aspect_ratio: "16:9"
+
+notes:
+  - "The API is available at /api and TanStack hooks are generated in @workspace/api-client-react"
+  - "The app uses a dark professional theme optimized for management dashboards"

@@ -1,22 +1,35 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API specification para Sistema de Gestion
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: inventario
+    description: Gestion de inventario
+  - name: ventas
+    description: Ventas diarias
+  - name: creditos
+    description: Creditos de clientes
+  - name: compras
+    description: Modulo de compras
+  - name: manoobra
+    description: Mano de obra de trabajadores
+  - name: notas
+    description: Block de notas
+  - name: trabajadores
+    description: Trabajadores
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +37,548 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /inventario:
+    get:
+      operationId: getInventario
+      tags: [inventario]
+      summary: Lista de productos en inventario
+      responses:
+        "200":
+          description: Lista de productos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Producto"
+    post:
+      operationId: crearProducto
+      tags: [inventario]
+      summary: Crear nuevo producto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductoInput"
+      responses:
+        "201":
+          description: Producto creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Producto"
+
+  /inventario/{id}:
+    get:
+      operationId: getProducto
+      tags: [inventario]
+      summary: Obtener producto por ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Producto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Producto"
+    put:
+      operationId: actualizarProducto
+      tags: [inventario]
+      summary: Actualizar producto
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductoInput"
+      responses:
+        "200":
+          description: Producto actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Producto"
+    delete:
+      operationId: eliminarProducto
+      tags: [inventario]
+      summary: Eliminar producto
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Eliminado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MensajeRespuesta"
+
+  /inventario/{id}/stock:
+    put:
+      operationId: actualizarStock
+      tags: [inventario]
+      summary: Actualizar stock de producto (al llegar compra)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockUpdate"
+      responses:
+        "200":
+          description: Stock actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Producto"
+
+  /inventario/alertas:
+    get:
+      operationId: getAlertasStock
+      tags: [inventario]
+      summary: Productos con stock bajo (stock <= stockMinimo + 1)
+      responses:
+        "200":
+          description: Lista de productos con alerta
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Producto"
+
+  /ventas:
+    get:
+      operationId: getVentas
+      tags: [ventas]
+      summary: Obtener ventas (por fecha o todas)
+      parameters:
+        - name: fecha
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Lista de ventas del dia
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VentaDiaria"
+    post:
+      operationId: crearVenta
+      tags: [ventas]
+      summary: Registrar una venta diaria
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VentaDiariaInput"
+      responses:
+        "201":
+          description: Venta registrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VentaDiaria"
+
+  /ventas/{id}:
+    put:
+      operationId: actualizarVenta
+      tags: [ventas]
+      summary: Actualizar una venta
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VentaDiariaInput"
+      responses:
+        "200":
+          description: Venta actualizada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VentaDiaria"
+    delete:
+      operationId: eliminarVenta
+      tags: [ventas]
+      summary: Eliminar una venta
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Eliminado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MensajeRespuesta"
+
+  /creditos:
+    get:
+      operationId: getCreditos
+      tags: [creditos]
+      summary: Obtener todos los creditos
+      responses:
+        "200":
+          description: Lista de creditos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Credito"
+    post:
+      operationId: crearCredito
+      tags: [creditos]
+      summary: Crear credito de cliente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreditoInput"
+      responses:
+        "201":
+          description: Credito creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credito"
+
+  /creditos/{id}:
+    put:
+      operationId: actualizarCredito
+      tags: [creditos]
+      summary: Actualizar credito (abonar)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreditoUpdate"
+      responses:
+        "200":
+          description: Credito actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credito"
+    delete:
+      operationId: eliminarCredito
+      tags: [creditos]
+      summary: Eliminar credito
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Eliminado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MensajeRespuesta"
+
+  /compras:
+    get:
+      operationId: getCompras
+      tags: [compras]
+      summary: Obtener lista de compras pendientes
+      responses:
+        "200":
+          description: Lista de compras
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Compra"
+    post:
+      operationId: crearCompra
+      tags: [compras]
+      summary: Crear orden de compra
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompraInput"
+      responses:
+        "201":
+          description: Compra creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Compra"
+
+  /compras/{id}:
+    put:
+      operationId: actualizarCompra
+      tags: [compras]
+      summary: Marcar compra como llegada y actualizar inventario
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompraUpdate"
+      responses:
+        "200":
+          description: Compra actualizada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Compra"
+    delete:
+      operationId: eliminarCompra
+      tags: [compras]
+      summary: Eliminar compra
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Eliminado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MensajeRespuesta"
+
+  /manoobra:
+    get:
+      operationId: getManoObra
+      tags: [manoobra]
+      summary: Obtener registros de mano de obra
+      parameters:
+        - name: fecha
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Lista de mano de obra
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ManoObra"
+    post:
+      operationId: crearManoObra
+      tags: [manoobra]
+      summary: Registrar mano de obra
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ManoObraInput"
+      responses:
+        "201":
+          description: Mano de obra registrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManoObra"
+
+  /manoobra/{id}:
+    put:
+      operationId: actualizarManoObra
+      tags: [manoobra]
+      summary: Actualizar mano de obra
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ManoObraInput"
+      responses:
+        "200":
+          description: Mano de obra actualizada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManoObra"
+    delete:
+      operationId: eliminarManoObra
+      tags: [manoobra]
+      summary: Eliminar mano de obra
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Eliminado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MensajeRespuesta"
+
+  /trabajadores:
+    get:
+      operationId: getTrabajadores
+      tags: [trabajadores]
+      summary: Obtener lista de trabajadores
+      responses:
+        "200":
+          description: Lista de trabajadores
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trabajador"
+    post:
+      operationId: crearTrabajador
+      tags: [trabajadores]
+      summary: Crear trabajador
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrabajadorInput"
+      responses:
+        "201":
+          description: Trabajador creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trabajador"
+
+  /trabajadores/{id}:
+    put:
+      operationId: actualizarTrabajador
+      tags: [trabajadores]
+      summary: Actualizar trabajador
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrabajadorInput"
+      responses:
+        "200":
+          description: Trabajador actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trabajador"
+
+  /notas:
+    get:
+      operationId: getNotas
+      tags: [notas]
+      summary: Obtener el contenido del block de notas
+      responses:
+        "200":
+          description: Contenido de notas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notas"
+    put:
+      operationId: guardarNotas
+      tags: [notas]
+      summary: Guardar contenido del block de notas
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotasInput"
+      responses:
+        "200":
+          description: Notas guardadas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notas"
+
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [inventario]
+      summary: Resumen del dashboard
+      responses:
+        "200":
+          description: Datos del dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +589,546 @@ components:
       required:
         - status
 
+    MensajeRespuesta:
+      type: object
+      properties:
+        mensaje:
+          type: string
+      required:
+        - mensaje
+
+    Producto:
+      type: object
+      properties:
+        id:
+          type: integer
+        nombre:
+          type: string
+        codigo:
+          type: string
+        marca:
+          type: string
+        referencia:
+          type: string
+        precioCompra:
+          type: number
+          description: Precio de compra en COP
+        precioVentaSinIva:
+          type: number
+          description: Precio de venta sin IVA en COP
+        precioVentaConIva:
+          type: number
+          description: Precio de venta con IVA (redondeado a miles) en COP
+        tieneIva:
+          type: boolean
+          description: Si el producto lleva IVA
+        stockActual:
+          type: number
+        stockMinimo:
+          type: number
+        creadoEn:
+          type: string
+          format: date-time
+        actualizadoEn:
+          type: string
+          format: date-time
+      required:
+        - id
+        - nombre
+        - codigo
+        - precioCompra
+        - precioVentaSinIva
+        - precioVentaConIva
+        - tieneIva
+        - stockActual
+        - stockMinimo
+
+    ProductoInput:
+      type: object
+      properties:
+        nombre:
+          type: string
+        codigo:
+          type: string
+        marca:
+          type: string
+        referencia:
+          type: string
+        precioCompra:
+          type: number
+        precioVentaSinIva:
+          type: number
+        tieneIva:
+          type: boolean
+        stockActual:
+          type: number
+        stockMinimo:
+          type: number
+      required:
+        - nombre
+        - codigo
+        - precioCompra
+        - precioVentaSinIva
+        - tieneIva
+        - stockActual
+        - stockMinimo
+
+    StockUpdate:
+      type: object
+      properties:
+        cantidad:
+          type: number
+        precioCompra:
+          type: number
+        precioVentaSinIva:
+          type: number
+        tieneIva:
+          type: boolean
+      required:
+        - cantidad
+
+    VentaDiaria:
+      type: object
+      properties:
+        id:
+          type: integer
+        fecha:
+          type: string
+          format: date
+        referencia:
+          type: string
+          description: "No. Remision, placa, nombre cliente o descripcion"
+        tipoLinea:
+          type: string
+          enum: [venta, manoobra, credito]
+          description: "venta=normal, manoobra=amarillo, credito=azul"
+        productoId:
+          type: integer
+          nullable: true
+        productoNombre:
+          type: string
+          nullable: true
+        productoCodigo:
+          type: string
+          nullable: true
+        productoMarca:
+          type: string
+          nullable: true
+        cantidad:
+          type: number
+        precioCompraUnidad:
+          type: number
+        precioVentaUnidad:
+          type: number
+        precioVentaTotal:
+          type: number
+          description: precioVentaUnidad * cantidad (ya incluye IVA si aplica)
+        beneficio:
+          type: number
+          description: Beneficio de la venta
+        descripcion:
+          type: string
+          nullable: true
+          description: Descripcion adicional (para manoobra o credito)
+        creadoEn:
+          type: string
+          format: date-time
+      required:
+        - id
+        - fecha
+        - referencia
+        - tipoLinea
+        - cantidad
+        - precioCompraUnidad
+        - precioVentaUnidad
+        - precioVentaTotal
+        - beneficio
+
+    VentaDiariaInput:
+      type: object
+      properties:
+        fecha:
+          type: string
+          format: date
+        referencia:
+          type: string
+        tipoLinea:
+          type: string
+          enum: [venta, manoobra, credito]
+        productoId:
+          type: integer
+          nullable: true
+        productoNombre:
+          type: string
+          nullable: true
+        productoCodigo:
+          type: string
+          nullable: true
+        productoMarca:
+          type: string
+          nullable: true
+        cantidad:
+          type: number
+        precioCompraUnidad:
+          type: number
+        precioVentaUnidad:
+          type: number
+        precioVentaTotal:
+          type: number
+        beneficio:
+          type: number
+        descripcion:
+          type: string
+          nullable: true
+      required:
+        - fecha
+        - referencia
+        - tipoLinea
+        - cantidad
+        - precioCompraUnidad
+        - precioVentaUnidad
+        - precioVentaTotal
+        - beneficio
+
+    Credito:
+      type: object
+      properties:
+        id:
+          type: integer
+        fechaFactura:
+          type: string
+          format: date
+        placaVehiculo:
+          type: string
+          nullable: true
+        nombreCliente:
+          type: string
+        telefonoCliente:
+          type: string
+          nullable: true
+        descripcion:
+          type: string
+          nullable: true
+        valorCredito:
+          type: number
+        valorAbonado:
+          type: number
+        valorRestante:
+          type: number
+        creadoEn:
+          type: string
+          format: date-time
+        actualizadoEn:
+          type: string
+          format: date-time
+      required:
+        - id
+        - fechaFactura
+        - nombreCliente
+        - valorCredito
+        - valorAbonado
+        - valorRestante
+
+    CreditoInput:
+      type: object
+      properties:
+        fechaFactura:
+          type: string
+          format: date
+        placaVehiculo:
+          type: string
+          nullable: true
+        nombreCliente:
+          type: string
+        telefonoCliente:
+          type: string
+          nullable: true
+        descripcion:
+          type: string
+          nullable: true
+        valorCredito:
+          type: number
+        valorAbonado:
+          type: number
+      required:
+        - fechaFactura
+        - nombreCliente
+        - valorCredito
+        - valorAbonado
+
+    CreditoUpdate:
+      type: object
+      properties:
+        valorAbonado:
+          type: number
+        descripcion:
+          type: string
+          nullable: true
+        nombreCliente:
+          type: string
+        placaVehiculo:
+          type: string
+          nullable: true
+        telefonoCliente:
+          type: string
+          nullable: true
+        fechaFactura:
+          type: string
+          format: date
+        valorCredito:
+          type: number
+      required:
+        - valorAbonado
+
+    Compra:
+      type: object
+      properties:
+        id:
+          type: integer
+        productoId:
+          type: integer
+        productoNombre:
+          type: string
+        productoCodigo:
+          type: string
+        productoMarca:
+          type: string
+          nullable: true
+        stockActual:
+          type: number
+        stockMinimo:
+          type: number
+        estado:
+          type: string
+          enum: [pendiente, llegado]
+          description: pendiente=rojo, llegado=verde
+        creadoEn:
+          type: string
+          format: date-time
+        actualizadoEn:
+          type: string
+          format: date-time
+      required:
+        - id
+        - productoId
+        - productoNombre
+        - productoCodigo
+        - stockActual
+        - stockMinimo
+        - estado
+
+    CompraInput:
+      type: object
+      properties:
+        productoId:
+          type: integer
+        estado:
+          type: string
+          enum: [pendiente, llegado]
+      required:
+        - productoId
+
+    CompraUpdate:
+      type: object
+      properties:
+        estado:
+          type: string
+          enum: [pendiente, llegado]
+        cantidadRecibida:
+          type: number
+          nullable: true
+        nuevoPrecioCompra:
+          type: number
+          nullable: true
+        nuevoPrecioVentaSinIva:
+          type: number
+          nullable: true
+        tieneIva:
+          type: boolean
+          nullable: true
+      required:
+        - estado
+
+    ManoObra:
+      type: object
+      properties:
+        id:
+          type: integer
+        fecha:
+          type: string
+          format: date
+        descripcion:
+          type: string
+        valorTotal:
+          type: number
+          description: Valor total cobrado al cliente
+        distribuciones:
+          type: array
+          items:
+            $ref: "#/components/schemas/DistribucionTrabajador"
+        creadoEn:
+          type: string
+          format: date-time
+      required:
+        - id
+        - fecha
+        - descripcion
+        - valorTotal
+        - distribuciones
+
+    ManoObraInput:
+      type: object
+      properties:
+        fecha:
+          type: string
+          format: date
+        descripcion:
+          type: string
+        valorTotal:
+          type: number
+        distribuciones:
+          type: array
+          items:
+            $ref: "#/components/schemas/DistribucionTrabajadorInput"
+      required:
+        - fecha
+        - descripcion
+        - valorTotal
+        - distribuciones
+
+    DistribucionTrabajador:
+      type: object
+      properties:
+        id:
+          type: integer
+        trabajadorId:
+          type: integer
+        trabajadorNombre:
+          type: string
+        valor:
+          type: number
+        descuentoSeguro:
+          type: number
+        descuentoOtros:
+          type: number
+      required:
+        - id
+        - trabajadorId
+        - trabajadorNombre
+        - valor
+        - descuentoSeguro
+        - descuentoOtros
+
+    DistribucionTrabajadorInput:
+      type: object
+      properties:
+        trabajadorId:
+          type: integer
+        valor:
+          type: number
+        descuentoSeguro:
+          type: number
+        descuentoOtros:
+          type: number
+      required:
+        - trabajadorId
+        - valor
+        - descuentoSeguro
+        - descuentoOtros
+
+    Trabajador:
+      type: object
+      properties:
+        id:
+          type: integer
+        nombre:
+          type: string
+        descuentoSeguro:
+          type: number
+          description: Descuento mensual de seguro (20000 para trabajadores 1 y 2)
+        descuentoOtros:
+          type: number
+          description: Descuento por compras de la empresa (trabajador 3)
+        totalGanado:
+          type: number
+          description: Total acumulado ganado
+        totalDescuentos:
+          type: number
+          description: Total descuentos aplicados
+        activo:
+          type: boolean
+        creadoEn:
+          type: string
+          format: date-time
+      required:
+        - id
+        - nombre
+        - descuentoSeguro
+        - descuentoOtros
+        - totalGanado
+        - totalDescuentos
+        - activo
+
+    TrabajadorInput:
+      type: object
+      properties:
+        nombre:
+          type: string
+        descuentoSeguro:
+          type: number
+        descuentoOtros:
+          type: number
+        activo:
+          type: boolean
+      required:
+        - nombre
+        - descuentoSeguro
+        - descuentoOtros
+
+    Notas:
+      type: object
+      properties:
+        id:
+          type: integer
+        contenido:
+          type: string
+        actualizadoEn:
+          type: string
+          format: date-time
+      required:
+        - id
+        - contenido
+
+    NotasInput:
+      type: object
+      properties:
+        contenido:
+          type: string
+      required:
+        - contenido
+
+    Dashboard:
+      type: object
+      properties:
+        totalVentasHoy:
+          type: number
+        totalManoObraHoy:
+          type: number
+        noDeben:
+          type: number
+          description: Total que nos deben en creditos pendientes
+        productosAlerta:
+          type: integer
+          description: Cantidad de productos con alerta de stock bajo
+        productosAgotados:
+          type: integer
+        ventasHoy:
+          type: integer
+          description: Numero de ventas del dia
+      required:
+        - totalVentasHoy
+        - totalManoObraHoy
+        - noDeben
+        - productosAlerta
+        - productosAgotados
+        - ventasHoy

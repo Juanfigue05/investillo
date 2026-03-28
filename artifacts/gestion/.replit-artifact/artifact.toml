@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Sistema de Gestión"
+version = "1.0.0"
+id = "artifacts/gestion"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 26147
+
+[services.development]
+run = "pnpm --filter @workspace/gestion run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/gestion", "run", "build" ]
+publicDir = "artifacts/gestion/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "26147"
+BASE_PATH = "/"
