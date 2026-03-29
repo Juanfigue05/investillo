@@ -233,6 +233,22 @@ export const CrearVentaBody = zod.object({
 });
 
 /**
+ * @summary Resumen de ventas por dia en un rango de fechas
+ */
+export const GetVentasResumenQueryParams = zod.object({
+  desde: zod.date(),
+  hasta: zod.date(),
+});
+
+export const GetVentasResumenResponseItem = zod.object({
+  fecha: zod.coerce.date(),
+  totalVentas: zod.number(),
+  totalManoObra: zod.number(),
+  cantidadVentas: zod.number(),
+});
+export const GetVentasResumenResponse = zod.array(GetVentasResumenResponseItem);
+
+/**
  * @summary Actualizar una venta
  */
 export const ActualizarVentaParams = zod.object({

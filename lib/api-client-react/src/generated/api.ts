@@ -26,6 +26,7 @@ import type {
   Dashboard,
   GetManoObraParams,
   GetVentasParams,
+  GetVentasResumenParams,
   HealthStatus,
   ManoObra,
   ManoObraInput,
@@ -39,6 +40,7 @@ import type {
   TrabajadorInput,
   VentaDiaria,
   VentaDiariaInput,
+  VentaResumenDia,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -885,6 +887,103 @@ export const useCrearVenta = <
 > => {
   return useMutation(getCrearVentaMutationOptions(options));
 };
+
+/**
+ * @summary Resumen de ventas por dia en un rango de fechas
+ */
+export const getGetVentasResumenUrl = (params: GetVentasResumenParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/ventas/resumen?${stringifiedParams}`
+    : `/api/ventas/resumen`;
+};
+
+export const getVentasResumen = async (
+  params: GetVentasResumenParams,
+  options?: RequestInit,
+): Promise<VentaResumenDia[]> => {
+  return customFetch<VentaResumenDia[]>(getGetVentasResumenUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetVentasResumenQueryKey = (
+  params?: GetVentasResumenParams,
+) => {
+  return [`/api/ventas/resumen`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetVentasResumenQueryOptions = <
+  TData = Awaited<ReturnType<typeof getVentasResumen>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetVentasResumenParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getVentasResumen>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetVentasResumenQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getVentasResumen>>
+  > = ({ signal }) => getVentasResumen(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getVentasResumen>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetVentasResumenQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getVentasResumen>>
+>;
+export type GetVentasResumenQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Resumen de ventas por dia en un rango de fechas
+ */
+
+export function useGetVentasResumen<
+  TData = Awaited<ReturnType<typeof getVentasResumen>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetVentasResumenParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getVentasResumen>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetVentasResumenQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Actualizar una venta

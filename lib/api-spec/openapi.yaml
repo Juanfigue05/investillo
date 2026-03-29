@@ -208,6 +208,34 @@ paths:
               schema:
                 $ref: "#/components/schemas/VentaDiaria"
 
+  /ventas/resumen:
+    get:
+      operationId: getVentasResumen
+      tags: [ventas]
+      summary: Resumen de ventas por dia en un rango de fechas
+      parameters:
+        - name: desde
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: hasta
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Resumen diario de ventas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VentaResumenDia"
+
   /ventas/{id}:
     put:
       operationId: actualizarVenta
@@ -1106,6 +1134,24 @@ components:
           type: string
       required:
         - contenido
+
+    VentaResumenDia:
+      type: object
+      properties:
+        fecha:
+          type: string
+          format: date
+        totalVentas:
+          type: number
+        totalManoObra:
+          type: number
+        cantidadVentas:
+          type: integer
+      required:
+        - fecha
+        - totalVentas
+        - totalManoObra
+        - cantidadVentas
 
     Dashboard:
       type: object

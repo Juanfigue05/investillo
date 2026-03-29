@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { ventasDiariasTable } from "@workspace/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and, gte, lte } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -29,15 +29,48 @@ function mapVenta(v: typeof ventasDiariasTable.$inferSelect) {
   };
 }
 
+router.get("/resumen", async (req, res) => {
+  const { desde, hasta } = req.query;
+  if (!desde || !hasta) {
+    res.status(400).json({ error: "Parámetros desde y hasta requeridos" });
+    return;
+  }
+
+  const ventas = await db.select().from(ventasDiariasTable)
+    .where(sql`${ventasDiariasTable.fecha} >= ${String(desde)} AND ${ventasDiariasTable.fecha} <= ${String(hasta)}`);
+
+  // Aggregate by date
+  const byDate = new Map<string, { totalVentas: number; totalManoObra: number; cantidadVentas: number }>();
+
+  for (const v of ventas) {
+    const fecha = String(v.fecha);
+    if (!byDate.has(fecha)) {
+      byDate.set(fecha, { totalVentas: 0, totalManoObra: 0, cantidadVentas: 0 });
+    }
+    const day = byDate.get(fecha)!;
+    if (v.tipoLinea === "venta") {
+      day.totalVentas += toNum(v.precioVentaTotal);
+      day.cantidadVentas += 1;
+    } else if (v.tipoLinea === "manoobra") {
+      day.totalManoObra += toNum(v.precioVentaTotal);
+    }
+  }
+
+  const result = Array.from(byDate.entries())
+    .map(([fecha, data]) => ({ fecha, ...data }))
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+  res.json(result);
+});
+
 router.get("/", async (req, res) => {
   const { fecha } = req.query;
-  let query = db.select().from(ventasDiariasTable);
   if (fecha) {
-    const ventas = await db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.fecha, String(fecha)));
+    const ventas = await db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.fecha, String(fecha))).orderBy(ventasDiariasTable.creadoEn);
     res.json(ventas.map(mapVenta));
     return;
   }
-  const ventas = await query.orderBy(ventasDiariasTable.creadoEn);
+  const ventas = await db.select().from(ventasDiariasTable).orderBy(ventasDiariasTable.creadoEn);
   res.json(ventas.map(mapVenta));
 });
 

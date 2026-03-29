@@ -264,6 +264,13 @@ export interface NotasInput {
   contenido: string;
 }
 
+export interface VentaResumenDia {
+  fecha: string;
+  totalVentas: number;
+  totalManoObra: number;
+  cantidadVentas: number;
+}
+
 export interface Dashboard {
   totalVentasHoy: number;
   totalManoObraHoy: number;
@@ -278,6 +285,11 @@ export interface Dashboard {
 
 export type GetVentasParams = {
   fecha?: string;
+};
+
+export type GetVentasResumenParams = {
+  desde: string;
+  hasta: string;
 };
 
 export type GetManoObraParams = {
