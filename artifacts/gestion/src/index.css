@@ -124,8 +124,104 @@
   /* Default dark row */
 }
 .row-manoobra {
-  background-color: rgba(234, 179, 8, 0.1) !important; /* Yellow-ish */
+  background-color: rgba(234, 179, 8, 0.1) !important;
 }
 .row-credito {
-  background-color: rgba(56, 189, 248, 0.1) !important; /* Blue-ish */
+  background-color: rgba(56, 189, 248, 0.1) !important;
+}
+
+/* ===== PRINT STYLES ===== */
+.print-only {
+  display: none;
+}
+
+@media print {
+  /* Hide everything by default */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Only show the print zone */
+  .print-zone,
+  .print-zone * {
+    visibility: visible;
+  }
+
+  /* Position print zone at top-left, use absolute so multi-page works */
+  .print-zone {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background: white !important;
+    color: black !important;
+    padding: 8px 12px;
+  }
+
+  /* Show print-only elements */
+  .print-only {
+    display: block;
+  }
+
+  /* Hide screen-only elements inside print zone */
+  .no-print {
+    display: none !important;
+  }
+
+  /* Compact table */
+  .print-zone table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+    color: black !important;
+  }
+
+  .print-zone thead tr {
+    background: #e5e7eb !important;
+    color: black !important;
+  }
+
+  .print-zone th,
+  .print-zone td {
+    padding: 3px 5px !important;
+    border: 1px solid #d1d5db;
+    color: black !important;
+    white-space: nowrap;
+  }
+
+  .print-zone tfoot td {
+    font-weight: bold;
+    font-size: 11px;
+    background: #f3f4f6 !important;
+    color: black !important;
+  }
+
+  /* Row colors for print */
+  .print-zone .row-manoobra td {
+    background-color: #fef9c3 !important;
+    color: black !important;
+  }
+  .print-zone .row-credito td {
+    background-color: #dbeafe !important;
+    color: black !important;
+  }
+
+  /* Allow table to overflow in print */
+  .print-zone .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  /* Date header */
+  .print-date-header {
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 6px;
+    color: black;
+    text-align: left;
+  }
+
+  @page {
+    size: landscape;
+    margin: 8mm;
+  }
 }

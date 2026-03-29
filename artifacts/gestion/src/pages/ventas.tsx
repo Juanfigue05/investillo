@@ -397,10 +397,18 @@ export default function VentasDiarias() {
     modoActual === "normal" ? newRow.precioVenta * cantNum : modoActual === "manoobra" ? newRow.precioManoObra : 0;
   const previewBeneficio = modoActual === "normal" ? (newRow.precioVenta - newRow.precioCompra) * cantNum : 0;
 
+  const fechaFormateada = new Date(fecha + "T12:00:00").toLocaleDateString("es-CO", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        {/* Screen-only header */}
+        <div className="no-print flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h1 className="text-3xl font-display font-bold text-foreground">Ventas Diarias</h1>
             <p className="text-muted-foreground mt-1">Registra las ventas del día directamente en la tabla.</p>
@@ -422,7 +430,13 @@ export default function VentasDiarias() {
           </div>
         </div>
 
-        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl shadow-black/10">
+        {/* Print zone: date + table only */}
+        <div className="print-zone bg-card border border-border rounded-2xl overflow-hidden shadow-xl shadow-black/10">
+          {/* Print-only date header */}
+          <div className="print-only print-date-header">
+            Ventas Diarias — {fechaFormateada}
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm">
               <thead>
@@ -430,17 +444,17 @@ export default function VentasDiarias() {
                   <th className="px-3 py-3 font-medium whitespace-nowrap">No. Remisión / Ref</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">Producto</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">Marca / Info</th>
-                  <th className="px-3 py-3 font-medium whitespace-nowrap">Cantidad</th>
+                  <th className="px-3 py-3 font-medium whitespace-nowrap">Cant</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">P. Compra</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">P. Venta</th>
-                  <th className="px-3 py-3 font-medium whitespace-nowrap text-primary">Total</th>
-                  <th className="px-3 py-3 font-medium whitespace-nowrap text-green-500">Beneficio</th>
-                  <th className="px-3 py-3 font-medium"></th>
+                  <th className="px-3 py-3 font-medium whitespace-nowrap">Total</th>
+                  <th className="px-3 py-3 font-medium whitespace-nowrap">Beneficio</th>
+                  <th className="px-3 py-3 font-medium no-print"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {/* New Row Input */}
-                <tr className={`bg-background/40 ${modoActual === "manoobra" ? "row-manoobra" : modoActual === "abono" ? "row-credito" : ""}`}>
+                {/* New Row Input — hidden when printing */}
+                <tr className={`no-print bg-background/40 ${modoActual === "manoobra" ? "row-manoobra" : modoActual === "abono" ? "row-credito" : ""}`}>
                   {/* Referencia */}
                   <td className="p-2">
                     <input
@@ -624,7 +638,7 @@ export default function VentasDiarias() {
                         <td className="px-3 py-3 font-medium text-green-500">
                           {venta.tipoLinea === "venta" ? formatCurrency(venta.beneficio) : "—"}
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-3 py-3 no-print">
                           <button
                             onClick={() => handleDelete(venta.id)}
                             className="p-1.5 text-muted-foreground hover:text-destructive bg-background/50 rounded-lg opacity-0 group-hover:opacity-100 transition-all border border-border"
@@ -641,21 +655,21 @@ export default function VentasDiarias() {
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-4 py-4 text-right font-medium text-muted-foreground uppercase text-xs tracking-wider"
+                    className="px-4 py-3 text-right font-medium text-muted-foreground uppercase text-xs tracking-wider"
                   >
                     Total Ventas del Día (excluye M.O. y Abonos)
                   </td>
-                  <td className="px-4 py-4 font-display font-bold text-2xl text-primary">
+                  <td className="px-4 py-3 font-display font-bold text-xl text-primary">
                     {formatCurrency(totalVentas)}
                   </td>
-                  <td colSpan={2}></td>
+                  <td className="no-print" colSpan={2}></td>
                 </tr>
               </tfoot>
             </table>
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-4 text-xs font-medium uppercase tracking-wider text-muted-foreground p-4 bg-card rounded-xl border border-border">
+        <div className="no-print flex flex-wrap gap-4 text-xs font-medium uppercase tracking-wider text-muted-foreground p-4 bg-card rounded-xl border border-border">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-background border border-border"></div> Venta Normal
           </div>
