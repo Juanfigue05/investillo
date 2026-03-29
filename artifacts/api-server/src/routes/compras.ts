@@ -19,6 +19,11 @@ function mapCompra(c: typeof comprasTable.$inferSelect) {
     stockActual: toNum(c.stockActual),
     stockMinimo: toNum(c.stockMinimo),
     estado: c.estado,
+    cantidadRecibida: c.cantidadRecibida ? toNum(c.cantidadRecibida) : null,
+    fechaLlegada: c.fechaLlegada || null,
+    proveedor: c.proveedor || null,
+    precioCompraRegistrado: c.precioCompraRegistrado ? toNum(c.precioCompraRegistrado) : null,
+    precioVentaRegistrado: c.precioVentaRegistrado ? toNum(c.precioVentaRegistrado) : null,
     creadoEn: c.creadoEn,
     actualizadoEn: c.actualizadoEn,
   };
@@ -58,13 +63,16 @@ router.post("/", async (req, res) => {
 
 router.put("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
-  const { estado, cantidadRecibida, nuevoPrecioCompra, nuevoPrecioVentaSinIva, tieneIva } = req.body;
+  const { estado, cantidadRecibida, nuevoPrecioCompra, nuevoPrecioVentaSinIva, tieneIva, proveedor } = req.body;
 
   const [existing] = await db.select().from(comprasTable).where(eq(comprasTable.id, id));
   if (!existing) {
     res.status(404).json({ error: "Compra no encontrada" });
     return;
   }
+
+  let precioCompraFinal: number | null = null;
+  let precioVentaFinal: number | null = null;
 
   if (estado === "llegado" && cantidadRecibida) {
     const [producto] = await db.select().from(productosTable).where(eq(productosTable.id, existing.productoId));
@@ -74,21 +82,39 @@ router.put("/:id", async (req, res) => {
         stockActual: String(newStock),
         actualizadoEn: new Date(),
       };
-      if (nuevoPrecioCompra !== undefined) updateProd.precioCompra = String(parseFloat(nuevoPrecioCompra));
-      if (nuevoPrecioVentaSinIva !== undefined) {
+      if (nuevoPrecioCompra !== undefined && nuevoPrecioCompra !== "") {
+        precioCompraFinal = parseFloat(nuevoPrecioCompra);
+        updateProd.precioCompra = String(precioCompraFinal);
+      } else {
+        precioCompraFinal = toNum(producto.precioCompra);
+      }
+      if (nuevoPrecioVentaSinIva !== undefined && nuevoPrecioVentaSinIva !== "") {
         const pvSinIva = parseFloat(nuevoPrecioVentaSinIva);
         const haIva = tieneIva !== undefined ? Boolean(tieneIva) : producto.tieneIva;
+        precioVentaFinal = haIva ? calcPrecioConIva(pvSinIva) : pvSinIva;
         updateProd.precioVentaSinIva = String(pvSinIva);
-        updateProd.precioVentaConIva = String(haIva ? calcPrecioConIva(pvSinIva) : pvSinIva);
+        updateProd.precioVentaConIva = String(precioVentaFinal);
         if (tieneIva !== undefined) updateProd.tieneIva = Boolean(tieneIva);
+      } else {
+        precioVentaFinal = toNum(producto.precioVentaConIva);
       }
       await db.update(productosTable).set(updateProd).where(eq(productosTable.id, existing.productoId));
     }
   }
 
+  const updateData: Partial<typeof comprasTable.$inferInsert> = {
+    estado,
+    actualizadoEn: new Date(),
+  };
+  if (cantidadRecibida) updateData.cantidadRecibida = String(parseFloat(cantidadRecibida));
+  if (estado === "llegado") updateData.fechaLlegada = new Date().toISOString().split("T")[0];
+  if (proveedor !== undefined) updateData.proveedor = proveedor || null;
+  if (precioCompraFinal !== null) updateData.precioCompraRegistrado = String(precioCompraFinal);
+  if (precioVentaFinal !== null) updateData.precioVentaRegistrado = String(precioVentaFinal);
+
   const [compra] = await db
     .update(comprasTable)
-    .set({ estado, actualizadoEn: new Date() })
+    .set(updateData)
     .where(eq(comprasTable.id, id))
     .returning();
 

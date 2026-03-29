@@ -11,6 +11,11 @@ export const comprasTable = pgTable("compras", {
   stockActual: numeric("stock_actual", { precision: 15, scale: 3 }).notNull(),
   stockMinimo: numeric("stock_minimo", { precision: 15, scale: 3 }).notNull(),
   estado: text("estado").notNull().default("pendiente"),
+  cantidadRecibida: numeric("cantidad_recibida", { precision: 15, scale: 3 }),
+  fechaLlegada: text("fecha_llegada"),
+  proveedor: text("proveedor"),
+  precioCompraRegistrado: numeric("precio_compra_registrado", { precision: 15, scale: 2 }),
+  precioVentaRegistrado: numeric("precio_venta_registrado", { precision: 15, scale: 2 }),
   creadoEn: timestamp("creado_en").defaultNow(),
   actualizadoEn: timestamp("actualizado_en").defaultNow(),
 });

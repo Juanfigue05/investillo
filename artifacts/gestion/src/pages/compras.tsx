@@ -8,7 +8,7 @@ import {
   useGetInventario,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
-import { PackageCheck, Truck, Plus, X, ChevronDown } from "lucide-react";
+import { PackageCheck, Truck, Plus, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface LlegadaForm {
@@ -16,6 +16,7 @@ interface LlegadaForm {
   nuevoPrecioCompra: string;
   nuevoPrecioVentaSinIva: string;
   tieneIva: boolean;
+  proveedor: string;
 }
 
 export default function Compras() {
@@ -33,22 +34,22 @@ export default function Compras() {
     nuevoPrecioCompra: "",
     nuevoPrecioVentaSinIva: "",
     tieneIva: false,
+    proveedor: "",
   });
 
-  // Add product manually
   const [showAddForm, setShowAddForm] = useState(false);
   const [productoSeleccionado, setProductoSeleccionado] = useState("");
   const [busquedaProducto, setBusquedaProducto] = useState("");
 
   const openLlegada = (compra: any) => {
     setLlegadaOpen(compra.id);
-    // Pre-fill with current values from inventario
     const prod = productos?.find((p) => p.id === compra.productoId);
     setLlegadaForm({
       cantidad: "",
       nuevoPrecioCompra: prod ? String(prod.precioCompra) : "",
       nuevoPrecioVentaSinIva: prod ? String(prod.precioVentaSinIva) : "",
       tieneIva: prod ? prod.tieneIva : false,
+      proveedor: "",
     });
   };
 
@@ -63,13 +64,10 @@ export default function Compras() {
         data: {
           estado: "llegado",
           cantidadRecibida: parseFloat(llegadaForm.cantidad),
-          nuevoPrecioCompra: llegadaForm.nuevoPrecioCompra
-            ? parseFloat(llegadaForm.nuevoPrecioCompra)
-            : undefined,
-          nuevoPrecioVentaSinIva: llegadaForm.nuevoPrecioVentaSinIva
-            ? parseFloat(llegadaForm.nuevoPrecioVentaSinIva)
-            : undefined,
+          nuevoPrecioCompra: llegadaForm.nuevoPrecioCompra || undefined,
+          nuevoPrecioVentaSinIva: llegadaForm.nuevoPrecioVentaSinIva || undefined,
           tieneIva: llegadaForm.tieneIva,
+          proveedor: llegadaForm.proveedor || undefined,
         },
       },
       {
@@ -123,13 +121,11 @@ export default function Compras() {
 
   return (
     <Layout>
-      <div className="space-y-6 max-w-5xl">
+      <div className="space-y-6 max-w-6xl">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h1 className="text-3xl font-display font-bold text-foreground">Módulo de Compras</h1>
-            <p className="text-muted-foreground mt-1">
-              Productos con stock bajo y pedidos pendientes de llegar.
-            </p>
+            <p className="text-muted-foreground mt-1">Pedidos pendientes y registro histórico de llegadas.</p>
           </div>
           <button
             onClick={() => setShowAddForm(!showAddForm)}
@@ -155,10 +151,7 @@ export default function Compras() {
                   type="text"
                   placeholder="Buscar producto por nombre o código..."
                   value={busquedaProducto}
-                  onChange={(e) => {
-                    setBusquedaProducto(e.target.value);
-                    setProductoSeleccionado("");
-                  }}
+                  onChange={(e) => { setBusquedaProducto(e.target.value); setProductoSeleccionado(""); }}
                   className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm mb-2"
                 />
                 <select
@@ -174,7 +167,7 @@ export default function Compras() {
                   ))}
                 </select>
               </div>
-              <div className="flex items-end gap-2">
+              <div className="flex items-end">
                 <button
                   onClick={handleAddManual}
                   disabled={crearMutation.isPending}
@@ -187,22 +180,22 @@ export default function Compras() {
           </div>
         )}
 
-        {/* Pendientes */}
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground">Cargando...</div>
         ) : pendientes.length === 0 && llegados.length === 0 ? (
           <div className="text-center py-12 bg-card rounded-2xl border border-border">
             <PackageCheck className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-            <h3 className="text-lg font-medium text-foreground">No hay compras pendientes</h3>
-            <p className="text-muted-foreground text-sm">El inventario está estable o no hay pedidos registrados.</p>
+            <h3 className="text-lg font-medium text-foreground">No hay compras registradas</h3>
+            <p className="text-muted-foreground text-sm">Agrega un producto para iniciar un pedido.</p>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-8">
+            {/* Pendientes */}
             {pendientes.length > 0 && (
               <div>
                 <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-destructive inline-block"></span>
-                  Pendientes ({pendientes.length})
+                  Pedidos Pendientes ({pendientes.length})
                 </h3>
                 <div className="space-y-3">
                   {pendientes.map((compra) => (
@@ -216,8 +209,7 @@ export default function Compras() {
                             <h3 className="font-bold text-foreground">{compra.productoNombre}</h3>
                             <p className="text-sm text-muted-foreground">
                               Cód: {compra.productoCodigo}
-                              {compra.productoMarca ? ` | ${compra.productoMarca}` : ""} | Stock mín:{" "}
-                              {compra.stockMinimo}
+                              {compra.productoMarca ? ` | ${compra.productoMarca}` : ""} | Stock mín: {compra.stockMinimo}
                             </p>
                           </div>
                         </div>
@@ -245,15 +237,12 @@ export default function Compras() {
                         </div>
                       </div>
 
-                      {/* Arrival form */}
                       {llegadaOpen === compra.id && (
                         <div className="border-t border-border p-4 bg-background animate-in fade-in slide-in-from-top-2">
                           <h4 className="text-sm font-bold text-foreground mb-3">Registrar llegada de mercancía</h4>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                             <div>
-                              <label className="block text-xs text-muted-foreground mb-1">
-                                Cantidad recibida <span className="text-destructive">*</span>
-                              </label>
+                              <label className="block text-xs text-muted-foreground mb-1">Cantidad <span className="text-destructive">*</span></label>
                               <input
                                 type="number"
                                 placeholder="0"
@@ -263,60 +252,56 @@ export default function Compras() {
                               />
                             </div>
                             <div>
-                              <label className="block text-xs text-muted-foreground mb-1">
-                                Precio compra actual → nuevo
-                              </label>
+                              <label className="block text-xs text-muted-foreground mb-1">P. Compra nuevo</label>
                               <input
                                 type="number"
-                                placeholder={productos?.find((p) => p.id === compra.productoId)
-                                  ? String(productos.find((p) => p.id === compra.productoId)!.precioCompra)
-                                  : "0"}
                                 value={llegadaForm.nuevoPrecioCompra}
                                 onChange={(e) => setLlegadaForm({ ...llegadaForm, nuevoPrecioCompra: e.target.value })}
                                 className="w-full bg-card border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
                               />
                               {productos?.find((p) => p.id === compra.productoId) && (
-                                <p className="text-xs text-muted-foreground mt-1">
+                                <p className="text-xs text-muted-foreground mt-0.5">
                                   Actual: {formatCurrency(productos.find((p) => p.id === compra.productoId)!.precioCompra)}
                                 </p>
                               )}
                             </div>
                             <div>
-                              <label className="block text-xs text-muted-foreground mb-1">
-                                P. Venta sin IVA actual → nuevo
-                              </label>
+                              <label className="block text-xs text-muted-foreground mb-1">P. Venta s/IVA nuevo</label>
                               <input
                                 type="number"
-                                placeholder={productos?.find((p) => p.id === compra.productoId)
-                                  ? String(productos.find((p) => p.id === compra.productoId)!.precioVentaSinIva)
-                                  : "0"}
                                 value={llegadaForm.nuevoPrecioVentaSinIva}
-                                onChange={(e) =>
-                                  setLlegadaForm({ ...llegadaForm, nuevoPrecioVentaSinIva: e.target.value })
-                                }
+                                onChange={(e) => setLlegadaForm({ ...llegadaForm, nuevoPrecioVentaSinIva: e.target.value })}
                                 className="w-full bg-card border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
                               />
                               {productos?.find((p) => p.id === compra.productoId) && (
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  Actual: {formatCurrency(productos.find((p) => p.id === compra.productoId)!.precioVentaSinIva)}
-                                  {" → con IVA: "}
-                                  {formatCurrency(productos.find((p) => p.id === compra.productoId)!.precioVentaConIva)}
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  c/IVA: {formatCurrency(productos.find((p) => p.id === compra.productoId)!.precioVentaConIva)}
                                 </p>
                               )}
                             </div>
                             <div>
-                              <label className="block text-xs text-muted-foreground mb-1">¿Lleva IVA?</label>
+                              <label className="block text-xs text-muted-foreground mb-1">IVA</label>
                               <button
                                 type="button"
                                 onClick={() => setLlegadaForm({ ...llegadaForm, tieneIva: !llegadaForm.tieneIva })}
-                                className={`w-full py-2 rounded-lg border text-sm font-medium transition-all ${
+                                className={`w-full py-2 rounded-lg border text-xs font-medium transition-all ${
                                   llegadaForm.tieneIva
                                     ? "bg-primary/20 border-primary text-primary"
                                     : "bg-card border-border text-muted-foreground"
                                 }`}
                               >
-                                {llegadaForm.tieneIva ? "✓ Con IVA (19%)" : "Sin IVA"}
+                                {llegadaForm.tieneIva ? "✓ Con IVA" : "Sin IVA"}
                               </button>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="block text-xs text-muted-foreground mb-1">Proveedor</label>
+                              <input
+                                type="text"
+                                placeholder="Nombre del proveedor..."
+                                value={llegadaForm.proveedor}
+                                onChange={(e) => setLlegadaForm({ ...llegadaForm, proveedor: e.target.value })}
+                                className="w-full bg-card border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
+                              />
                             </div>
                           </div>
                           <div className="flex gap-3 mt-4 justify-end">
@@ -342,36 +327,89 @@ export default function Compras() {
               </div>
             )}
 
+            {/* Historial de llegadas */}
             {llegados.length > 0 && (
               <div>
                 <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
-                  Llegados ({llegados.length})
+                  Historial de Llegadas ({llegados.length})
                 </h3>
-                <div className="space-y-2 opacity-70">
-                  {llegados.map((compra) => (
-                    <div
-                      key={compra.id}
-                      className="bg-card rounded-xl border border-green-500/30 p-4 flex justify-between items-center"
-                    >
-                      <div className="flex items-center gap-3">
-                        <PackageCheck className="w-5 h-5 text-green-500" />
-                        <div>
-                          <p className="font-medium text-foreground">{compra.productoNombre}</p>
-                          <p className="text-xs text-muted-foreground">Cód: {compra.productoCodigo}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-green-500 text-sm font-medium">Llegado</span>
-                        <button
-                          onClick={() => handleEliminar(compra.id)}
-                          className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-lg">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                      <thead>
+                        <tr className="bg-muted text-muted-foreground border-b border-border">
+                          <th className="px-4 py-3 font-medium whitespace-nowrap">Fecha Llegada</th>
+                          <th className="px-4 py-3 font-medium whitespace-nowrap">Producto</th>
+                          <th className="px-4 py-3 font-medium whitespace-nowrap">Marca</th>
+                          <th className="px-4 py-3 font-medium whitespace-nowrap">Cantidad</th>
+                          <th className="px-4 py-3 font-medium whitespace-nowrap">P. Compra</th>
+                          <th className="px-4 py-3 font-medium whitespace-nowrap">P. Venta</th>
+                          <th className="px-4 py-3 font-medium whitespace-nowrap">Total Compra</th>
+                          <th className="px-4 py-3 font-medium whitespace-nowrap">Proveedor</th>
+                          <th className="px-4 py-3 font-medium"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {llegados.map((compra) => {
+                          const cantRec = compra.cantidadRecibida ?? 0;
+                          const precioC = compra.precioCompraRegistrado ?? 0;
+                          const precioV = compra.precioVentaRegistrado ?? 0;
+                          const totalCompra = cantRec * precioC;
+                          return (
+                            <tr key={compra.id} className="hover:bg-muted/30 transition-colors">
+                              <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                                {compra.fechaLlegada
+                                  ? new Date(compra.fechaLlegada + "T12:00:00").toLocaleDateString("es-CO")
+                                  : "—"}
+                              </td>
+                              <td className="px-4 py-3 font-medium text-foreground">{compra.productoNombre}</td>
+                              <td className="px-4 py-3 text-muted-foreground">{compra.productoMarca || "—"}</td>
+                              <td className="px-4 py-3 font-medium">
+                                {cantRec > 0 ? cantRec : "—"}
+                              </td>
+                              <td className="px-4 py-3 text-muted-foreground">
+                                {precioC > 0 ? formatCurrency(precioC) : "—"}
+                              </td>
+                              <td className="px-4 py-3 text-muted-foreground">
+                                {precioV > 0 ? formatCurrency(precioV) : "—"}
+                              </td>
+                              <td className="px-4 py-3 font-bold text-primary">
+                                {totalCompra > 0 ? formatCurrency(totalCompra) : "—"}
+                              </td>
+                              <td className="px-4 py-3 text-muted-foreground">
+                                {compra.proveedor || <span className="italic text-xs">Sin registrar</span>}
+                              </td>
+                              <td className="px-4 py-3">
+                                <button
+                                  onClick={() => handleEliminar(compra.id)}
+                                  className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot className="bg-muted/50 border-t border-border">
+                        <tr>
+                          <td colSpan={6} className="px-4 py-3 text-right text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                            Total invertido en compras
+                          </td>
+                          <td className="px-4 py-3 font-bold text-primary">
+                            {formatCurrency(
+                              llegados.reduce(
+                                (sum, c) => sum + (c.cantidadRecibida ?? 0) * (c.precioCompraRegistrado ?? 0),
+                                0
+                              )
+                            )}
+                          </td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}

@@ -196,14 +196,16 @@
     color: black !important;
   }
 
-  /* Row colors for print */
+  /* Row colors for print — intense for easy differentiation */
   .print-zone .row-manoobra td {
-    background-color: #fef9c3 !important;
-    color: black !important;
+    background-color: #fbbf24 !important;
+    color: #000 !important;
+    font-weight: 600;
   }
   .print-zone .row-credito td {
-    background-color: #dbeafe !important;
-    color: black !important;
+    background-color: #3b82f6 !important;
+    color: #fff !important;
+    font-weight: 600;
   }
 
   /* Allow table to overflow in print */

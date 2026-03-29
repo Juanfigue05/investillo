@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { ventasDiariasTable } from "@workspace/db/schema";
+import { ventasDiariasTable, productosTable } from "@workspace/db/schema";
 import { eq, sql, and, gte, lte } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -77,6 +77,8 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   const { fecha, referencia, tipoLinea, productoId, productoNombre, productoCodigo, productoMarca, cantidad, precioCompraUnidad, precioVentaUnidad, precioVentaTotal, beneficio, descripcion } = req.body;
 
+  const cantidadNum = parseFloat(cantidad);
+
   const [venta] = await db.insert(ventasDiariasTable).values({
     fecha,
     referencia,
@@ -85,13 +87,24 @@ router.post("/", async (req, res) => {
     productoNombre: productoNombre || null,
     productoCodigo: productoCodigo || null,
     productoMarca: productoMarca || null,
-    cantidad: String(parseFloat(cantidad)),
+    cantidad: String(cantidadNum),
     precioCompraUnidad: String(parseFloat(precioCompraUnidad || 0)),
     precioVentaUnidad: String(parseFloat(precioVentaUnidad)),
     precioVentaTotal: String(parseFloat(precioVentaTotal)),
     beneficio: String(parseFloat(beneficio || 0)),
     descripcion: descripcion || null,
   }).returning();
+
+  // Reducir inventario al registrar una venta normal
+  if ((tipoLinea === "venta" || !tipoLinea) && productoId) {
+    const [prod] = await db.select().from(productosTable).where(eq(productosTable.id, parseInt(productoId)));
+    if (prod) {
+      const nuevoStock = Math.max(0, toNum(prod.stockActual) - cantidadNum);
+      await db.update(productosTable)
+        .set({ stockActual: String(nuevoStock), actualizadoEn: new Date() })
+        .where(eq(productosTable.id, parseInt(productoId)));
+    }
+  }
 
   res.status(201).json(mapVenta(venta));
 });

@@ -29,7 +29,6 @@ export default function ManoObra() {
     trabajadoresIds: [] as number[],
   });
 
-  // Worker editing state
   const [editingTrab, setEditingTrab] = useState<number | null>(null);
   const [editNombre, setEditNombre] = useState("");
   const [showAddTrab, setShowAddTrab] = useState(false);
@@ -157,135 +156,7 @@ export default function ManoObra() {
           </button>
         </div>
 
-        {/* Service form */}
-        {showForm && (
-          <div className="bg-card border border-border p-6 rounded-2xl shadow-xl animate-in fade-in slide-in-from-top-4">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-display font-bold text-foreground">Nuevo Registro de Mano de Obra</h3>
-              <button onClick={() => setShowForm(false)} className="p-2 hover:bg-muted rounded-lg text-muted-foreground">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <form onSubmit={handleSave} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Descripción del Servicio</label>
-                  <input
-                    required
-                    type="text"
-                    value={formData.descripcion}
-                    onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
-                    placeholder="Ej: Cambio de pastillas"
-                    className="w-full bg-background border border-border px-4 py-3 rounded-xl focus:ring-2 focus:ring-primary outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Valor Cobrado Total ($)</label>
-                  <input
-                    required
-                    type="number"
-                    value={formData.valorTotal}
-                    onChange={(e) => setFormData({ ...formData, valorTotal: e.target.value })}
-                    placeholder="50000"
-                    className="w-full bg-background border border-border px-4 py-3 rounded-xl focus:ring-2 focus:ring-primary outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-3">
-                  Trabajadores involucrados
-                  {formData.trabajadoresIds.length > 0 && formData.valorTotal && (
-                    <span className="ml-2 text-primary">
-                      → {formatCurrency(Math.floor(parseFloat(formData.valorTotal) / formData.trabajadoresIds.length))} c/u
-                    </span>
-                  )}
-                </label>
-                <div className="flex flex-wrap gap-3">
-                  {trabajadores?.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => toggleTrabajador(t.id)}
-                      className={`px-4 py-2 rounded-xl border transition-all ${
-                        formData.trabajadoresIds.includes(t.id)
-                          ? "bg-primary/20 border-primary text-primary"
-                          : "bg-background border-border text-muted-foreground hover:border-muted-foreground"
-                      }`}
-                    >
-                      {t.nombre}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-4 border-t border-border">
-                <button
-                  type="submit"
-                  disabled={crearMutation.isPending || crearVentaMutation.isPending}
-                  className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all"
-                >
-                  <Save className="w-5 h-5" />
-                  Guardar y Enviar a Ventas
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* History table */}
-        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-muted text-muted-foreground text-sm border-b border-border">
-                <th className="px-6 py-4 font-medium">Fecha</th>
-                <th className="px-6 py-4 font-medium">Servicio</th>
-                <th className="px-6 py-4 font-medium">Valor Total</th>
-                <th className="px-6 py-4 font-medium">Distribución</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={4} className="text-center py-8 text-muted-foreground">
-                    Cargando registros...
-                  </td>
-                </tr>
-              ) : manoObras?.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="text-center py-8 text-muted-foreground">
-                    No hay registros todavía.
-                  </td>
-                </tr>
-              ) : (
-                manoObras?.map((mo) => (
-                  <tr key={mo.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="px-6 py-4 text-muted-foreground text-sm">
-                      {new Date(mo.fecha + "T12:00:00").toLocaleDateString("es-CO")}
-                    </td>
-                    <td className="px-6 py-4 font-medium text-foreground">{mo.descripcion}</td>
-                    <td className="px-6 py-4 text-primary font-bold">{formatCurrency(mo.valorTotal)}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        {mo.distribuciones.map((d) => (
-                          <span
-                            key={d.id}
-                            className="bg-background border border-border px-2 py-1 rounded-md text-xs flex items-center gap-1"
-                          >
-                            <span className="font-medium text-foreground">{d.trabajadorNombre}</span>
-                            <span className="text-muted-foreground">{formatCurrency(d.valor)}</span>
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Workers management */}
+        {/* ── 1. WORKERS MANAGEMENT (FIRST) ── */}
         <div className="bg-card border border-border rounded-2xl p-6 shadow-xl">
           <div className="flex justify-between items-center mb-5">
             <div className="flex items-center gap-3">
@@ -293,14 +164,11 @@ export default function ManoObra() {
               <h3 className="text-lg font-bold text-foreground">Gestión de Trabajadores</h3>
             </div>
             <button
-              onClick={() => {
-                setShowAddTrab(!showAddTrab);
-                setNewTrabNombre("");
-              }}
+              onClick={() => { setShowAddTrab(!showAddTrab); setNewTrabNombre(""); }}
               className="flex items-center gap-2 px-4 py-2 bg-muted text-foreground rounded-xl border border-border hover:bg-muted/80 transition-colors text-sm font-medium"
             >
               <Plus className="w-4 h-4" />
-              Agregar Trabajador
+              Agregar
             </button>
           </div>
 
@@ -333,10 +201,7 @@ export default function ManoObra() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {trabajadores?.map((t) => (
-              <div
-                key={t.id}
-                className="bg-background rounded-xl border border-border p-4 flex items-center gap-4"
-              >
+              <div key={t.id} className="bg-background rounded-xl border border-border p-4 flex items-center gap-4">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary flex-shrink-0">
                   {t.nombre.charAt(0).toUpperCase()}
                 </div>
@@ -363,25 +228,15 @@ export default function ManoObra() {
                 <div className="flex-shrink-0 flex gap-1">
                   {editingTrab === t.id ? (
                     <>
-                      <button
-                        onClick={() => handleSaveTrab(t.id)}
-                        disabled={actualizarTrabMutation.isPending}
-                        className="p-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors"
-                      >
+                      <button onClick={() => handleSaveTrab(t.id)} disabled={actualizarTrabMutation.isPending} className="p-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors">
                         <Check className="w-4 h-4" />
                       </button>
-                      <button
-                        onClick={() => setEditingTrab(null)}
-                        className="p-1.5 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors"
-                      >
+                      <button onClick={() => setEditingTrab(null)} className="p-1.5 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors">
                         <X className="w-4 h-4" />
                       </button>
                     </>
                   ) : (
-                    <button
-                      onClick={() => handleStartEdit(t)}
-                      className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-                    >
+                    <button onClick={() => handleStartEdit(t)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
                       <Pencil className="w-4 h-4" />
                     </button>
                   )}
@@ -389,6 +244,125 @@ export default function ManoObra() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* ── 2. SERVICE FORM ── */}
+        {showForm && (
+          <div className="bg-card border border-border p-6 rounded-2xl shadow-xl animate-in fade-in slide-in-from-top-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-display font-bold text-foreground">Nuevo Registro de Mano de Obra</h3>
+              <button onClick={() => setShowForm(false)} className="p-2 hover:bg-muted rounded-lg text-muted-foreground">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSave} className="space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Descripción del Servicio</label>
+                  <input
+                    required
+                    type="text"
+                    value={formData.descripcion}
+                    onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
+                    placeholder="Ej: Cambio de pastillas"
+                    className="w-full bg-background border border-border px-4 py-3 rounded-xl focus:ring-2 focus:ring-primary outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Valor Cobrado Total ($)</label>
+                  <input
+                    required
+                    type="number"
+                    value={formData.valorTotal}
+                    onChange={(e) => setFormData({ ...formData, valorTotal: e.target.value })}
+                    placeholder="50000"
+                    className="w-full bg-background border border-border px-4 py-3 rounded-xl focus:ring-2 focus:ring-primary outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-3">
+                  Trabajadores involucrados
+                  {formData.trabajadoresIds.length > 0 && formData.valorTotal && (
+                    <span className="ml-2 text-primary">
+                      → {formatCurrency(Math.floor(parseFloat(formData.valorTotal) / formData.trabajadoresIds.length))} c/u
+                    </span>
+                  )}
+                </label>
+                <div className="flex flex-wrap gap-3">
+                  {trabajadores?.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => toggleTrabajador(t.id)}
+                      className={`px-4 py-2 rounded-xl border transition-all ${
+                        formData.trabajadoresIds.includes(t.id)
+                          ? "bg-primary/20 border-primary text-primary"
+                          : "bg-background border-border text-muted-foreground hover:border-muted-foreground"
+                      }`}
+                    >
+                      {t.nombre}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-end pt-4 border-t border-border">
+                <button
+                  type="submit"
+                  disabled={crearMutation.isPending || crearVentaMutation.isPending}
+                  className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all"
+                >
+                  <Save className="w-5 h-5" />
+                  Guardar y Enviar a Ventas
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* ── 3. HISTORY TABLE (SECOND) ── */}
+        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl">
+          <div className="px-6 py-4 border-b border-border flex items-center gap-2">
+            <Wrench className="w-4 h-4 text-primary" />
+            <h3 className="font-bold text-foreground">Historial de Servicios</h3>
+          </div>
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-muted text-muted-foreground text-sm border-b border-border">
+                <th className="px-6 py-4 font-medium">Fecha</th>
+                <th className="px-6 py-4 font-medium">Servicio</th>
+                <th className="px-6 py-4 font-medium">Valor Total</th>
+                <th className="px-6 py-4 font-medium">Distribución</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {isLoading ? (
+                <tr><td colSpan={4} className="text-center py-8 text-muted-foreground">Cargando registros...</td></tr>
+              ) : manoObras?.length === 0 ? (
+                <tr><td colSpan={4} className="text-center py-8 text-muted-foreground">No hay servicios registrados aún.</td></tr>
+              ) : (
+                manoObras?.map((mo) => (
+                  <tr key={mo.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-6 py-4 text-muted-foreground text-sm">
+                      {new Date(mo.fecha + "T12:00:00").toLocaleDateString("es-CO")}
+                    </td>
+                    <td className="px-6 py-4 font-medium text-foreground">{mo.descripcion}</td>
+                    <td className="px-6 py-4 text-primary font-bold">{formatCurrency(mo.valorTotal)}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-wrap gap-2">
+                        {mo.distribuciones.map((d) => (
+                          <span key={d.id} className="bg-background border border-border px-2 py-1 rounded-md text-xs flex items-center gap-1">
+                            <span className="font-medium text-foreground">{d.trabajadorNombre}</span>
+                            <span className="text-muted-foreground">{formatCurrency(d.valor)}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </Layout>
