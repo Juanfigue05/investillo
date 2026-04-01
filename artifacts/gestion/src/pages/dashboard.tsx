@@ -286,27 +286,44 @@ export default function Dashboard() {
 
         {/* Alerts Section */}
         {alertas && alertas.length > 0 && (
-          <div className="bg-destructive/10 border border-destructive/20 rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <PackageX className="w-6 h-6 text-destructive" />
-              <h3 className="text-lg font-bold text-destructive">Atención: Productos Agotándose</h3>
+          <div className="bg-destructive/10 border border-destructive/20 rounded-2xl overflow-hidden">
+            <div className="flex items-center gap-3 p-5 border-b border-destructive/20">
+              <PackageX className="w-5 h-5 text-destructive flex-shrink-0" />
+              <h3 className="text-base font-bold text-destructive">Productos Agotándose ({alertas.length})</h3>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {alertas.map((prod) => (
-                <div
-                  key={prod.id}
-                  className="bg-card rounded-xl p-4 border border-border flex justify-between items-center"
-                >
-                  <div>
-                    <p className="font-medium text-foreground">{prod.nombre}</p>
-                    <p className="text-sm text-muted-foreground">Ref: {prod.referencia || prod.codigo}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xl font-bold text-destructive">{prod.stockActual}</p>
-                    <p className="text-xs text-muted-foreground">Min: {prod.stockMinimo}</p>
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead>
+                  <tr className="bg-destructive/10 text-muted-foreground border-b border-destructive/20">
+                    <th className="px-5 py-3 font-medium whitespace-nowrap">Referencia</th>
+                    <th className="px-5 py-3 font-medium whitespace-nowrap">Producto</th>
+                    <th className="px-5 py-3 font-medium whitespace-nowrap">Marca</th>
+                    <th className="px-5 py-3 font-medium whitespace-nowrap text-right">Stock actual</th>
+                    <th className="px-5 py-3 font-medium whitespace-nowrap text-right">Stock mínimo</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-destructive/10">
+                  {alertas.map((prod) => (
+                    <tr key={prod.id} className="hover:bg-destructive/5 transition-colors">
+                      <td className="px-5 py-3 font-mono text-xs text-muted-foreground">
+                        {prod.referencia || prod.codigo}
+                      </td>
+                      <td className="px-5 py-3 font-medium text-foreground">{prod.nombre}</td>
+                      <td className="px-5 py-3 text-muted-foreground">{prod.marca || "—"}</td>
+                      <td className="px-5 py-3 text-right font-bold text-destructive text-base">
+                        {typeof prod.stockActual === "number"
+                          ? prod.stockActual.toLocaleString("es-CO", { maximumFractionDigits: 2 })
+                          : prod.stockActual}
+                      </td>
+                      <td className="px-5 py-3 text-right text-muted-foreground">
+                        {typeof prod.stockMinimo === "number"
+                          ? prod.stockMinimo.toLocaleString("es-CO", { maximumFractionDigits: 2 })
+                          : prod.stockMinimo}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}

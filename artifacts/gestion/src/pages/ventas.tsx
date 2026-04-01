@@ -380,7 +380,12 @@ export default function VentasDiarias() {
     if (confirm("¿Eliminar esta fila?")) {
       eliminarMutation.mutate(
         { id },
-        { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/ventas"] }) }
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+          },
+        }
       );
     }
   };
@@ -441,6 +446,7 @@ export default function VentasDiarias() {
             <table className="w-full text-left border-collapse text-sm">
               <thead>
                 <tr className="bg-muted text-muted-foreground border-b border-border">
+                  <th className="px-2 py-3 font-medium no-print w-10"></th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">No. Remisión / Ref</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">Producto</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">Marca / Info</th>
@@ -455,6 +461,18 @@ export default function VentasDiarias() {
               <tbody className="divide-y divide-border/50">
                 {/* New Row Input — hidden when printing */}
                 <tr className={`no-print bg-background/40 ${modoActual === "manoobra" ? "row-manoobra" : modoActual === "abono" ? "row-credito" : ""}`}>
+                  {/* Save button — FIRST column */}
+                  <td className="p-2 no-print">
+                    <button
+                      onClick={handleAddRow}
+                      disabled={crearMutation.isPending || crearManoObraMutation.isPending}
+                      className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow"
+                      title="Guardar fila"
+                    >
+                      <Save className="w-4 h-4" />
+                    </button>
+                  </td>
+
                   {/* Referencia */}
                   <td className="p-2">
                     <input
@@ -592,17 +610,7 @@ export default function VentasDiarias() {
                   <td className="p-2 font-medium text-green-500 whitespace-nowrap">
                     {modoActual === "normal" ? formatCurrency(previewBeneficio) : "—"}
                   </td>
-
-                  <td className="p-2">
-                    <button
-                      onClick={handleAddRow}
-                      disabled={crearMutation.isPending || crearManoObraMutation.isPending}
-                      className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow"
-                      title="Guardar fila"
-                    >
-                      <Save className="w-4 h-4" />
-                    </button>
-                  </td>
+                  <td className="p-2 no-print"></td>
                 </tr>
 
                 {/* Registered rows */}
@@ -628,6 +636,7 @@ export default function VentasDiarias() {
                         : "row-venta";
                     return (
                       <tr key={venta.id} className={`${rowCls} group hover:brightness-110 transition-all`}>
+                        <td className="px-3 py-3 no-print w-10"></td>
                         <td className="px-3 py-3 font-mono text-xs">{venta.referencia}</td>
                         <td className="px-3 py-3 font-medium">{venta.productoNombre}</td>
                         <td className="px-3 py-3 text-muted-foreground text-xs">{venta.productoMarca || "—"}</td>
@@ -653,6 +662,7 @@ export default function VentasDiarias() {
               </tbody>
               <tfoot className="bg-card border-t-2 border-border">
                 <tr>
+                  <td className="no-print"></td>
                   <td
                     colSpan={6}
                     className="px-4 py-3 text-right font-medium text-muted-foreground uppercase text-xs tracking-wider"

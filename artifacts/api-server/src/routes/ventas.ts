@@ -142,6 +142,19 @@ router.put("/:id", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
+
+  // Restore stock if it was a normal sale with product
+  const [venta] = await db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.id, id));
+  if (venta && (venta.tipoLinea === "venta" || !venta.tipoLinea) && venta.productoId) {
+    const [prod] = await db.select().from(productosTable).where(eq(productosTable.id, venta.productoId));
+    if (prod) {
+      const nuevoStock = toNum(prod.stockActual) + toNum(venta.cantidad);
+      await db.update(productosTable)
+        .set({ stockActual: String(nuevoStock), actualizadoEn: new Date() })
+        .where(eq(productosTable.id, venta.productoId));
+    }
+  }
+
   await db.delete(ventasDiariasTable).where(eq(ventasDiariasTable.id, id));
   res.json({ mensaje: "Venta eliminada" });
 });

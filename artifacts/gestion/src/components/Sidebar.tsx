@@ -21,18 +21,22 @@ const NAV_ITEMS = [
   { href: "/facturacion", label: "Facturación DIAN", icon: Receipt },
 ];
 
-export function Sidebar() {
+export function Sidebar({ onClose }: { onClose?: () => void }) {
   const [location] = useLocation();
 
   return (
-    <div className="flex flex-col w-64 h-screen bg-card border-r border-border fixed left-0 top-0 z-40">
+    <div className="flex flex-col w-64 h-screen bg-card border-r border-border"
+      style={{ minHeight: "100dvh" }}>
       <div className="p-6">
-        <h1 className="text-2xl font-display font-bold text-primary flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white">
-            S
-          </div>
-          Sistema<span className="text-foreground">Gest</span>
-        </h1>
+        <div>
+          <h1 className="text-2xl font-display font-bold text-primary flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-lg">
+              I
+            </div>
+            Investi<span className="text-foreground">llo</span>
+          </h1>
+          <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight pl-10">Gestión con estilo y sencillo</p>
+        </div>
       </div>
       
       <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-2 px-4">
@@ -44,6 +48,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onClose}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
                 isActive 
