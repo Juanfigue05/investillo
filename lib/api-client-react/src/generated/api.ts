@@ -25,6 +25,8 @@ import type {
   CreditoInput,
   CreditoUpdate,
   Dashboard,
+  GetCreditosParams,
+  GetHistorialPreciosParams,
   GetManoObraParams,
   GetVentasParams,
   GetVentasResumenParams,
@@ -32,6 +34,7 @@ import type {
   HistorialDia,
   HistorialDiaInput,
   HistorialDiaUpdate,
+  HistorialPrecio,
   ManoObra,
   ManoObraInput,
   MensajeRespuesta,
@@ -1163,41 +1166,57 @@ export const useEliminarVenta = <
 /**
  * @summary Obtener todos los creditos
  */
-export const getGetCreditosUrl = () => {
-  return `/api/creditos`;
+export const getGetCreditosUrl = (params?: GetCreditosParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/creditos?${stringifiedParams}`
+    : `/api/creditos`;
 };
 
 export const getCreditos = async (
+  params?: GetCreditosParams,
   options?: RequestInit,
 ): Promise<Credito[]> => {
-  return customFetch<Credito[]>(getGetCreditosUrl(), {
+  return customFetch<Credito[]>(getGetCreditosUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetCreditosQueryKey = () => {
-  return [`/api/creditos`] as const;
+export const getGetCreditosQueryKey = (params?: GetCreditosParams) => {
+  return [`/api/creditos`, ...(params ? [params] : [])] as const;
 };
 
 export const getGetCreditosQueryOptions = <
   TData = Awaited<ReturnType<typeof getCreditos>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getCreditos>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: GetCreditosParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCreditos>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetCreditosQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getGetCreditosQueryKey(params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getCreditos>>> = ({
     signal,
-  }) => getCreditos({ signal, ...requestOptions });
+  }) => getCreditos(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getCreditos>>,
@@ -1218,15 +1237,18 @@ export type GetCreditosQueryError = ErrorType<unknown>;
 export function useGetCreditos<
   TData = Awaited<ReturnType<typeof getCreditos>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getCreditos>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetCreditosQueryOptions(options);
+>(
+  params?: GetCreditosParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCreditos>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCreditosQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -2658,6 +2680,106 @@ export const useGuardarNotas = <
 > => {
   return useMutation(getGuardarNotasMutationOptions(options));
 };
+
+/**
+ * @summary Obtener historial de precios de productos
+ */
+export const getGetHistorialPreciosUrl = (
+  params?: GetHistorialPreciosParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/historial-precios?${stringifiedParams}`
+    : `/api/historial-precios`;
+};
+
+export const getHistorialPrecios = async (
+  params?: GetHistorialPreciosParams,
+  options?: RequestInit,
+): Promise<HistorialPrecio[]> => {
+  return customFetch<HistorialPrecio[]>(getGetHistorialPreciosUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetHistorialPreciosQueryKey = (
+  params?: GetHistorialPreciosParams,
+) => {
+  return [`/api/historial-precios`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetHistorialPreciosQueryOptions = <
+  TData = Awaited<ReturnType<typeof getHistorialPrecios>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetHistorialPreciosParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getHistorialPrecios>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetHistorialPreciosQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getHistorialPrecios>>
+  > = ({ signal }) =>
+    getHistorialPrecios(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getHistorialPrecios>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetHistorialPreciosQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getHistorialPrecios>>
+>;
+export type GetHistorialPreciosQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Obtener historial de precios de productos
+ */
+
+export function useGetHistorialPrecios<
+  TData = Awaited<ReturnType<typeof getHistorialPrecios>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetHistorialPreciosParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getHistorialPrecios>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetHistorialPreciosQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Listar días guardados en el historial

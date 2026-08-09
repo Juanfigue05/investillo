@@ -283,6 +283,13 @@ paths:
       operationId: getCreditos
       tags: [creditos]
       summary: Obtener todos los creditos
+      parameters:
+        - name: tipo
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [credito, nosdebe]
       responses:
         "200":
           description: Lista de creditos
@@ -619,6 +626,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/Notas"
 
+  /historial-precios:
+    get:
+      operationId: getHistorialPrecios
+      tags: [historialPrecios]
+      summary: Obtener historial de precios de productos
+      parameters:
+        - name: productoId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Lista de registros de precios
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HistorialPrecio"
+
   /historial:
     get:
       operationId: getHistorial
@@ -949,6 +977,13 @@ components:
       properties:
         id:
           type: integer
+        tipo:
+          type: string
+          description: "'credito' | 'nosdebe'"
+        concepto:
+          type: string
+          nullable: true
+          description: "No. Remision / referencia del credito"
         fechaFactura:
           type: string
           format: date
@@ -979,18 +1014,29 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CreditoLinea"
+        abonos:
+          type: array
+          items:
+            $ref: "#/components/schemas/AbonoCredito"
       required:
         - id
+        - tipo
         - fechaFactura
         - nombreCliente
         - valorCredito
         - valorAbonado
         - valorRestante
         - lineas
+        - abonos
 
     CreditoInput:
       type: object
       properties:
+        tipo:
+          type: string
+        concepto:
+          type: string
+          nullable: true
         fechaFactura:
           type: string
           format: date
@@ -1023,6 +1069,11 @@ components:
     CreditoUpdate:
       type: object
       properties:
+        tipo:
+          type: string
+        concepto:
+          type: string
+          nullable: true
         valorAbonado:
           type: number
         descripcion:
@@ -1066,6 +1117,8 @@ components:
           nullable: true
         precioVenta:
           type: number
+        precioCompra:
+          type: number
         valorAbonado:
           type: number
         valorRestante:
@@ -1075,6 +1128,7 @@ components:
         - cantidad
         - productoNombre
         - precioVenta
+        - precioCompra
         - valorAbonado
         - valorRestante
 
@@ -1099,12 +1153,39 @@ components:
           nullable: true
         precioVenta:
           type: number
+        precioCompra:
+          type: number
         valorAbonado:
           type: number
       required:
         - cantidad
         - productoNombre
         - precioVenta
+        - precioCompra
+
+    AbonoCredito:
+      type: object
+      properties:
+        id:
+          type: integer
+        creditoId:
+          type: integer
+        fecha:
+          type: string
+          format: date
+        valorTotal:
+          type: number
+        notas:
+          type: string
+          nullable: true
+        creadoEn:
+          type: string
+          format: date-time
+      required:
+        - id
+        - creditoId
+        - fecha
+        - valorTotal
 
     CreditoAbonoLineaInput:
       type: object
@@ -1129,6 +1210,48 @@ components:
       required:
         - valor
         - lineas
+
+    HistorialPrecio:
+      type: object
+      properties:
+        id:
+          type: integer
+        productoId:
+          type: integer
+        productoNombre:
+          type: string
+        productoCodigo:
+          type: string
+          nullable: true
+        precioCompra:
+          type: number
+        precioVenta:
+          type: number
+        fecha:
+          type: string
+          format: date
+        origen:
+          type: string
+        compraId:
+          type: integer
+          nullable: true
+        proveedor:
+          type: string
+          nullable: true
+        actualizoPrecioInventario:
+          type: string
+          nullable: true
+        creadoEn:
+          type: string
+          format: date-time
+      required:
+        - id
+        - productoId
+        - productoNombre
+        - precioCompra
+        - precioVenta
+        - fecha
+        - origen
 
     Compra:
       type: object

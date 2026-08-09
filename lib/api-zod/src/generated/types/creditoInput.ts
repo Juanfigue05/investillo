@@ -8,6 +8,8 @@
 import type { CreditoLineaInput } from "./creditoLineaInput";
 
 export interface CreditoInput {
+  tipo?: string;
+  concepto?: string | null;
   fechaFactura: Date;
   placaVehiculo?: string | null;
   nombreCliente: string;

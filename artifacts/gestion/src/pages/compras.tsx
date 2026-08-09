@@ -19,6 +19,15 @@ interface LlegadaForm {
   proveedor: string;
 }
 
+interface PrecioConfirmModal {
+  compra: any;
+  form: LlegadaForm;
+  precioCompraAnterior: number;
+  precioVentaAnterior: number;
+  precioCompraNuevo: number;
+  precioVentaNuevo: number;
+}
+
 function ProductoAutocomplete({
   productos,
   comprasExistentes,
@@ -149,6 +158,7 @@ export default function Compras() {
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [productoSeleccionado, setProductoSeleccionado] = useState<number | null>(null);
+  const [precioConfirm, setPrecioConfirm] = useState<PrecioConfirmModal | null>(null);
 
   const openLlegada = (compra: any) => {
     setLlegadaOpen(compra.id);
@@ -162,31 +172,65 @@ export default function Compras() {
     });
   };
 
-  const handleLlegada = (compra: any) => {
-    if (!llegadaForm.cantidad || parseFloat(llegadaForm.cantidad) <= 0) {
-      alert("Ingresa la cantidad recibida");
-      return;
-    }
+  const ejecutarLlegada = (compra: any, form: LlegadaForm, actualizarPrecioInventario: boolean) => {
     actualizarMutation.mutate(
       {
         id: compra.id,
         data: {
           estado: "llegado",
-          cantidadRecibida: parseFloat(llegadaForm.cantidad),
-          nuevoPrecioCompra: llegadaForm.nuevoPrecioCompra ? parseFloat(llegadaForm.nuevoPrecioCompra) : undefined,
-          nuevoPrecioVentaSinIva: llegadaForm.nuevoPrecioVentaSinIva ? parseFloat(llegadaForm.nuevoPrecioVentaSinIva) : undefined,
-          tieneIva: llegadaForm.tieneIva,
-          proveedor: llegadaForm.proveedor || undefined,
+          cantidadRecibida: parseFloat(form.cantidad),
+          nuevoPrecioCompra: form.nuevoPrecioCompra ? parseFloat(form.nuevoPrecioCompra) : undefined,
+          nuevoPrecioVentaSinIva: form.nuevoPrecioVentaSinIva ? parseFloat(form.nuevoPrecioVentaSinIva) : undefined,
+          tieneIva: form.tieneIva,
+          proveedor: form.proveedor || undefined,
+          actualizarPrecioInventario,
         },
       },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
           queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/historial-precios"] });
           setLlegadaOpen(null);
+          setPrecioConfirm(null);
         },
       }
     );
+  };
+
+  const handleLlegada = (compra: any) => {
+    if (!llegadaForm.cantidad || parseFloat(llegadaForm.cantidad) <= 0) {
+      alert("Ingresa la cantidad recibida");
+      return;
+    }
+
+    // Check if prices were modified
+    const prod = productos?.find((p) => p.id === compra.productoId);
+    const pcNuevo = llegadaForm.nuevoPrecioCompra ? parseFloat(llegadaForm.nuevoPrecioCompra) : null;
+    const pvNuevo = llegadaForm.nuevoPrecioVentaSinIva ? parseFloat(llegadaForm.nuevoPrecioVentaSinIva) : null;
+    const pcActual = prod ? prod.precioCompra : 0;
+    const pvSinIvaActual = prod ? prod.precioVentaSinIva : 0;
+    const pvConIvaActual = prod ? prod.precioVentaConIva : 0;
+
+    const cambioPrecioCompra = pcNuevo !== null && Math.abs(pcNuevo - pcActual) > 0.01;
+    const cambioPrecioVenta = pvNuevo !== null && Math.abs(pvNuevo - pvSinIvaActual) > 0.01;
+
+    if (cambioPrecioCompra || cambioPrecioVenta) {
+      // Show confirmation popup
+      setPrecioConfirm({
+        compra,
+        form: { ...llegadaForm },
+        precioCompraAnterior: pcActual,
+        precioVentaAnterior: pvConIvaActual,
+        precioCompraNuevo: pcNuevo ?? pcActual,
+        precioVentaNuevo: pvNuevo
+          ? (llegadaForm.tieneIva ? Math.ceil(pvNuevo * 1.19 / 1000) * 1000 : pvNuevo)
+          : pvConIvaActual,
+      });
+    } else {
+      // No price change — just record (always writes to historial)
+      ejecutarLlegada(compra, llegadaForm, true);
+    }
   };
 
   const handleAddManual = () => {
@@ -220,6 +264,65 @@ export default function Compras() {
 
   return (
     <Layout>
+      {/* Price change confirmation modal */}
+      {precioConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95">
+            <h3 className="text-lg font-display font-bold text-foreground mb-1">Precios modificados</h3>
+            <p className="text-sm text-muted-foreground mb-4">Detectamos cambios en los precios. ¿Quieres actualizar el inventario con los nuevos precios?</p>
+            <div className="bg-background border border-border rounded-xl p-4 mb-5 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">P. Compra anterior:</span>
+                <span className="line-through text-muted-foreground">{formatCurrency(precioConfirm.precioCompraAnterior)}</span>
+              </div>
+              <div className="flex justify-between font-medium">
+                <span className="text-muted-foreground">P. Compra nuevo:</span>
+                <span className={precioConfirm.precioCompraNuevo > precioConfirm.precioCompraAnterior ? "text-destructive" : "text-green-500"}>
+                  {formatCurrency(precioConfirm.precioCompraNuevo)}
+                  <span className="text-xs ml-1">
+                    ({precioConfirm.precioCompraNuevo > precioConfirm.precioCompraAnterior ? "+" : ""}
+                    {(((precioConfirm.precioCompraNuevo - precioConfirm.precioCompraAnterior) / (precioConfirm.precioCompraAnterior || 1)) * 100).toFixed(1)}%)
+                  </span>
+                </span>
+              </div>
+              <div className="border-t border-border pt-2 flex justify-between">
+                <span className="text-muted-foreground">P. Venta anterior:</span>
+                <span className="line-through text-muted-foreground">{formatCurrency(precioConfirm.precioVentaAnterior)}</span>
+              </div>
+              <div className="flex justify-between font-medium">
+                <span className="text-muted-foreground">P. Venta nuevo (c/IVA):</span>
+                <span className={precioConfirm.precioVentaNuevo > precioConfirm.precioVentaAnterior ? "text-destructive" : "text-green-500"}>
+                  {formatCurrency(precioConfirm.precioVentaNuevo)}
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">En ambos casos se guardará el registro de precios en el Historial de Precios.</p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => ejecutarLlegada(precioConfirm.compra, precioConfirm.form, true)}
+                disabled={actualizarMutation.isPending}
+                className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:bg-primary/90"
+              >
+                ✓ Sí, actualizar inventario con nuevos precios
+              </button>
+              <button
+                onClick={() => ejecutarLlegada(precioConfirm.compra, precioConfirm.form, false)}
+                disabled={actualizarMutation.isPending}
+                className="w-full py-2.5 bg-muted text-foreground rounded-xl font-medium text-sm hover:bg-muted/80"
+              >
+                Solo registrar llegada (mantener precios actuales)
+              </button>
+              <button
+                onClick={() => setPrecioConfirm(null)}
+                className="w-full py-2 text-muted-foreground text-sm hover:text-foreground"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>

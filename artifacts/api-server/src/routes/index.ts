@@ -9,6 +9,7 @@ import trabajadoresRouter from "./trabajadores";
 import notasRouter from "./notas";
 import historialRouter from "./historial";
 import dashboardRouter from "./dashboard";
+import historialPreciosRouter from "./historial-precios";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use("/trabajadores", trabajadoresRouter);
 router.use("/notas", notasRouter);
 router.use("/historial", historialRouter);
 router.use("/dashboard", dashboardRouter);
+router.use("/historial-precios", historialPreciosRouter);
 
 export default router;

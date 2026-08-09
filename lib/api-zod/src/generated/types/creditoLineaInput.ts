@@ -14,5 +14,6 @@ export interface CreditoLineaInput {
   productoCodigo?: string | null;
   productoMarca?: string | null;
   precioVenta: number;
+  precioCompra: number;
   valorAbonado?: number;
 }

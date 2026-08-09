@@ -4,6 +4,10 @@ import { z } from "zod/v4";
 
 export const creditosTable = pgTable("creditos", {
   id: serial("id").primaryKey(),
+  /** 'credito' | 'nosdebe' */
+  tipo: text("tipo").notNull().default("credito"),
+  /** No. Remisión / referencia — obligatorio para tipo='credito', null para 'nosdebe' */
+  concepto: text("concepto"),
   fechaFactura: date("fecha_factura").notNull(),
   placaVehiculo: text("placa_vehiculo"),
   nombreCliente: text("nombre_cliente").notNull(),
@@ -23,13 +27,29 @@ export const creditoLineasTable = pgTable("credito_lineas", {
   productoNombre: text("producto_nombre").notNull(),
   productoCodigo: text("producto_codigo"),
   productoMarca: text("producto_marca"),
+  /** Precio de venta unitario al momento de crear el crédito (no cambia aunque el inventario cambie) */
   precioVenta: numeric("precio_venta", { precision: 15, scale: 2 }).notNull(),
+  /** Precio de compra unitario al momento de crear el crédito */
+  precioCompra: numeric("precio_compra", { precision: 15, scale: 2 }).notNull().default("0"),
   valorAbonado: numeric("valor_abonado", { precision: 15, scale: 2 }).notNull().default("0"),
+});
+
+/** Historial de pagos/abonos a un crédito (para auditoría) */
+export const abonosCreditosTable = pgTable("abonos_creditos", {
+  id: serial("id").primaryKey(),
+  creditoId: integer("credito_id").notNull(),
+  fecha: date("fecha").notNull(),
+  valorTotal: numeric("valor_total", { precision: 15, scale: 2 }).notNull(),
+  notas: text("notas"),
+  creadoEn: timestamp("creado_en").defaultNow(),
 });
 
 export const insertCreditoSchema = createInsertSchema(creditosTable).omit({ id: true, creadoEn: true, actualizadoEn: true });
 export const insertCreditoLineaSchema = createInsertSchema(creditoLineasTable).omit({ id: true });
+export const insertAbonoCreditoSchema = createInsertSchema(abonosCreditosTable).omit({ id: true, creadoEn: true });
 export type InsertCredito = z.infer<typeof insertCreditoSchema>;
 export type InsertCreditoLinea = z.infer<typeof insertCreditoLineaSchema>;
+export type InsertAbonoCredito = z.infer<typeof insertAbonoCreditoSchema>;
 export type Credito = typeof creditosTable.$inferSelect;
 export type CreditoLinea = typeof creditoLineasTable.$inferSelect;
+export type AbonoCredito = typeof abonosCreditosTable.$inferSelect;

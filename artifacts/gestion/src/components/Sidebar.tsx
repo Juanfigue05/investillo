@@ -8,7 +8,9 @@ import {
   Wrench, 
   Receipt,
   BookOpen,
-  LogOut
+  LogOut,
+  HandCoins,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,10 +19,12 @@ const NAV_ITEMS = [
   { href: "/inventario", label: "Inventario", icon: Package },
   { href: "/ventas", label: "Ventas Diarias", icon: ShoppingCart },
   { href: "/creditos", label: "Créditos", icon: CreditCard },
+  { href: "/nos-debe", label: "Nos Debe", icon: HandCoins },
   { href: "/compras", label: "Compras", icon: Truck },
   { href: "/mano-obra", label: "Mano de Obra", icon: Wrench },
   { href: "/facturacion", label: "Facturación DIAN", icon: Receipt },
   { href: "/historial", label: "Historial de Ventas", icon: BookOpen },
+  { href: "/historial-precios", label: "Historial de Precios", icon: TrendingUp },
 ];
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {

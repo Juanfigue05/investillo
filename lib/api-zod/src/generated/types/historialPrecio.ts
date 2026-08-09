@@ -6,15 +6,17 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface CreditoLinea {
+export interface HistorialPrecio {
   id: number;
-  productoId?: number | null;
-  cantidad: number;
+  productoId: number;
   productoNombre: string;
   productoCodigo?: string | null;
-  productoMarca?: string | null;
-  precioVenta: number;
   precioCompra: number;
-  valorAbonado: number;
-  valorRestante: number;
+  precioVenta: number;
+  fecha: Date;
+  origen: string;
+  compraId?: number | null;
+  proveedor?: string | null;
+  actualizoPrecioInventario?: string | null;
+  creadoEn?: Date;
 }

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { comprasTable, productosTable } from "@workspace/db/schema";
+import { comprasTable, historialPreciosTable, productosTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -63,7 +63,15 @@ router.post("/", async (req, res) => {
 
 router.put("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
-  const { estado, cantidadRecibida, nuevoPrecioCompra, nuevoPrecioVentaSinIva, tieneIva, proveedor } = req.body;
+  const {
+    estado,
+    cantidadRecibida,
+    nuevoPrecioCompra,
+    nuevoPrecioVentaSinIva,
+    tieneIva,
+    proveedor,
+    actualizarPrecioInventario, // true = update inventory prices
+  } = req.body;
 
   const [existing] = await db.select().from(comprasTable).where(eq(comprasTable.id, id));
   if (!existing) {
@@ -73,6 +81,7 @@ router.put("/:id", async (req, res) => {
 
   let precioCompraFinal: number | null = null;
   let precioVentaFinal: number | null = null;
+  let preciosModificados = false;
 
   if (estado === "llegado" && cantidadRecibida) {
     const [producto] = await db.select().from(productosTable).where(eq(productosTable.id, existing.productoId));
@@ -82,23 +91,51 @@ router.put("/:id", async (req, res) => {
         stockActual: String(newStock),
         actualizadoEn: new Date(),
       };
+
       if (nuevoPrecioCompra !== undefined && nuevoPrecioCompra !== "") {
         precioCompraFinal = parseFloat(nuevoPrecioCompra);
-        updateProd.precioCompra = String(precioCompraFinal);
+        if (Math.abs(precioCompraFinal - toNum(producto.precioCompra)) > 0.01) {
+          preciosModificados = true;
+        }
+        if (actualizarPrecioInventario !== false) {
+          updateProd.precioCompra = String(precioCompraFinal);
+        }
       } else {
         precioCompraFinal = toNum(producto.precioCompra);
       }
+
       if (nuevoPrecioVentaSinIva !== undefined && nuevoPrecioVentaSinIva !== "") {
         const pvSinIva = parseFloat(nuevoPrecioVentaSinIva);
         const haIva = tieneIva !== undefined ? Boolean(tieneIva) : producto.tieneIva;
         precioVentaFinal = haIva ? calcPrecioConIva(pvSinIva) : pvSinIva;
-        updateProd.precioVentaSinIva = String(pvSinIva);
-        updateProd.precioVentaConIva = String(precioVentaFinal);
-        if (tieneIva !== undefined) updateProd.tieneIva = Boolean(tieneIva);
+        if (Math.abs(precioVentaFinal - toNum(producto.precioVentaConIva)) > 0.01) {
+          preciosModificados = true;
+        }
+        if (actualizarPrecioInventario !== false) {
+          updateProd.precioVentaSinIva = String(pvSinIva);
+          updateProd.precioVentaConIva = String(precioVentaFinal);
+          if (tieneIva !== undefined) updateProd.tieneIva = Boolean(tieneIva);
+        }
       } else {
         precioVentaFinal = toNum(producto.precioVentaConIva);
       }
+
       await db.update(productosTable).set(updateProd).where(eq(productosTable.id, existing.productoId));
+
+      // Always record price history when a product arrives
+      const hoy = new Date().toISOString().split("T")[0];
+      await db.insert(historialPreciosTable).values({
+        productoId: existing.productoId,
+        productoNombre: existing.productoNombre,
+        productoCodigo: existing.productoCodigo,
+        precioCompra: String(precioCompraFinal),
+        precioVenta: String(precioVentaFinal),
+        fecha: hoy,
+        origen: "compra",
+        compraId: id,
+        proveedor: proveedor || null,
+        actualizoPrecioInventario: actualizarPrecioInventario !== false ? "si" : "no",
+      });
     }
   }
 
@@ -118,7 +155,7 @@ router.put("/:id", async (req, res) => {
     .where(eq(comprasTable.id, id))
     .returning();
 
-  res.json(mapCompra(compra));
+  res.json({ ...mapCompra(compra), preciosModificados });
 });
 
 router.delete("/:id", async (req, res) => {

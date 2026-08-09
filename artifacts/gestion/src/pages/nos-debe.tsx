@@ -12,7 +12,7 @@ import { formatCurrency } from "@/lib/utils";
 import { Plus, Trash2, X, Pencil, Search, ChevronDown, ChevronUp, Clock } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
-const TIPO = "credito";
+const TIPO = "nosdebe";
 
 interface LineaInput {
   id: number;
@@ -28,14 +28,12 @@ interface LineaInput {
 
 const emptyForm = {
   fechaFactura: new Date().toISOString().split("T")[0],
-  concepto: "",
-  placaVehiculo: "",
   nombreCliente: "",
   telefonoCliente: "",
   valorAbonado: "0",
 };
 
-export default function Creditos() {
+export default function NosDebePage() {
   const { data: creditos, isLoading } = useGetCreditos({ tipo: TIPO });
   const { data: productos } = useGetInventario();
   const queryClient = useQueryClient();
@@ -64,30 +62,20 @@ export default function Creditos() {
   const updateLinea = (id: number, field: keyof LineaInput, value: string) =>
     setLineas((prev) => prev.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
 
-  const handleProductoSelect = (lineaId: number, prodNombre: string) => {
-    const prod = productos?.find((p) => p.nombre === prodNombre);
-    if (prod) {
-      setLineas((prev) => prev.map((l) => l.id === lineaId ? {
-        ...l, productoId: prod.id, productoCodigo: prod.codigo,
-        productoNombre: prod.nombre, marca: prod.marca || "",
-        precioVenta: String(prod.precioVentaConIva),
-        precioCompra: String(prod.precioCompra),
-      } : l));
-    }
-  };
-
   const totalLineas = lineas.reduce((sum, l) => sum + (parseFloat(l.cantidad) || 0) * (parseFloat(l.precioVenta) || 0), 0);
 
   const openNew = () => {
-    setEditingId(null); setShowForm(true);
+    setEditingId(null);
+    setShowForm(true);
     setForm({ ...emptyForm });
     setLineas([{ id: -Date.now(), cantidad: "1", productoNombre: "", marca: "", precioVenta: "", precioCompra: "0" }]);
     setFormErrors([]);
   };
 
   const openEdit = (c: any) => {
-    setEditingId(c.id); setShowForm(true);
-    setForm({ fechaFactura: c.fechaFactura, concepto: c.concepto || "", placaVehiculo: c.placaVehiculo || "", nombreCliente: c.nombreCliente, telefonoCliente: c.telefonoCliente || "", valorAbonado: String(c.valorAbonado || 0) });
+    setEditingId(c.id);
+    setShowForm(true);
+    setForm({ fechaFactura: c.fechaFactura, nombreCliente: c.nombreCliente, telefonoCliente: c.telefonoCliente || "", valorAbonado: String(c.valorAbonado || 0) });
     setLineas(c.lineas.length
       ? c.lineas.map((l: any) => ({ id: l.id, productoId: l.productoId, productoCodigo: l.productoCodigo, cantidad: String(l.cantidad), productoNombre: l.productoNombre, marca: l.productoMarca || "", precioVenta: String(l.precioVenta), precioCompra: String(l.precioCompra || 0), valorAbonado: l.valorAbonado }))
       : [{ id: -Date.now(), cantidad: "1", productoNombre: "", marca: "", precioVenta: "", precioCompra: "0" }]);
@@ -96,8 +84,7 @@ export default function Creditos() {
 
   const handleGuardar = () => {
     const errors: string[] = [];
-    if (!form.concepto.trim()) errors.push("El concepto / No. Remisión es obligatorio");
-    if (!form.nombreCliente.trim()) errors.push("El nombre del cliente es obligatorio");
+    if (!form.nombreCliente.trim()) errors.push("El nombre es obligatorio");
     if (!form.fechaFactura) errors.push("La fecha es obligatoria");
     if (totalLineas <= 0) errors.push("Agrega al menos un producto con precio");
     if (errors.length) { setFormErrors(errors); return; }
@@ -123,9 +110,9 @@ export default function Creditos() {
       });
 
     const data = {
-      tipo: TIPO, concepto: form.concepto.trim(),
-      fechaFactura: form.fechaFactura, placaVehiculo: form.placaVehiculo || undefined,
-      nombreCliente: form.nombreCliente, telefonoCliente: form.telefonoCliente || undefined,
+      tipo: TIPO,
+      fechaFactura: form.fechaFactura, nombreCliente: form.nombreCliente,
+      telefonoCliente: form.telefonoCliente || undefined,
       valorCredito: totalLineas,
       valorAbonado: editingId ? parseFloat(form.valorAbonado) || 0 : initialAbono,
       lineas: payloadLineas,
@@ -159,37 +146,39 @@ export default function Creditos() {
     abonarMutation.mutate({ id: c.id, data: { valor: abonoNum, lineas: lineasAbono } }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
         setShowPay(null); setAbono(""); setLineasSeleccionadas([]);
       },
     });
   };
 
   const handleEliminar = (id: number) => {
-    if (confirm("¿Eliminar este crédito?")) {
+    if (confirm("¿Eliminar este registro?")) {
       eliminarMutation.mutate({ id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/creditos"] }) });
     }
   };
 
   const toggleExpandAbonos = (id: number) => {
-    setExpandedAbonos((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+    setExpandedAbonos((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   };
 
   const q = busqueda.toLowerCase();
   const allCreditos = useMemo(() => {
     if (!creditos) return [];
-    return creditos.filter((c) => !q || c.nombreCliente.toLowerCase().includes(q) || (c.concepto || "").toLowerCase().includes(q) || (c.placaVehiculo || "").toLowerCase().includes(q) || (c.telefonoCliente || "").includes(q));
+    return creditos.filter((c) => !q || c.nombreCliente.toLowerCase().includes(q) || (c.telefonoCliente || "").includes(q));
   }, [creditos, q]);
 
   const pendientes = allCreditos.filter((c) => c.valorRestante > 0);
   const pagados = allCreditos.filter((c) => c.valorRestante <= 0);
-  const totalDeben = pendientes.reduce((s, c) => s + c.valorRestante, 0);
 
   // Group pendientes by month
   const porMes = useMemo(() => {
     const map = new Map<string, typeof pendientes>();
     pendientes.forEach((c) => {
-      const mes = c.fechaFactura.slice(0, 7);
+      const mes = c.fechaFactura.slice(0, 7); // "2024-12"
       if (!map.has(mes)) map.set(mes, []);
       map.get(mes)!.push(c);
     });
@@ -202,29 +191,31 @@ export default function Creditos() {
       }));
   }, [pendientes]);
 
+  const totalDeben = pendientes.reduce((s, c) => s + c.valorRestante, 0);
+
   return (
     <Layout>
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl lg:text-3xl font-display font-bold text-foreground">Créditos</h1>
-            <p className="text-muted-foreground mt-1 text-sm">Gestión de créditos y cobros pendientes de clientes.</p>
+            <h1 className="text-2xl lg:text-3xl font-display font-bold text-foreground">Nos Debe</h1>
+            <p className="text-muted-foreground mt-1 text-sm">Registro de deudas internas — personas del mismo lugar de trabajo.</p>
           </div>
           <button onClick={openNew} className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg text-sm">
-            <Plus className="w-4 h-4" /> Nuevo Crédito
+            <Plus className="w-4 h-4" /> Nuevo Registro
           </button>
         </div>
 
         {totalDeben > 0 && (
           <div className="bg-destructive/10 border border-destructive/20 rounded-2xl px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-            <p className="text-sm font-medium text-destructive">Total que nos deben</p>
+            <p className="text-sm font-medium text-destructive">Total pendiente por cobrar</p>
             <p className="text-2xl font-display font-bold text-destructive">{formatCurrency(totalDeben)}</p>
           </div>
         )}
 
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input type="text" placeholder="Buscar por cliente, concepto, placa o teléfono..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+          <input type="text" placeholder="Buscar por nombre o teléfono..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
             className="w-full pl-9 pr-4 py-2.5 bg-card border border-border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
           {busqueda && <button onClick={() => setBusqueda("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>}
         </div>
@@ -233,71 +224,53 @@ export default function Creditos() {
         {showForm && (
           <div className="bg-card border border-border rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-top-4">
             <div className="px-6 py-4 border-b border-border bg-muted/50 flex justify-between items-center">
-              <h3 className="text-lg font-display font-bold">{editingId ? "Editar" : "Nuevo"} Crédito</h3>
+              <h3 className="text-lg font-display font-bold">{editingId ? "Editar" : "Nuevo"} Registro</h3>
               <button onClick={() => setShowForm(false)}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
             <div className="p-6 space-y-4">
               {formErrors.length > 0 && <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-3">{formErrors.map((e, i) => <p key={i} className="text-destructive text-sm">• {e}</p>)}</div>}
-
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Concepto / No. Remisión <span className="text-destructive">*</span></label>
-                  <input type="text" placeholder="Ej: R2568 03-AGOST" value={form.concepto} onChange={(e) => setForm({ ...form, concepto: e.target.value })}
-                    className="w-full bg-background border border-primary/30 px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm font-mono" />
-                  <p className="text-xs text-muted-foreground mt-1">Se usará como referencia en Ventas Diarias al registrar pagos.</p>
-                </div>
                 <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Cliente <span className="text-destructive">*</span></label>
-                  <input type="text" value={form.nombreCliente} onChange={(e) => setForm({ ...form, nombreCliente: e.target.value })}
-                    className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Nombre <span className="text-destructive">*</span></label>
+                  <input type="text" value={form.nombreCliente} onChange={(e) => setForm({ ...form, nombreCliente: e.target.value })} className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Fecha <span className="text-destructive">*</span></label>
-                  <input type="date" value={form.fechaFactura} onChange={(e) => setForm({ ...form, fechaFactura: e.target.value })}
-                    className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Placa Vehículo</label>
-                  <input type="text" value={form.placaVehiculo} onChange={(e) => setForm({ ...form, placaVehiculo: e.target.value })}
-                    className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+                  <input type="date" value={form.fechaFactura} onChange={(e) => setForm({ ...form, fechaFactura: e.target.value })} className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Teléfono</label>
-                  <input type="text" value={form.telefonoCliente} onChange={(e) => setForm({ ...form, telefonoCliente: e.target.value })}
-                    className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+                  <input type="text" value={form.telefonoCliente} onChange={(e) => setForm({ ...form, telefonoCliente: e.target.value })} className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
                 </div>
               </div>
 
               {/* Product lines */}
               <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-2">Productos</label>
+                <label className="block text-sm font-medium text-muted-foreground mb-2">Productos / Servicios</label>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[560px]">
+                  <table className="w-full text-sm min-w-[500px]">
                     <thead><tr className="bg-muted text-muted-foreground border-b border-border text-xs">
-                      <th className="px-3 py-2 font-medium">Producto</th>
+                      <th className="px-3 py-2 font-medium">Producto / Servicio</th>
                       <th className="px-3 py-2 font-medium w-16">Cant</th>
                       <th className="px-3 py-2 font-medium w-28">P. Compra</th>
                       <th className="px-3 py-2 font-medium w-28">P. Venta</th>
-                      <th className="px-3 py-2 font-medium w-24">Total</th>
+                      <th className="px-3 py-2 font-medium w-20">Total</th>
                       <th className="px-3 py-2 w-6"></th>
                     </tr></thead>
                     <tbody className="divide-y divide-border">
                       {lineas.map((linea) => (
                         <tr key={linea.id}>
                           <td className="px-3 py-2">
-                            <input type="text" placeholder="Nombre del producto..."
-                              value={linea.productoNombre}
-                              onChange={(e) => { updateLinea(linea.id, "productoNombre", e.target.value); handleProductoSelect(linea.id, e.target.value); }}
-                              list={`prod-list-cr-${linea.id}`}
+                            <input type="text" placeholder="Descripción..." value={linea.productoNombre}
+                              onChange={(e) => updateLinea(linea.id, "productoNombre", e.target.value)}
+                              list={`prod-list-nd-${linea.id}`}
                               className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" />
-                            <datalist id={`prod-list-cr-${linea.id}`}>
+                            <datalist id={`prod-list-nd-${linea.id}`}>
                               {productos?.map((p) => <option key={p.id} value={p.nombre} />)}
                             </datalist>
                           </td>
-                          <td className="px-3 py-2"><input type="number" min="1" step="0.01" value={linea.cantidad} onChange={(e) => updateLinea(linea.id, "cantidad", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-center" /></td>
-                          <td className="px-3 py-2">
-                            <input type="number" min="0" value={linea.precioCompra} onChange={(e) => updateLinea(linea.id, "precioCompra", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" placeholder="P.Compra" />
-                          </td>
+                          <td className="px-3 py-2"><input type="number" min="1" value={linea.cantidad} onChange={(e) => updateLinea(linea.id, "cantidad", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-center" /></td>
+                          <td className="px-3 py-2"><input type="number" min="0" value={linea.precioCompra} onChange={(e) => updateLinea(linea.id, "precioCompra", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" /></td>
                           <td className="px-3 py-2"><input type="number" min="0" value={linea.precioVenta} onChange={(e) => updateLinea(linea.id, "precioVenta", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" /></td>
                           <td className="px-3 py-2 text-xs font-bold text-primary">{formatCurrency((parseFloat(linea.cantidad) || 0) * (parseFloat(linea.precioVenta) || 0))}</td>
                           <td className="px-3 py-2"><button type="button" onClick={() => removeLinea(linea.id)} disabled={lineas.length === 1} className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-30"><X className="w-3.5 h-3.5" /></button></td>
@@ -305,7 +278,7 @@ export default function Creditos() {
                       ))}
                     </tbody>
                     <tfoot className="border-t border-border bg-muted/30">
-                      <tr><td colSpan={4} className="px-3 py-2 text-right text-xs font-medium text-muted-foreground uppercase">Total crédito</td>
+                      <tr><td colSpan={4} className="px-3 py-2 text-right text-xs font-medium text-muted-foreground uppercase">Total</td>
                         <td className="px-3 py-2 font-bold text-primary text-xs">{formatCurrency(totalLineas)}</td><td></td></tr>
                     </tfoot>
                   </table>
@@ -330,10 +303,10 @@ export default function Creditos() {
 
         {/* Pendientes grouped by month */}
         {isLoading ? (
-          <div className="text-center py-8 text-muted-foreground text-sm">Cargando créditos...</div>
+          <div className="text-center py-8 text-muted-foreground text-sm">Cargando...</div>
         ) : pendientes.length === 0 ? (
           <div className="text-center py-12 bg-card rounded-2xl border border-border">
-            <p className="text-muted-foreground text-sm">{busqueda ? "Sin resultados para esa búsqueda." : "No hay créditos pendientes. ✓"}</p>
+            <p className="text-muted-foreground text-sm">{busqueda ? "Sin resultados." : "No hay registros pendientes. ✓"}</p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -346,11 +319,10 @@ export default function Creditos() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
                   {items.map((c) => (
                     <div key={c.id} className="bg-card border border-destructive/30 rounded-2xl p-5 shadow-md flex flex-col">
-                      <div className="flex justify-between items-start mb-2">
+                      <div className="flex justify-between items-start mb-3">
                         <div className="min-w-0">
                           <h3 className="font-bold text-foreground truncate">{c.nombreCliente}</h3>
-                          {c.concepto && <p className="text-xs font-mono text-primary">{c.concepto}</p>}
-                          <p className="text-xs text-muted-foreground">{new Date(c.fechaFactura + "T12:00:00").toLocaleDateString("es-CO")}{c.placaVehiculo ? ` · ${c.placaVehiculo}` : ""}</p>
+                          <p className="text-xs text-muted-foreground">{new Date(c.fechaFactura + "T12:00:00").toLocaleDateString("es-CO")}</p>
                         </div>
                         <div className="flex gap-1.5 flex-shrink-0 ml-2">
                           <button onClick={() => openEdit(c)} className="p-1 text-muted-foreground hover:text-primary rounded-lg"><Pencil className="w-3.5 h-3.5" /></button>
@@ -359,7 +331,8 @@ export default function Creditos() {
                       </div>
 
                       <div className="text-sm space-y-1 flex-1">
-                        <div className="flex justify-between border-t border-border/50 pt-1.5 mt-1">
+                        {c.telefonoCliente && <p className="text-xs text-muted-foreground">Tel: {c.telefonoCliente}</p>}
+                        <div className="flex justify-between border-t border-border/50 pt-1.5 mt-2">
                           <span className="text-xs text-muted-foreground">Total:</span>
                           <span className="text-xs font-medium">{formatCurrency(c.valorCredito)}</span>
                         </div>
@@ -373,20 +346,6 @@ export default function Creditos() {
                         </div>
                       </div>
 
-                      {/* Product lines */}
-                      {c.lineas.length > 0 && (
-                        <div className="mt-3 bg-background rounded-lg border border-border/50 p-2.5 space-y-1">
-                          {c.lineas.map((l: any) => (
-                            <div key={l.id} className="flex items-center justify-between text-xs gap-2">
-                              <span className="truncate text-foreground">{l.cantidad} × {l.productoNombre}</span>
-                              <span className={`shrink-0 ${l.valorRestante <= 0 ? "text-green-500" : "text-muted-foreground"}`}>
-                                {l.valorRestante <= 0 ? "✓ Pagado" : formatCurrency(l.valorRestante)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
                       {/* Payment history */}
                       {c.abonos && c.abonos.length > 0 && (
                         <div className="mt-3">
@@ -397,7 +356,7 @@ export default function Creditos() {
                           </button>
                           {expandedAbonos.has(c.id) && (
                             <div className="mt-2 space-y-1 animate-in fade-in">
-                              {c.abonos.map((a: any) => (
+                              {c.abonos.map((a) => (
                                 <div key={a.id} className="flex justify-between items-center text-xs bg-muted/30 px-2 py-1 rounded-lg">
                                   <span className="text-muted-foreground">{new Date(a.fecha + "T12:00:00").toLocaleDateString("es-CO")}</span>
                                   <span className="font-medium text-green-500">+{formatCurrency(a.valorTotal)}</span>
@@ -408,32 +367,30 @@ export default function Creditos() {
                         </div>
                       )}
 
-                      {/* Abono section */}
                       {showPay === c.id ? (
                         <div className="bg-background rounded-xl p-3 border border-border mt-3 animate-in fade-in">
                           <h4 className="text-xs font-semibold mb-2 text-foreground">Registrar Abono</h4>
                           <input type="number" placeholder={`Máx ${formatCurrency(c.valorRestante)}`} value={abono}
                             onChange={(e) => setAbono(e.target.value)}
                             className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm mb-2 focus:ring-1 focus:ring-primary outline-none" />
-                          <p className="text-[10px] text-muted-foreground mb-2">Selecciona el/los producto(s) a pagar:</p>
-                          {c.lineas.length > 0 ? c.lineas.map((l: any) => (
-                            <label key={l.id} className="flex items-center justify-between gap-2 text-xs cursor-pointer py-1 border-b border-border/30 last:border-0">
-                              <span className="flex items-center gap-1.5">
-                                <input type="checkbox" checked={lineasSeleccionadas.includes(l.id)} disabled={l.valorRestante <= 0}
-                                  onChange={() => setLineasSeleccionadas((prev) => prev.includes(l.id) ? prev.filter((id) => id !== l.id) : [...prev, l.id])}
-                                  className="w-3.5 h-3.5 accent-primary" />
-                                <span className="truncate">{l.cantidad} × {l.productoNombre}</span>
-                              </span>
-                              <span className={`shrink-0 text-xs ${l.valorRestante <= 0 ? "text-green-500" : "text-muted-foreground"}`}>
-                                {l.valorRestante <= 0 ? "Pagado" : formatCurrency(l.valorRestante)}
-                              </span>
-                            </label>
-                          )) : <p className="text-xs text-muted-foreground">Edita el crédito para agregar productos.</p>}
-                          <div className="flex gap-2 mt-3">
+                          {c.lineas.length > 0 && (
+                            <div className="space-y-1 mb-2">
+                              {c.lineas.map((l: any) => (
+                                <label key={l.id} className="flex items-center justify-between gap-2 text-xs cursor-pointer">
+                                  <span className="flex items-center gap-1.5">
+                                    <input type="checkbox" checked={lineasSeleccionadas.includes(l.id)} disabled={l.valorRestante <= 0}
+                                      onChange={() => setLineasSeleccionadas((prev) => prev.includes(l.id) ? prev.filter((id) => id !== l.id) : [...prev, l.id])}
+                                      className="w-3.5 h-3.5 accent-primary" />
+                                    <span className="truncate">{l.productoNombre}</span>
+                                  </span>
+                                  <span className="text-muted-foreground shrink-0">{formatCurrency(l.valorRestante)}</span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex gap-2">
                             <button onClick={() => setShowPay(null)} className="flex-1 py-1.5 bg-muted text-foreground rounded-lg text-xs font-medium">Cancelar</button>
-                            <button onClick={() => handleAbono(c)} disabled={abonarMutation.isPending} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium">
-                              {abonarMutation.isPending ? "..." : "Confirmar Pago"}
-                            </button>
+                            <button onClick={() => handleAbono(c)} disabled={abonarMutation.isPending} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium">Confirmar</button>
                           </div>
                         </div>
                       ) : (
@@ -455,31 +412,29 @@ export default function Creditos() {
           <div>
             <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
-              Pagados al 100% ({pagados.length})
+              Saldados ({pagados.length})
             </h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
               {pagados.map((c) => (
                 <div key={c.id} className="bg-card border border-green-500/30 rounded-xl p-4 flex flex-col gap-2">
                   <div className="flex justify-between items-start">
                     <div><p className="font-medium text-foreground">{c.nombreCliente}</p>
-                      {c.concepto && <p className="text-xs font-mono text-muted-foreground">{c.concepto}</p>}
                       <p className="text-xs text-muted-foreground">{new Date(c.fechaFactura + "T12:00:00").toLocaleDateString("es-CO")} · {formatCurrency(c.valorCredito)}</p>
                     </div>
-                    <div className="flex gap-1 flex-shrink-0 items-center">
-                      <span className="text-xs text-green-500 font-bold bg-green-500/10 px-2 py-0.5 rounded-full">Pagado ✓</span>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <span className="text-xs text-green-500 font-bold bg-green-500/10 px-2 py-0.5 rounded-full">Saldado ✓</span>
                       <button onClick={() => openEdit(c)} className="p-1 text-muted-foreground hover:text-primary rounded"><Pencil className="w-3.5 h-3.5" /></button>
                       <button onClick={() => handleEliminar(c.id)} className="p-1 text-muted-foreground hover:text-destructive rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   </div>
                   {c.abonos && c.abonos.length > 0 && (
-                    <div className="space-y-0.5">
-                      {c.abonos.slice(0, 3).map((a: any) => (
+                    <div className="mt-1 space-y-0.5">
+                      {c.abonos.slice(0, 3).map((a) => (
                         <div key={a.id} className="flex justify-between text-xs text-muted-foreground">
                           <span>{new Date(a.fecha + "T12:00:00").toLocaleDateString("es-CO")}</span>
                           <span className="text-green-500">+{formatCurrency(a.valorTotal)}</span>
                         </div>
                       ))}
-                      {c.abonos.length > 3 && <p className="text-xs text-muted-foreground italic">+{c.abonos.length - 3} más</p>}
                     </div>
                   )}
                 </div>

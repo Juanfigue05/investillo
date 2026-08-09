@@ -366,8 +366,17 @@ export const EliminarVentaResponse = zod.object({
 /**
  * @summary Obtener todos los creditos
  */
+export const GetCreditosQueryParams = zod.object({
+  tipo: zod.enum(["credito", "nosdebe"]).optional(),
+});
+
 export const GetCreditosResponseItem = zod.object({
   id: zod.number(),
+  tipo: zod.string().describe("'credito' | 'nosdebe'"),
+  concepto: zod
+    .string()
+    .nullish()
+    .describe("No. Remision \/ referencia del credito"),
   fechaFactura: zod.coerce.date(),
   placaVehiculo: zod.string().nullish(),
   nombreCliente: zod.string(),
@@ -387,8 +396,19 @@ export const GetCreditosResponseItem = zod.object({
       productoCodigo: zod.string().nullish(),
       productoMarca: zod.string().nullish(),
       precioVenta: zod.number(),
+      precioCompra: zod.number(),
       valorAbonado: zod.number(),
       valorRestante: zod.number(),
+    }),
+  ),
+  abonos: zod.array(
+    zod.object({
+      id: zod.number(),
+      creditoId: zod.number(),
+      fecha: zod.coerce.date(),
+      valorTotal: zod.number(),
+      notas: zod.string().nullish(),
+      creadoEn: zod.coerce.date().optional(),
     }),
   ),
 });
@@ -398,6 +418,8 @@ export const GetCreditosResponse = zod.array(GetCreditosResponseItem);
  * @summary Crear credito de cliente
  */
 export const CrearCreditoBody = zod.object({
+  tipo: zod.string().optional(),
+  concepto: zod.string().nullish(),
   fechaFactura: zod.coerce.date(),
   placaVehiculo: zod.string().nullish(),
   nombreCliente: zod.string(),
@@ -414,6 +436,7 @@ export const CrearCreditoBody = zod.object({
       productoCodigo: zod.string().nullish(),
       productoMarca: zod.string().nullish(),
       precioVenta: zod.number(),
+      precioCompra: zod.number(),
       valorAbonado: zod.number().optional(),
     }),
   ),
@@ -438,6 +461,11 @@ export const AbonarCreditoBody = zod.object({
 
 export const AbonarCreditoResponse = zod.object({
   id: zod.number(),
+  tipo: zod.string().describe("'credito' | 'nosdebe'"),
+  concepto: zod
+    .string()
+    .nullish()
+    .describe("No. Remision \/ referencia del credito"),
   fechaFactura: zod.coerce.date(),
   placaVehiculo: zod.string().nullish(),
   nombreCliente: zod.string(),
@@ -457,8 +485,19 @@ export const AbonarCreditoResponse = zod.object({
       productoCodigo: zod.string().nullish(),
       productoMarca: zod.string().nullish(),
       precioVenta: zod.number(),
+      precioCompra: zod.number(),
       valorAbonado: zod.number(),
       valorRestante: zod.number(),
+    }),
+  ),
+  abonos: zod.array(
+    zod.object({
+      id: zod.number(),
+      creditoId: zod.number(),
+      fecha: zod.coerce.date(),
+      valorTotal: zod.number(),
+      notas: zod.string().nullish(),
+      creadoEn: zod.coerce.date().optional(),
     }),
   ),
 });
@@ -471,6 +510,8 @@ export const ActualizarCreditoParams = zod.object({
 });
 
 export const ActualizarCreditoBody = zod.object({
+  tipo: zod.string().optional(),
+  concepto: zod.string().nullish(),
   valorAbonado: zod.number().optional(),
   descripcion: zod.string().nullish(),
   nombreCliente: zod.string().optional(),
@@ -488,6 +529,7 @@ export const ActualizarCreditoBody = zod.object({
         productoCodigo: zod.string().nullish(),
         productoMarca: zod.string().nullish(),
         precioVenta: zod.number(),
+        precioCompra: zod.number(),
         valorAbonado: zod.number().optional(),
       }),
     )
@@ -496,6 +538,11 @@ export const ActualizarCreditoBody = zod.object({
 
 export const ActualizarCreditoResponse = zod.object({
   id: zod.number(),
+  tipo: zod.string().describe("'credito' | 'nosdebe'"),
+  concepto: zod
+    .string()
+    .nullish()
+    .describe("No. Remision \/ referencia del credito"),
   fechaFactura: zod.coerce.date(),
   placaVehiculo: zod.string().nullish(),
   nombreCliente: zod.string(),
@@ -515,8 +562,19 @@ export const ActualizarCreditoResponse = zod.object({
       productoCodigo: zod.string().nullish(),
       productoMarca: zod.string().nullish(),
       precioVenta: zod.number(),
+      precioCompra: zod.number(),
       valorAbonado: zod.number(),
       valorRestante: zod.number(),
+    }),
+  ),
+  abonos: zod.array(
+    zod.object({
+      id: zod.number(),
+      creditoId: zod.number(),
+      fecha: zod.coerce.date(),
+      valorTotal: zod.number(),
+      notas: zod.string().nullish(),
+      creadoEn: zod.coerce.date().optional(),
     }),
   ),
 });
@@ -783,6 +841,31 @@ export const GuardarNotasResponse = zod.object({
   contenido: zod.string(),
   actualizadoEn: zod.coerce.date().optional(),
 });
+
+/**
+ * @summary Obtener historial de precios de productos
+ */
+export const GetHistorialPreciosQueryParams = zod.object({
+  productoId: zod.coerce.number().optional(),
+});
+
+export const GetHistorialPreciosResponseItem = zod.object({
+  id: zod.number(),
+  productoId: zod.number(),
+  productoNombre: zod.string(),
+  productoCodigo: zod.string().nullish(),
+  precioCompra: zod.number(),
+  precioVenta: zod.number(),
+  fecha: zod.coerce.date(),
+  origen: zod.string(),
+  compraId: zod.number().nullish(),
+  proveedor: zod.string().nullish(),
+  actualizoPrecioInventario: zod.string().nullish(),
+  creadoEn: zod.coerce.date().optional(),
+});
+export const GetHistorialPreciosResponse = zod.array(
+  GetHistorialPreciosResponseItem,
+);
 
 /**
  * @summary Listar días guardados en el historial

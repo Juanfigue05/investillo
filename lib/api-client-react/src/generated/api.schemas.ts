@@ -131,12 +131,26 @@ export interface CreditoLinea {
   productoCodigo?: string | null;
   productoMarca?: string | null;
   precioVenta: number;
+  precioCompra: number;
   valorAbonado: number;
   valorRestante: number;
 }
 
+export interface AbonoCredito {
+  id: number;
+  creditoId: number;
+  fecha: string;
+  valorTotal: number;
+  notas?: string | null;
+  creadoEn?: string;
+}
+
 export interface Credito {
   id: number;
+  /** 'credito' | 'nosdebe' */
+  tipo: string;
+  /** No. Remision / referencia del credito */
+  concepto?: string | null;
   fechaFactura: string;
   placaVehiculo?: string | null;
   nombreCliente: string;
@@ -148,6 +162,7 @@ export interface Credito {
   creadoEn?: string;
   actualizadoEn?: string;
   lineas: CreditoLinea[];
+  abonos: AbonoCredito[];
 }
 
 export interface CreditoLineaInput {
@@ -158,10 +173,13 @@ export interface CreditoLineaInput {
   productoCodigo?: string | null;
   productoMarca?: string | null;
   precioVenta: number;
+  precioCompra: number;
   valorAbonado?: number;
 }
 
 export interface CreditoInput {
+  tipo?: string;
+  concepto?: string | null;
   fechaFactura: string;
   placaVehiculo?: string | null;
   nombreCliente: string;
@@ -173,6 +191,8 @@ export interface CreditoInput {
 }
 
 export interface CreditoUpdate {
+  tipo?: string;
+  concepto?: string | null;
   valorAbonado?: number;
   descripcion?: string | null;
   nombreCliente?: string;
@@ -191,6 +211,21 @@ export interface CreditoAbonoLineaInput {
 export interface CreditoAbonoInput {
   valor: number;
   lineas: CreditoAbonoLineaInput[];
+}
+
+export interface HistorialPrecio {
+  id: number;
+  productoId: number;
+  productoNombre: string;
+  productoCodigo?: string | null;
+  precioCompra: number;
+  precioVenta: number;
+  fecha: string;
+  origen: string;
+  compraId?: number | null;
+  proveedor?: string | null;
+  actualizoPrecioInventario?: string | null;
+  creadoEn?: string;
 }
 
 /**
@@ -364,6 +399,22 @@ export type GetVentasResumenParams = {
   hasta: string;
 };
 
+export type GetCreditosParams = {
+  tipo?: GetCreditosTipo;
+};
+
+export type GetCreditosTipo =
+  (typeof GetCreditosTipo)[keyof typeof GetCreditosTipo];
+
+export const GetCreditosTipo = {
+  credito: "credito",
+  nosdebe: "nosdebe",
+} as const;
+
 export type GetManoObraParams = {
   fecha?: string;
+};
+
+export type GetHistorialPreciosParams = {
+  productoId?: number;
 };

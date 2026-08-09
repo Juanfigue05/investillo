@@ -5,10 +5,15 @@
  * API specification para Sistema de Gestion
  * OpenAPI spec version: 0.1.0
  */
+import type { AbonoCredito } from "./abonoCredito";
 import type { CreditoLinea } from "./creditoLinea";
 
 export interface Credito {
   id: number;
+  /** 'credito' | 'nosdebe' */
+  tipo: string;
+  /** No. Remision / referencia del credito */
+  concepto?: string | null;
   fechaFactura: Date;
   placaVehiculo?: string | null;
   nombreCliente: string;
@@ -20,4 +25,5 @@ export interface Credito {
   creadoEn?: Date;
   actualizadoEn?: Date;
   lineas: CreditoLinea[];
+  abonos: AbonoCredito[];
 }

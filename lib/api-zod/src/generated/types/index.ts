@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./abonoCredito";
 export * from "./compra";
 export * from "./compraEstado";
 export * from "./compraInput";
@@ -22,6 +23,9 @@ export * from "./creditoUpdate";
 export * from "./dashboard";
 export * from "./distribucionTrabajador";
 export * from "./distribucionTrabajadorInput";
+export * from "./getCreditosParams";
+export * from "./getCreditosTipo";
+export * from "./getHistorialPreciosParams";
 export * from "./getManoObraParams";
 export * from "./getVentasParams";
 export * from "./getVentasResumenParams";
@@ -29,6 +33,7 @@ export * from "./healthStatus";
 export * from "./historialDia";
 export * from "./historialDiaInput";
 export * from "./historialDiaUpdate";
+export * from "./historialPrecio";
 export * from "./manoObra";
 export * from "./manoObraInput";
 export * from "./mensajeRespuesta";

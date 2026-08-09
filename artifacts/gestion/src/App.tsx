@@ -12,6 +12,8 @@ import Compras from "@/pages/compras";
 import ManoObra from "@/pages/mano-obra";
 import Facturacion from "@/pages/facturacion";
 import Historial from "@/pages/historial";
+import NosDebePage from "@/pages/nos-debe";
+import HistorialPrecios from "@/pages/historial-precios";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -27,6 +29,8 @@ function Router() {
       <Route path="/mano-obra" component={ManoObra} />
       <Route path="/facturacion" component={Facturacion} />
       <Route path="/historial" component={Historial} />
+      <Route path="/nos-debe" component={NosDebePage} />
+      <Route path="/historial-precios" component={HistorialPrecios} />
       <Route component={NotFound} />
     </Switch>
   );
