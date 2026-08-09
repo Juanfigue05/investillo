@@ -11,12 +11,14 @@ import {
   LogOut,
   HandCoins,
   TrendingUp,
+  Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inventario", label: "Inventario", icon: Package },
+  { href: "/cierre-diario", label: "Cierre Diario", icon: Calculator },
   { href: "/ventas", label: "Ventas Diarias", icon: ShoppingCart },
   { href: "/creditos", label: "Créditos", icon: CreditCard },
   { href: "/nos-debe", label: "Nos Debe", icon: HandCoins },

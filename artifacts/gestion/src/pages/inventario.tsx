@@ -307,9 +307,13 @@ export default function Inventario() {
                   <th className={thClass} onClick={() => handleSort("marca")}>
                     <span className="flex items-center gap-1">Marca <SortIcon col="marca" sortCol={sortCol} sortDir={sortDir} /></span>
                   </th>
+                  <th className={thClass} onClick={() => handleSort("stockActual")}>
+                    <span className="flex items-center gap-1">Stock <SortIcon col="stockActual" sortCol={sortCol} sortDir={sortDir} /></span>
+                  </th>
                   <th className={thClass} onClick={() => handleSort("tipo")}>
                     <span className="flex items-center gap-1">Tipo <SortIcon col="tipo" sortCol={sortCol} sortDir={sortDir} /></span>
                   </th>
+                  <th className="px-3 py-3 font-medium whitespace-nowrap text-xs lg:text-sm">Referencia</th>
                   <th className={thClass} onClick={() => handleSort("precioCompra")}>
                     <span className="flex items-center gap-1">P. Compra <SortIcon col="precioCompra" sortCol={sortCol} sortDir={sortDir} /></span>
                   </th>
@@ -317,10 +321,6 @@ export default function Inventario() {
                   <th className={`${thClass} text-primary`} onClick={() => handleSort("precioVentaConIva")}>
                     <span className="flex items-center gap-1">P. Venta c/IVA <SortIcon col="precioVentaConIva" sortCol={sortCol} sortDir={sortDir} /></span>
                   </th>
-                  <th className={thClass} onClick={() => handleSort("stockActual")}>
-                    <span className="flex items-center gap-1">Stock <SortIcon col="stockActual" sortCol={sortCol} sortDir={sortDir} /></span>
-                  </th>
-                  <th className="px-3 py-3 font-medium whitespace-nowrap text-xs lg:text-sm">Adicional</th>
                   <th className="px-3 py-3 font-medium text-right text-xs lg:text-sm">Acciones</th>
                 </tr>
               </thead>
@@ -335,10 +335,6 @@ export default function Inventario() {
                       <td className="px-3 py-3 text-foreground font-mono text-xs">{prod.codigo}</td>
                       <td className="px-3 py-3 text-foreground font-medium max-w-[180px] truncate">{prod.nombre}</td>
                       <td className="px-3 py-3 text-muted-foreground">{prod.marca || "—"}</td>
-                      <td className="px-3 py-3 text-muted-foreground">{(prod as any).tipo || "—"}</td>
-                      <td className="px-3 py-3 text-muted-foreground">{formatCurrency(prod.precioCompra)}</td>
-                      <td className="px-3 py-3 text-muted-foreground">{formatCurrency(prod.precioVentaSinIva)}</td>
-                      <td className="px-3 py-3 text-primary font-bold">{formatCurrency(prod.precioVentaConIva)}</td>
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-1.5">
                           <span className={prod.stockActual <= prod.stockMinimo ? "text-destructive font-bold" : "text-foreground"}>
@@ -349,9 +345,13 @@ export default function Inventario() {
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-muted-foreground text-xs max-w-[120px] truncate" title={(prod as any).adicional || ""}>
-                        {(prod as any).adicional || "—"}
+                      <td className="px-3 py-3 text-muted-foreground">{(prod as any).tipo || "—"}</td>
+                      <td className="px-3 py-3 text-muted-foreground text-xs max-w-[120px] truncate" title={prod.referencia || ""}>
+                        {prod.referencia || "—"}
                       </td>
+                      <td className="px-3 py-3 text-muted-foreground">{formatCurrency(prod.precioCompra)}</td>
+                      <td className="px-3 py-3 text-muted-foreground">{formatCurrency(prod.precioVentaSinIva)}</td>
+                      <td className="px-3 py-3 text-primary font-bold">{formatCurrency(prod.precioVentaConIva)}</td>
                       <td className="px-3 py-3 text-right">
                         <div className="flex justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button onClick={() => openEdit(prod)} className="p-1.5 text-muted-foreground hover:text-primary bg-muted rounded-lg transition-colors">
