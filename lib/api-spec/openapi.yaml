@@ -1568,7 +1568,10 @@ components:
           type: number
         noDeben:
           type: number
-          description: Total que nos deben en creditos pendientes
+          description: Total pendiente en creditos (tipo=credito)
+        totalNosDebe:
+          type: number
+          description: Total pendiente en Nos Debe (tipo=nosdebe)
         totalComprasRecibidas:
           type: number
           description: Suma total de compras recibidas (estado=llegado)
@@ -1584,6 +1587,7 @@ components:
         - totalVentasHoy
         - totalManoObraHoy
         - noDeben
+        - totalNosDebe
         - totalComprasRecibidas
         - productosAlerta
         - productosAgotados

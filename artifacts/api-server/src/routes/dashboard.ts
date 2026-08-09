@@ -12,9 +12,10 @@ function toNum(v: unknown): number {
 router.get("/", async (req, res) => {
   const today = new Date().toISOString().split("T")[0];
 
-  const [ventasHoy, creditos, productosAlerta, productosAgotados, comprasLlegadas] = await Promise.all([
+  const [ventasHoy, creditosRows, noDebeRows, productosAlerta, productosAgotados, comprasLlegadas] = await Promise.all([
     db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.fecha, today)),
-    db.select().from(creditosTable),
+    db.select().from(creditosTable).where(eq(creditosTable.tipo, "credito")),
+    db.select().from(creditosTable).where(eq(creditosTable.tipo, "nosdebe")),
     db.select().from(productosTable).where(lte(productosTable.stockActual, sql`${productosTable.stockMinimo} + 1`)),
     db.select().from(productosTable).where(lte(productosTable.stockActual, productosTable.stockMinimo)),
     db.select().from(comprasTable).where(eq(comprasTable.estado, "llegado")),
@@ -28,7 +29,12 @@ router.get("/", async (req, res) => {
     .filter(v => v.tipoLinea === "manoobra")
     .reduce((acc, v) => acc + toNum(v.precioVentaTotal), 0);
 
-  const noDeben = creditos.reduce((acc, c) => {
+  const noDeben = creditosRows.reduce((acc, c) => {
+    const restante = toNum(c.valorCredito) - toNum(c.valorAbonado);
+    return acc + (restante > 0 ? restante : 0);
+  }, 0);
+
+  const totalNosDebe = noDebeRows.reduce((acc, c) => {
     const restante = toNum(c.valorCredito) - toNum(c.valorAbonado);
     return acc + (restante > 0 ? restante : 0);
   }, 0);
@@ -43,6 +49,7 @@ router.get("/", async (req, res) => {
     totalVentasHoy,
     totalManoObraHoy,
     noDeben,
+    totalNosDebe,
     totalComprasRecibidas,
     productosAlerta: productosAlerta.length,
     productosAgotados: productosAgotados.length,

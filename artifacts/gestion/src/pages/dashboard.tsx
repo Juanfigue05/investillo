@@ -10,6 +10,7 @@ import {
   Activity,
   BarChart3,
   ShoppingCart,
+  HandCoins,
 } from "lucide-react";
 import {
   BarChart,
@@ -127,12 +128,20 @@ export default function Dashboard() {
       bg: "bg-yellow-500/10",
     },
     {
-      title: "Nos Deben",
+      title: "Créditos",
       value: formatCurrency(dashboard.noDeben),
-      subtitle: "En créditos activos",
+      subtitle: "Pendiente en créditos",
       icon: CreditCard,
       color: "text-blue-500",
       bg: "bg-blue-500/10",
+    },
+    {
+      title: "Nos Debe",
+      value: formatCurrency(dashboard.totalNosDebe),
+      subtitle: "Pendiente en Nos Debe",
+      icon: HandCoins,
+      color: "text-cyan-500",
+      bg: "bg-cyan-500/10",
     },
     {
       title: "Total Compras",
@@ -156,7 +165,7 @@ export default function Dashboard() {
     <Layout>
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
         {/* Stats Grid — responsive */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 lg:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 lg:gap-4">
           {statCards.map((stat, i) => {
             const Icon = stat.icon;
             return (
