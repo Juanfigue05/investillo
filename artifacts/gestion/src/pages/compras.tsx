@@ -64,8 +64,8 @@ export default function Compras() {
         data: {
           estado: "llegado",
           cantidadRecibida: parseFloat(llegadaForm.cantidad),
-          nuevoPrecioCompra: llegadaForm.nuevoPrecioCompra || undefined,
-          nuevoPrecioVentaSinIva: llegadaForm.nuevoPrecioVentaSinIva || undefined,
+          nuevoPrecioCompra: llegadaForm.nuevoPrecioCompra ? parseFloat(llegadaForm.nuevoPrecioCompra) : undefined,
+          nuevoPrecioVentaSinIva: llegadaForm.nuevoPrecioVentaSinIva ? parseFloat(llegadaForm.nuevoPrecioVentaSinIva) : undefined,
           tieneIva: llegadaForm.tieneIva,
           proveedor: llegadaForm.proveedor || undefined,
         },

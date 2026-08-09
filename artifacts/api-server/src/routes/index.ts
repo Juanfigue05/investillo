@@ -7,6 +7,7 @@ import comprasRouter from "./compras";
 import manoObraRouter from "./manoobra";
 import trabajadoresRouter from "./trabajadores";
 import notasRouter from "./notas";
+import historialRouter from "./historial";
 import dashboardRouter from "./dashboard";
 
 const router: IRouter = Router();
@@ -19,6 +20,7 @@ router.use("/compras", comprasRouter);
 router.use("/manoobra", manoObraRouter);
 router.use("/trabajadores", trabajadoresRouter);
 router.use("/notas", notasRouter);
+router.use("/historial", historialRouter);
 router.use("/dashboard", dashboardRouter);
 
 export default router;

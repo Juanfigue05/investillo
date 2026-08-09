@@ -19,4 +19,9 @@ export interface Compra {
   estado: CompraEstado;
   creadoEn?: Date;
   actualizadoEn?: Date;
+  cantidadRecibida?: number | null;
+  fechaLlegada?: string | null;
+  proveedor?: string | null;
+  precioCompraRegistrado?: number | null;
+  precioVentaRegistrado?: number | null;
 }

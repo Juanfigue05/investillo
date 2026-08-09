@@ -310,6 +310,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/Credito"
 
+  /creditos/{id}/abono:
+    post:
+      operationId: abonarCredito
+      tags: [creditos]
+      summary: Registrar un abono sobre productos seleccionados del credito
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreditoAbonoInput"
+      responses:
+        "200":
+          description: Credito abonado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credito"
+
   /creditos/{id}:
     put:
       operationId: actualizarCredito
@@ -594,6 +619,80 @@ paths:
               schema:
                 $ref: "#/components/schemas/Notas"
 
+  /historial:
+    get:
+      operationId: getHistorial
+      tags: [historial]
+      summary: Listar días guardados en el historial
+      responses:
+        "200":
+          description: Lista de días guardados
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HistorialDia"
+    post:
+      operationId: guardarDiaHistorial
+      tags: [historial]
+      summary: Guardar el día actual en el historial
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HistorialDiaInput"
+      responses:
+        "201":
+          description: Día guardado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistorialDia"
+
+  /historial/{id}:
+    put:
+      operationId: actualizarHistorial
+      tags: [historial]
+      summary: Editar notas de un día del historial (la fecha no cambia)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HistorialDiaUpdate"
+      responses:
+        "200":
+          description: Día actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistorialDia"
+    delete:
+      operationId: eliminarHistorial
+      tags: [historial]
+      summary: Eliminar un día del historial (no borra las ventas)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Eliminado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MensajeRespuesta"
+
   /dashboard:
     get:
       operationId: getDashboard
@@ -660,6 +759,21 @@ components:
         actualizadoEn:
           type: string
           format: date-time
+        cantidadRecibida:
+          type: number
+          nullable: true
+        fechaLlegada:
+          type: string
+          nullable: true
+        proveedor:
+          type: string
+          nullable: true
+        precioCompraRegistrado:
+          type: number
+          nullable: true
+        precioVentaRegistrado:
+          type: number
+          nullable: true
       required:
         - id
         - nombre
@@ -849,6 +963,10 @@ components:
         actualizadoEn:
           type: string
           format: date-time
+        lineas:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditoLinea"
       required:
         - id
         - fechaFactura
@@ -856,6 +974,7 @@ components:
         - valorCredito
         - valorAbonado
         - valorRestante
+        - lineas
 
     CreditoInput:
       type: object
@@ -878,11 +997,16 @@ components:
           type: number
         valorAbonado:
           type: number
+        lineas:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditoLineaInput"
       required:
         - fechaFactura
         - nombreCliente
         - valorCredito
         - valorAbonado
+        - lineas
 
     CreditoUpdate:
       type: object
@@ -905,8 +1029,94 @@ components:
           format: date
         valorCredito:
           type: number
+        lineas:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditoLineaInput"
+
+    CreditoLinea:
+      type: object
+      properties:
+        id:
+          type: integer
+        productoId:
+          type: integer
+          nullable: true
+        cantidad:
+          type: number
+        productoNombre:
+          type: string
+        productoCodigo:
+          type: string
+          nullable: true
+        productoMarca:
+          type: string
+          nullable: true
+        precioVenta:
+          type: number
+        valorAbonado:
+          type: number
+        valorRestante:
+          type: number
       required:
+        - id
+        - cantidad
+        - productoNombre
+        - precioVenta
         - valorAbonado
+        - valorRestante
+
+    CreditoLineaInput:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: true
+        productoId:
+          type: integer
+          nullable: true
+        cantidad:
+          type: number
+        productoNombre:
+          type: string
+        productoCodigo:
+          type: string
+          nullable: true
+        productoMarca:
+          type: string
+          nullable: true
+        precioVenta:
+          type: number
+        valorAbonado:
+          type: number
+      required:
+        - cantidad
+        - productoNombre
+        - precioVenta
+
+    CreditoAbonoLineaInput:
+      type: object
+      properties:
+        lineaId:
+          type: integer
+        valor:
+          type: number
+      required:
+        - lineaId
+        - valor
+
+    CreditoAbonoInput:
+      type: object
+      properties:
+        valor:
+          type: number
+        lineas:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditoAbonoLineaInput"
+      required:
+        - valor
+        - lineas
 
     Compra:
       type: object
@@ -936,6 +1146,21 @@ components:
         actualizadoEn:
           type: string
           format: date-time
+        cantidadRecibida:
+          type: number
+          nullable: true
+        fechaLlegada:
+          type: string
+          nullable: true
+        proveedor:
+          type: string
+          nullable: true
+        precioCompraRegistrado:
+          type: number
+          nullable: true
+        precioVentaRegistrado:
+          type: number
+          nullable: true
       required:
         - id
         - productoId
@@ -973,6 +1198,9 @@ components:
           nullable: true
         tieneIva:
           type: boolean
+          nullable: true
+        proveedor:
+          type: string
           nullable: true
       required:
         - estado
@@ -1134,6 +1362,49 @@ components:
           type: string
       required:
         - contenido
+
+    HistorialDia:
+      type: object
+      properties:
+        id:
+          type: integer
+        fecha:
+          type: string
+          format: date
+        notas:
+          type: string
+          nullable: true
+        guardadoEn:
+          type: string
+          format: date-time
+        ventas:
+          type: array
+          items:
+            $ref: "#/components/schemas/VentaDiaria"
+      required:
+        - id
+        - fecha
+        - guardadoEn
+        - ventas
+
+    HistorialDiaInput:
+      type: object
+      properties:
+        fecha:
+          type: string
+          format: date
+        notas:
+          type: string
+          nullable: true
+      required:
+        - fecha
+
+    HistorialDiaUpdate:
+      type: object
+      properties:
+        notas:
+          type: string
+          nullable: true
 
     VentaResumenDia:
       type: object

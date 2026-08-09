@@ -29,19 +29,47 @@ export default function ManoObra() {
     trabajadoresIds: [] as number[],
   });
 
+  // Manual per-worker values: { [trabajadorId]: "valor_string" }
+  const [trabajadorValores, setTrabajadorValores] = useState<Record<number, string>>({});
+
   const [editingTrab, setEditingTrab] = useState<number | null>(null);
   const [editNombre, setEditNombre] = useState("");
   const [showAddTrab, setShowAddTrab] = useState(false);
   const [newTrabNombre, setNewTrabNombre] = useState("");
 
-  const toggleTrabajador = (id: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      trabajadoresIds: prev.trabajadoresIds.includes(id)
-        ? prev.trabajadoresIds.filter((t) => t !== id)
-        : [...prev.trabajadoresIds, id],
-    }));
+  // Recalculate equal share when total changes and workers are selected
+  const redistributeEqually = (ids: number[], total: string) => {
+    const valor = parseFloat(total) || 0;
+    if (ids.length === 0 || valor === 0) return {};
+    const n = ids.length;
+    const base = Math.floor(valor / n);
+    const resto = valor - base * n;
+    const result: Record<number, string> = {};
+    ids.forEach((id, i) => { result[id] = String(i === n - 1 ? base + resto : base); });
+    return result;
   };
+
+  const toggleTrabajador = (id: number) => {
+    setFormData((prev) => {
+      const newIds = prev.trabajadoresIds.includes(id)
+        ? prev.trabajadoresIds.filter((t) => t !== id)
+        : [...prev.trabajadoresIds, id];
+      // Redistribute equally whenever selection changes
+      setTrabajadorValores(redistributeEqually(newIds, prev.valorTotal));
+      return { ...prev, trabajadoresIds: newIds };
+    });
+  };
+
+  const handleValorTotalChange = (val: string) => {
+    setFormData((prev) => ({ ...prev, valorTotal: val }));
+    if (formData.trabajadoresIds.length > 0) {
+      setTrabajadorValores(redistributeEqually(formData.trabajadoresIds, val));
+    }
+  };
+
+  const sumDistribucion = formData.trabajadoresIds.reduce((sum, id) => sum + (parseFloat(trabajadorValores[id] || "0") || 0), 0);
+  const totalValor = parseFloat(formData.valorTotal) || 0;
+  const sumDiffers = Math.abs(sumDistribucion - totalValor) > 1;
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,31 +78,24 @@ export default function ManoObra() {
       alert("Llene la descripción, el valor y seleccione al menos un trabajador.");
       return;
     }
+    if (sumDiffers) {
+      alert(`La suma de los valores individuales (${formatCurrency(sumDistribucion)}) no coincide con el total (${formatCurrency(valor)}). Ajusta los valores.`);
+      return;
+    }
 
-    const n = formData.trabajadoresIds.length;
-    const base = Math.floor(valor / n);
-    const resto = valor - base * n;
-
-    const distribuciones = formData.trabajadoresIds.map((id, index) => {
+    const distribuciones = formData.trabajadoresIds.map((id) => {
       const t = trabajadores?.find((w) => w.id === id);
       return {
         trabajadorId: id,
         trabajadorNombre: t?.nombre || `Trabajador ${id}`,
-        valor: index === n - 1 ? base + resto : base,
+        valor: parseFloat(trabajadorValores[id] || "0") || 0,
         descuentoSeguro: 0,
         descuentoOtros: 0,
       };
     });
 
     crearMutation.mutate(
-      {
-        data: {
-          fecha: new Date().toISOString().split("T")[0],
-          descripcion: formData.descripcion,
-          valorTotal: valor,
-          distribuciones,
-        },
-      },
+      { data: { fecha: new Date().toISOString().split("T")[0], descripcion: formData.descripcion, valorTotal: valor, distribuciones } },
       {
         onSuccess: () => {
           crearVentaMutation.mutate(
@@ -85,12 +106,8 @@ export default function ManoObra() {
                 tipoLinea: "manoobra",
                 productoNombre: "Mano de Obra",
                 productoMarca: distribuciones.map((d) => d.trabajadorNombre).join(", "),
-                cantidad: 1,
-                precioCompraUnidad: 0,
-                precioVentaUnidad: valor,
-                precioVentaTotal: valor,
-                beneficio: valor,
-                descripcion: formData.descripcion,
+                cantidad: 1, precioCompraUnidad: 0, precioVentaUnidad: valor, precioVentaTotal: valor, beneficio: valor,
+                descripcion: distribuciones.map((d) => `${d.trabajadorNombre}: ${formatCurrency(d.valor)}`).join(" | "),
               },
             },
             {
@@ -99,6 +116,7 @@ export default function ManoObra() {
                 queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
                 setShowForm(false);
                 setFormData({ descripcion: "", valorTotal: "", trabajadoresIds: [] });
+                setTrabajadorValores({});
               },
             }
           );
@@ -115,7 +133,7 @@ export default function ManoObra() {
   const handleSaveTrab = (id: number) => {
     if (!editNombre.trim()) return;
     actualizarTrabMutation.mutate(
-      { id, data: { nombre: editNombre.trim() } },
+      { id, data: { nombre: editNombre.trim(), descuentoSeguro: 0, descuentoOtros: 0 } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["/api/trabajadores"] });
@@ -128,7 +146,7 @@ export default function ManoObra() {
   const handleAddTrab = () => {
     if (!newTrabNombre.trim()) return;
     crearTrabMutation.mutate(
-      { data: { nombre: newTrabNombre.trim() } },
+      { data: { nombre: newTrabNombre.trim(), descuentoSeguro: 0, descuentoOtros: 0 } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["/api/trabajadores"] });
@@ -156,7 +174,7 @@ export default function ManoObra() {
           </button>
         </div>
 
-        {/* ── 1. WORKERS MANAGEMENT (FIRST) ── */}
+        {/* Workers management */}
         <div className="bg-card border border-border rounded-2xl p-6 shadow-xl">
           <div className="flex justify-between items-center mb-5">
             <div className="flex items-center gap-3">
@@ -175,27 +193,13 @@ export default function ManoObra() {
           {showAddTrab && (
             <div className="flex gap-3 mb-5 animate-in fade-in slide-in-from-top-2">
               <input
-                autoFocus
-                type="text"
-                placeholder="Nombre del nuevo trabajador"
-                value={newTrabNombre}
-                onChange={(e) => setNewTrabNombre(e.target.value)}
+                autoFocus type="text" placeholder="Nombre del nuevo trabajador"
+                value={newTrabNombre} onChange={(e) => setNewTrabNombre(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddTrab()}
                 className="flex-1 bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
               />
-              <button
-                onClick={handleAddTrab}
-                disabled={crearTrabMutation.isPending}
-                className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors text-sm"
-              >
-                Guardar
-              </button>
-              <button
-                onClick={() => setShowAddTrab(false)}
-                className="px-4 py-2.5 bg-muted text-foreground rounded-xl font-medium hover:bg-muted/80 transition-colors text-sm border border-border"
-              >
-                Cancelar
-              </button>
+              <button onClick={handleAddTrab} disabled={crearTrabMutation.isPending} className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors text-sm">Guardar</button>
+              <button onClick={() => setShowAddTrab(false)} className="px-4 py-2.5 bg-muted text-foreground rounded-xl font-medium hover:bg-muted/80 transition-colors text-sm border border-border">Cancelar</button>
             </div>
           )}
 
@@ -208,14 +212,9 @@ export default function ManoObra() {
                 <div className="flex-1 min-w-0">
                   {editingTrab === t.id ? (
                     <input
-                      autoFocus
-                      type="text"
-                      value={editNombre}
+                      autoFocus type="text" value={editNombre}
                       onChange={(e) => setEditNombre(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleSaveTrab(t.id);
-                        if (e.key === "Escape") setEditingTrab(null);
-                      }}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleSaveTrab(t.id); if (e.key === "Escape") setEditingTrab(null); }}
                       className="w-full bg-card border border-primary px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
                     />
                   ) : (
@@ -228,17 +227,11 @@ export default function ManoObra() {
                 <div className="flex-shrink-0 flex gap-1">
                   {editingTrab === t.id ? (
                     <>
-                      <button onClick={() => handleSaveTrab(t.id)} disabled={actualizarTrabMutation.isPending} className="p-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors">
-                        <Check className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => setEditingTrab(null)} className="p-1.5 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors">
-                        <X className="w-4 h-4" />
-                      </button>
+                      <button onClick={() => handleSaveTrab(t.id)} disabled={actualizarTrabMutation.isPending} className="p-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors"><Check className="w-4 h-4" /></button>
+                      <button onClick={() => setEditingTrab(null)} className="p-1.5 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors"><X className="w-4 h-4" /></button>
                     </>
                   ) : (
-                    <button onClick={() => handleStartEdit(t)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                      <Pencil className="w-4 h-4" />
-                    </button>
+                    <button onClick={() => handleStartEdit(t)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"><Pencil className="w-4 h-4" /></button>
                   )}
                 </div>
               </div>
@@ -246,23 +239,19 @@ export default function ManoObra() {
           </div>
         </div>
 
-        {/* ── 2. SERVICE FORM ── */}
+        {/* Service form */}
         {showForm && (
           <div className="bg-card border border-border p-6 rounded-2xl shadow-xl animate-in fade-in slide-in-from-top-4">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-display font-bold text-foreground">Nuevo Registro de Mano de Obra</h3>
-              <button onClick={() => setShowForm(false)} className="p-2 hover:bg-muted rounded-lg text-muted-foreground">
-                <X className="w-4 h-4" />
-              </button>
+              <button onClick={() => setShowForm(false)} className="p-2 hover:bg-muted rounded-lg text-muted-foreground"><X className="w-4 h-4" /></button>
             </div>
             <form onSubmit={handleSave} className="space-y-5">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Descripción del Servicio</label>
                   <input
-                    required
-                    type="text"
-                    value={formData.descripcion}
+                    required type="text" value={formData.descripcion}
                     onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
                     placeholder="Ej: Cambio de pastillas"
                     className="w-full bg-background border border-border px-4 py-3 rounded-xl focus:ring-2 focus:ring-primary outline-none"
@@ -271,25 +260,21 @@ export default function ManoObra() {
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Valor Cobrado Total ($)</label>
                   <input
-                    required
-                    type="number"
-                    value={formData.valorTotal}
-                    onChange={(e) => setFormData({ ...formData, valorTotal: e.target.value })}
+                    required type="number" value={formData.valorTotal}
+                    onChange={(e) => handleValorTotalChange(e.target.value)}
                     placeholder="50000"
                     className="w-full bg-background border border-border px-4 py-3 rounded-xl focus:ring-2 focus:ring-primary outline-none"
                   />
                 </div>
               </div>
+
+              {/* Worker selection with manual values */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-3">
                   Trabajadores involucrados
-                  {formData.trabajadoresIds.length > 0 && formData.valorTotal && (
-                    <span className="ml-2 text-primary">
-                      → {formatCurrency(Math.floor(parseFloat(formData.valorTotal) / formData.trabajadoresIds.length))} c/u
-                    </span>
-                  )}
+                  <span className="ml-2 text-xs text-muted-foreground">(selecciona y ajusta el valor de cada uno)</span>
                 </label>
-                <div className="flex flex-wrap gap-3">
+                <div className="flex flex-wrap gap-3 mb-4">
                   {trabajadores?.map((t) => (
                     <button
                       key={t.id}
@@ -305,12 +290,47 @@ export default function ManoObra() {
                     </button>
                   ))}
                 </div>
+
+                {/* Individual value inputs */}
+                {formData.trabajadoresIds.length > 0 && (
+                  <div className="bg-background rounded-xl border border-border divide-y divide-border overflow-hidden">
+                    {formData.trabajadoresIds.map((id) => {
+                      const t = trabajadores?.find((w) => w.id === id);
+                      return (
+                        <div key={id} className="flex items-center gap-4 px-4 py-3">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm flex-shrink-0">
+                            {(t?.nombre || "?").charAt(0).toUpperCase()}
+                          </div>
+                          <span className="flex-1 text-sm font-medium text-foreground">{t?.nombre || `Trabajador ${id}`}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">$</span>
+                            <input
+                              type="number"
+                              value={trabajadorValores[id] || ""}
+                              onChange={(e) => setTrabajadorValores((prev) => ({ ...prev, [id]: e.target.value }))}
+                              className="w-32 bg-card border border-border px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-right"
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {/* Sum row */}
+                    <div className={`flex items-center justify-between px-4 py-2 ${sumDiffers ? "bg-destructive/10" : "bg-green-500/5"}`}>
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Suma distribuida</span>
+                      <span className={`text-sm font-bold ${sumDiffers ? "text-destructive" : "text-green-500"}`}>
+                        {formatCurrency(sumDistribucion)} {sumDiffers ? `(faltan ${formatCurrency(totalValor - sumDistribucion)})` : "✓"}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
+
               <div className="flex justify-end pt-4 border-t border-border">
                 <button
                   type="submit"
-                  disabled={crearMutation.isPending || crearVentaMutation.isPending}
-                  className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all"
+                  disabled={crearMutation.isPending || crearVentaMutation.isPending || sumDiffers}
+                  className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all disabled:opacity-50"
                 >
                   <Save className="w-5 h-5" />
                   Guardar y Enviar a Ventas
@@ -320,7 +340,7 @@ export default function ManoObra() {
           </div>
         )}
 
-        {/* ── 3. HISTORY TABLE (SECOND) ── */}
+        {/* History table */}
         <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl">
           <div className="px-6 py-4 border-b border-border flex items-center gap-2">
             <Wrench className="w-4 h-4 text-primary" />

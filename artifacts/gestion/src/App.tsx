@@ -11,6 +11,7 @@ import Creditos from "@/pages/creditos";
 import Compras from "@/pages/compras";
 import ManoObra from "@/pages/mano-obra";
 import Facturacion from "@/pages/facturacion";
+import Historial from "@/pages/historial";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -25,6 +26,7 @@ function Router() {
       <Route path="/compras" component={Compras} />
       <Route path="/mano-obra" component={ManoObra} />
       <Route path="/facturacion" component={Facturacion} />
+      <Route path="/historial" component={Historial} />
       <Route component={NotFound} />
     </Switch>
   );

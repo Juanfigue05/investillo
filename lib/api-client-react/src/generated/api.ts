@@ -21,6 +21,7 @@ import type {
   CompraInput,
   CompraUpdate,
   Credito,
+  CreditoAbonoInput,
   CreditoInput,
   CreditoUpdate,
   Dashboard,
@@ -28,6 +29,9 @@ import type {
   GetVentasParams,
   GetVentasResumenParams,
   HealthStatus,
+  HistorialDia,
+  HistorialDiaInput,
+  HistorialDiaUpdate,
   ManoObra,
   ManoObraInput,
   MensajeRespuesta,
@@ -1318,6 +1322,93 @@ export const useCrearCredito = <
 };
 
 /**
+ * @summary Registrar un abono sobre productos seleccionados del credito
+ */
+export const getAbonarCreditoUrl = (id: number) => {
+  return `/api/creditos/${id}/abono`;
+};
+
+export const abonarCredito = async (
+  id: number,
+  creditoAbonoInput: CreditoAbonoInput,
+  options?: RequestInit,
+): Promise<Credito> => {
+  return customFetch<Credito>(getAbonarCreditoUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(creditoAbonoInput),
+  });
+};
+
+export const getAbonarCreditoMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof abonarCredito>>,
+    TError,
+    { id: number; data: BodyType<CreditoAbonoInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof abonarCredito>>,
+  TError,
+  { id: number; data: BodyType<CreditoAbonoInput> },
+  TContext
+> => {
+  const mutationKey = ["abonarCredito"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof abonarCredito>>,
+    { id: number; data: BodyType<CreditoAbonoInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return abonarCredito(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AbonarCreditoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof abonarCredito>>
+>;
+export type AbonarCreditoMutationBody = BodyType<CreditoAbonoInput>;
+export type AbonarCreditoMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Registrar un abono sobre productos seleccionados del credito
+ */
+export const useAbonarCredito = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof abonarCredito>>,
+    TError,
+    { id: number; data: BodyType<CreditoAbonoInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof abonarCredito>>,
+  TError,
+  { id: number; data: BodyType<CreditoAbonoInput> },
+  TContext
+> => {
+  return useMutation(getAbonarCreditoMutationOptions(options));
+};
+
+/**
  * @summary Actualizar credito (abonar)
  */
 export const getActualizarCreditoUrl = (id: number) => {
@@ -2566,6 +2657,338 @@ export const useGuardarNotas = <
   TContext
 > => {
   return useMutation(getGuardarNotasMutationOptions(options));
+};
+
+/**
+ * @summary Listar días guardados en el historial
+ */
+export const getGetHistorialUrl = () => {
+  return `/api/historial`;
+};
+
+export const getHistorial = async (
+  options?: RequestInit,
+): Promise<HistorialDia[]> => {
+  return customFetch<HistorialDia[]>(getGetHistorialUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetHistorialQueryKey = () => {
+  return [`/api/historial`] as const;
+};
+
+export const getGetHistorialQueryOptions = <
+  TData = Awaited<ReturnType<typeof getHistorial>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getHistorial>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetHistorialQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getHistorial>>> = ({
+    signal,
+  }) => getHistorial({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getHistorial>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetHistorialQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getHistorial>>
+>;
+export type GetHistorialQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Listar días guardados en el historial
+ */
+
+export function useGetHistorial<
+  TData = Awaited<ReturnType<typeof getHistorial>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getHistorial>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetHistorialQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Guardar el día actual en el historial
+ */
+export const getGuardarDiaHistorialUrl = () => {
+  return `/api/historial`;
+};
+
+export const guardarDiaHistorial = async (
+  historialDiaInput: HistorialDiaInput,
+  options?: RequestInit,
+): Promise<HistorialDia> => {
+  return customFetch<HistorialDia>(getGuardarDiaHistorialUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(historialDiaInput),
+  });
+};
+
+export const getGuardarDiaHistorialMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof guardarDiaHistorial>>,
+    TError,
+    { data: BodyType<HistorialDiaInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof guardarDiaHistorial>>,
+  TError,
+  { data: BodyType<HistorialDiaInput> },
+  TContext
+> => {
+  const mutationKey = ["guardarDiaHistorial"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof guardarDiaHistorial>>,
+    { data: BodyType<HistorialDiaInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return guardarDiaHistorial(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GuardarDiaHistorialMutationResult = NonNullable<
+  Awaited<ReturnType<typeof guardarDiaHistorial>>
+>;
+export type GuardarDiaHistorialMutationBody = BodyType<HistorialDiaInput>;
+export type GuardarDiaHistorialMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Guardar el día actual en el historial
+ */
+export const useGuardarDiaHistorial = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof guardarDiaHistorial>>,
+    TError,
+    { data: BodyType<HistorialDiaInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof guardarDiaHistorial>>,
+  TError,
+  { data: BodyType<HistorialDiaInput> },
+  TContext
+> => {
+  return useMutation(getGuardarDiaHistorialMutationOptions(options));
+};
+
+/**
+ * @summary Editar notas de un día del historial (la fecha no cambia)
+ */
+export const getActualizarHistorialUrl = (id: number) => {
+  return `/api/historial/${id}`;
+};
+
+export const actualizarHistorial = async (
+  id: number,
+  historialDiaUpdate: HistorialDiaUpdate,
+  options?: RequestInit,
+): Promise<HistorialDia> => {
+  return customFetch<HistorialDia>(getActualizarHistorialUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(historialDiaUpdate),
+  });
+};
+
+export const getActualizarHistorialMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof actualizarHistorial>>,
+    TError,
+    { id: number; data: BodyType<HistorialDiaUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof actualizarHistorial>>,
+  TError,
+  { id: number; data: BodyType<HistorialDiaUpdate> },
+  TContext
+> => {
+  const mutationKey = ["actualizarHistorial"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof actualizarHistorial>>,
+    { id: number; data: BodyType<HistorialDiaUpdate> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return actualizarHistorial(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ActualizarHistorialMutationResult = NonNullable<
+  Awaited<ReturnType<typeof actualizarHistorial>>
+>;
+export type ActualizarHistorialMutationBody = BodyType<HistorialDiaUpdate>;
+export type ActualizarHistorialMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Editar notas de un día del historial (la fecha no cambia)
+ */
+export const useActualizarHistorial = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof actualizarHistorial>>,
+    TError,
+    { id: number; data: BodyType<HistorialDiaUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof actualizarHistorial>>,
+  TError,
+  { id: number; data: BodyType<HistorialDiaUpdate> },
+  TContext
+> => {
+  return useMutation(getActualizarHistorialMutationOptions(options));
+};
+
+/**
+ * @summary Eliminar un día del historial (no borra las ventas)
+ */
+export const getEliminarHistorialUrl = (id: number) => {
+  return `/api/historial/${id}`;
+};
+
+export const eliminarHistorial = async (
+  id: number,
+  options?: RequestInit,
+): Promise<MensajeRespuesta> => {
+  return customFetch<MensajeRespuesta>(getEliminarHistorialUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getEliminarHistorialMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof eliminarHistorial>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof eliminarHistorial>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["eliminarHistorial"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof eliminarHistorial>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return eliminarHistorial(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type EliminarHistorialMutationResult = NonNullable<
+  Awaited<ReturnType<typeof eliminarHistorial>>
+>;
+
+export type EliminarHistorialMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Eliminar un día del historial (no borra las ventas)
+ */
+export const useEliminarHistorial = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof eliminarHistorial>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof eliminarHistorial>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getEliminarHistorialMutationOptions(options));
 };
 
 /**

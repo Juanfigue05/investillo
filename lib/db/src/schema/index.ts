@@ -5,3 +5,4 @@ export * from "./compras";
 export * from "./manoobra";
 export * from "./trabajadores";
 export * from "./notas";
+export * from "./historial";

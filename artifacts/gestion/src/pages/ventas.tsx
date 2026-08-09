@@ -5,11 +5,14 @@ import {
   useCrearVenta,
   useGetInventario,
   useEliminarVenta,
+  useActualizarVenta,
   useGetTrabajadores,
   useCrearManoObra,
+  useGetHistorial,
+  useGuardarDiaHistorial,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
-import { Printer, Save, Trash2, ChevronDown, X } from "lucide-react";
+import { Printer, Save, Trash2, ChevronDown, X, Pencil, Check, BookMarked } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 const SPECIAL_MANOOBRA = "__manoobra__";
@@ -22,6 +25,17 @@ interface ProductoOpcion {
   precioCompra?: number;
   precioVenta?: number;
   special?: "manoobra" | "abono";
+}
+
+interface EditValues {
+  referencia: string;
+  productoNombre: string;
+  productoMarca: string;
+  cantidad: string;
+  precioCompraUnidad: string;
+  precioVentaUnidad: string;
+  precioVentaTotal: string;
+  beneficio: string;
 }
 
 function SearchableSelect({
@@ -70,10 +84,7 @@ function SearchableSelect({
     <div ref={containerRef} className="relative w-full min-w-[180px]">
       <button
         type="button"
-        onClick={() => {
-          setOpen(!open);
-          if (!open) setBusqueda("");
-        }}
+        onClick={() => { setOpen(!open); if (!open) setBusqueda(""); }}
         className="w-full flex items-center justify-between bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-left"
       >
         <span className={selected ? "text-foreground" : "text-muted-foreground"}>
@@ -104,11 +115,8 @@ function SearchableSelect({
                   type="button"
                   onClick={() => handleSelect(o.id)}
                   className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-center gap-2 ${
-                    o.special === "manoobra"
-                      ? "text-yellow-400 font-medium"
-                      : o.special === "abono"
-                      ? "text-blue-400 font-medium"
-                      : "text-foreground"
+                    o.special === "manoobra" ? "text-yellow-400 font-medium" :
+                    o.special === "abono" ? "text-blue-400 font-medium" : "text-foreground"
                   }`}
                 >
                   {o.nombre}
@@ -128,12 +136,16 @@ export default function VentasDiarias() {
   const { data: ventas, isLoading } = useGetVentas({ fecha });
   const { data: productos } = useGetInventario();
   const { data: trabajadores } = useGetTrabajadores();
+  const { data: historial } = useGetHistorial();
 
   const queryClient = useQueryClient();
   const crearMutation = useCrearVenta();
   const eliminarMutation = useEliminarVenta();
+  const actualizarMutation = useActualizarVenta();
   const crearManoObraMutation = useCrearManoObra();
+  const guardarDiaMutation = useGuardarDiaHistorial();
 
+  // New row state
   const [newRow, setNewRow] = useState({
     referencia: "",
     productoSeleccionado: "" as string,
@@ -147,7 +159,21 @@ export default function VentasDiarias() {
     trabajadoresSeleccionados: [] as number[],
   });
 
-  // Build opciones for searchable select
+  // Inline editing state
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editValues, setEditValues] = useState<EditValues>({
+    referencia: "",
+    productoNombre: "",
+    productoMarca: "",
+    cantidad: "1",
+    precioCompraUnidad: "0",
+    precioVentaUnidad: "0",
+    precioVentaTotal: "0",
+    beneficio: "0",
+  });
+
+  const diaYaGuardado = historial?.some((d) => d.fecha === fecha);
+
   const opcionesProducto: ProductoOpcion[] = [
     { id: SPECIAL_MANOOBRA, nombre: "🔧 Mano de Obra", special: "manoobra" },
     { id: SPECIAL_ABONO, nombre: "💳 Abono A", special: "abono" },
@@ -161,48 +187,18 @@ export default function VentasDiarias() {
   ];
 
   const modoActual =
-    newRow.productoSeleccionado === SPECIAL_MANOOBRA
-      ? "manoobra"
-      : newRow.productoSeleccionado === SPECIAL_ABONO
-      ? "abono"
-      : "normal";
+    newRow.productoSeleccionado === SPECIAL_MANOOBRA ? "manoobra" :
+    newRow.productoSeleccionado === SPECIAL_ABONO ? "abono" : "normal";
 
   const handleProductoSelect = (id: string) => {
     if (id === SPECIAL_MANOOBRA) {
-      setNewRow((prev) => ({
-        ...prev,
-        productoSeleccionado: id,
-        marca: "",
-        cantidad: "1",
-        precioCompra: 0,
-        precioVenta: 0,
-        precioManoObra: 0,
-        valorAbono: 0,
-        trabajadoresSeleccionados: [],
-      }));
+      setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0, precioManoObra: 0, valorAbono: 0, trabajadoresSeleccionados: [] }));
     } else if (id === SPECIAL_ABONO) {
-      setNewRow((prev) => ({
-        ...prev,
-        productoSeleccionado: id,
-        marca: "",
-        cantidad: "1",
-        precioCompra: 0,
-        precioVenta: 0,
-        precioManoObra: 0,
-        valorAbono: 0,
-        productoNombreManual: "",
-      }));
+      setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0, precioManoObra: 0, valorAbono: 0, productoNombreManual: "" }));
     } else {
       const prod = productos?.find((p) => String(p.id) === id);
       if (prod) {
-        setNewRow((prev) => ({
-          ...prev,
-          productoSeleccionado: id,
-          marca: prod.marca || "",
-          precioCompra: prod.precioCompra,
-          precioVenta: prod.precioVentaConIva,
-          trabajadoresSeleccionados: [],
-        }));
+        setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: prod.marca || "", precioCompra: prod.precioCompra, precioVenta: prod.precioVentaConIva, trabajadoresSeleccionados: [] }));
       }
     }
   };
@@ -216,11 +212,55 @@ export default function VentasDiarias() {
     }));
   };
 
+  const openEdit = (venta: NonNullable<typeof ventas>[number]) => {
+    setEditingId(venta.id);
+    setEditValues({
+      referencia: venta.referencia,
+      productoNombre: venta.productoNombre || "",
+      productoMarca: venta.productoMarca || "",
+      cantidad: String(venta.cantidad),
+      precioCompraUnidad: String(venta.precioCompraUnidad),
+      precioVentaUnidad: String(venta.precioVentaUnidad),
+      precioVentaTotal: String(venta.precioVentaTotal),
+      beneficio: String(venta.beneficio),
+    });
+  };
+
+  const handleSaveEdit = (venta: NonNullable<typeof ventas>[number]) => {
+    const cant = parseFloat(editValues.cantidad) || 0;
+    const pvU = parseFloat(editValues.precioVentaUnidad) || 0;
+    const pcU = parseFloat(editValues.precioCompraUnidad) || 0;
+    const total = pvU * cant;
+    const beneficio = venta.tipoLinea === "venta" ? (pvU - pcU) * cant : parseFloat(editValues.beneficio) || 0;
+    actualizarMutation.mutate(
+      {
+        id: venta.id,
+        data: {
+          fecha: venta.fecha,
+          referencia: editValues.referencia,
+          tipoLinea: venta.tipoLinea,
+          productoId: venta.productoId || undefined,
+          productoNombre: editValues.productoNombre || undefined,
+          productoCodigo: venta.productoCodigo || undefined,
+          productoMarca: editValues.productoMarca || undefined,
+          cantidad: cant,
+          precioCompraUnidad: pcU,
+          precioVentaUnidad: pvU,
+          precioVentaTotal: total,
+          beneficio,
+        },
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+          setEditingId(null);
+        },
+      }
+    );
+  };
+
   const handleAddRow = () => {
-    if (!newRow.referencia) {
-      alert("Escribe una referencia / No. Remisión");
-      return;
-    }
+    if (!newRow.referencia) { alert("Escribe una referencia / No. Remisión"); return; }
 
     if (modoActual === "manoobra") {
       if (!newRow.precioManoObra || newRow.trabajadoresSeleccionados.length === 0) {
@@ -231,44 +271,21 @@ export default function VentasDiarias() {
       const n = newRow.trabajadoresSeleccionados.length;
       const base = Math.floor(valor / n);
       const resto = valor - base * n;
-
       const distribuciones = newRow.trabajadoresSeleccionados.map((tid, i) => {
         const t = trabajadores?.find((w) => w.id === tid);
-        return {
-          trabajadorId: tid,
-          trabajadorNombre: t?.nombre || `Trabajador ${tid}`,
-          valor: i === n - 1 ? base + resto : base,
-          descuentoSeguro: 0,
-          descuentoOtros: 0,
-        };
+        return { trabajadorId: tid, trabajadorNombre: t?.nombre || `Trabajador ${tid}`, valor: i === n - 1 ? base + resto : base, descuentoSeguro: 0, descuentoOtros: 0 };
       });
-
       crearManoObraMutation.mutate(
-        {
-          data: {
-            fecha,
-            descripcion: newRow.referencia,
-            valorTotal: valor,
-            distribuciones,
-          },
-        },
+        { data: { fecha, descripcion: newRow.referencia, valorTotal: valor, distribuciones } },
         {
           onSuccess: () => {
             crearMutation.mutate(
               {
                 data: {
-                  fecha,
-                  referencia: newRow.referencia,
-                  tipoLinea: "manoobra",
+                  fecha, referencia: newRow.referencia, tipoLinea: "manoobra",
                   productoNombre: "Mano de Obra",
-                  productoMarca: newRow.trabajadoresSeleccionados
-                    .map((tid) => trabajadores?.find((w) => w.id === tid)?.nombre || `T${tid}`)
-                    .join(", "),
-                  cantidad: 1,
-                  precioCompraUnidad: 0,
-                  precioVentaUnidad: valor,
-                  precioVentaTotal: valor,
-                  beneficio: valor,
+                  productoMarca: newRow.trabajadoresSeleccionados.map((tid) => trabajadores?.find((w) => w.id === tid)?.nombre || `T${tid}`).join(", "),
+                  cantidad: 1, precioCompraUnidad: 0, precioVentaUnidad: valor, precioVentaTotal: valor, beneficio: valor,
                   descripcion: distribuciones.map((d) => `${d.trabajadorNombre}: ${formatCurrency(d.valor)}`).join(" | "),
                 },
               },
@@ -276,14 +293,7 @@ export default function VentasDiarias() {
                 onSuccess: () => {
                   queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
                   queryClient.invalidateQueries({ queryKey: ["/api/manoobra"] });
-                  setNewRow((prev) => ({
-                    ...prev,
-                    productoSeleccionado: "",
-                    marca: "",
-                    cantidad: "1",
-                    precioManoObra: 0,
-                    trabajadoresSeleccionados: [],
-                  }));
+                  setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioManoObra: 0, trabajadoresSeleccionados: [] }));
                 },
               }
             );
@@ -294,34 +304,20 @@ export default function VentasDiarias() {
     }
 
     if (modoActual === "abono") {
-      if (!newRow.productoNombreManual || !newRow.valorAbono) {
-        alert("Completa el nombre y el valor del abono");
-        return;
-      }
+      if (!newRow.productoNombreManual || !newRow.valorAbono) { alert("Completa el nombre y el valor del abono"); return; }
       crearMutation.mutate(
         {
           data: {
-            fecha,
-            referencia: newRow.referencia,
-            tipoLinea: "credito",
-            productoNombre: newRow.productoNombreManual,
-            cantidad: 1,
-            precioCompraUnidad: 0,
-            precioVentaUnidad: newRow.valorAbono,
-            precioVentaTotal: newRow.valorAbono,
-            beneficio: 0,
-            descripcion: "Abono a crédito",
+            fecha, referencia: newRow.referencia, tipoLinea: "credito",
+            productoNombre: `Abono A: ${newRow.productoNombreManual}`,
+            cantidad: 1, precioCompraUnidad: 0, precioVentaUnidad: newRow.valorAbono,
+            precioVentaTotal: newRow.valorAbono, beneficio: 0, descripcion: "Abono a crédito",
           },
         },
         {
           onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
-            setNewRow((prev) => ({
-              ...prev,
-              productoSeleccionado: "",
-              productoNombreManual: "",
-              valorAbono: 0,
-            }));
+            setNewRow((prev) => ({ ...prev, productoSeleccionado: "", productoNombreManual: "", valorAbono: 0 }));
           },
         }
       );
@@ -331,46 +327,25 @@ export default function VentasDiarias() {
     // Normal sale
     const prod = productos?.find((p) => String(p.id) === newRow.productoSeleccionado);
     const nombreProducto = prod?.nombre || "";
-    if (!nombreProducto) {
-      alert("Selecciona un producto del inventario");
-      return;
-    }
+    if (!nombreProducto) { alert("Selecciona un producto del inventario"); return; }
     const cantNum = parseFloat(newRow.cantidad.replace(",", "."));
-    if (isNaN(cantNum) || cantNum <= 0) {
-      alert("Cantidad inválida. Usa coma para decimales, ej: 1,5");
-      return;
-    }
+    if (isNaN(cantNum) || cantNum <= 0) { alert("Cantidad inválida. Usa coma para decimales, ej: 1,5"); return; }
     const beneficio = (newRow.precioVenta - newRow.precioCompra) * cantNum;
     const total = newRow.precioVenta * cantNum;
-
     crearMutation.mutate(
       {
         data: {
-          fecha,
-          referencia: newRow.referencia,
-          tipoLinea: "venta",
-          productoId: prod ? prod.id : undefined,
-          productoNombre: nombreProducto,
-          productoCodigo: prod?.codigo,
-          productoMarca: newRow.marca || prod?.marca || undefined,
-          cantidad: cantNum,
-          precioCompraUnidad: newRow.precioCompra,
-          precioVentaUnidad: newRow.precioVenta,
-          precioVentaTotal: total,
-          beneficio,
+          fecha, referencia: newRow.referencia, tipoLinea: "venta",
+          productoId: prod ? prod.id : undefined, productoNombre: nombreProducto,
+          productoCodigo: prod?.codigo, productoMarca: newRow.marca || prod?.marca || undefined,
+          cantidad: cantNum, precioCompraUnidad: newRow.precioCompra,
+          precioVentaUnidad: newRow.precioVenta, precioVentaTotal: total, beneficio,
         },
       },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
-          setNewRow((prev) => ({
-            ...prev,
-            productoSeleccionado: "",
-            marca: "",
-            cantidad: "1",
-            precioCompra: 0,
-            precioVenta: 0,
-          }));
+          setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0 }));
         },
       }
     );
@@ -390,35 +365,42 @@ export default function VentasDiarias() {
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handleGuardarDia = () => {
+    if (diaYaGuardado) { alert("Este día ya está guardado en el historial."); return; }
+    if (!ventas || ventas.length === 0) { alert("No hay ventas para guardar en este día."); return; }
+    guardarDiaMutation.mutate(
+      { data: { fecha } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ["/api/historial"] });
+          alert("✅ Día guardado en el Historial de Ventas.");
+        },
+        onError: () => {
+          queryClient.invalidateQueries({ queryKey: ["/api/historial"] });
+        },
+      }
+    );
   };
 
-  const totalVentas =
-    ventas?.filter((v) => v.tipoLinea === "venta").reduce((acc, v) => acc + v.precioVentaTotal, 0) || 0;
-
+  const totalVentas = ventas?.filter((v) => v.tipoLinea === "venta").reduce((acc, v) => acc + v.precioVentaTotal, 0) || 0;
   const cantNum = parseFloat(newRow.cantidad.replace(",", ".")) || 0;
-  const previewTotal =
-    modoActual === "normal" ? newRow.precioVenta * cantNum : modoActual === "manoobra" ? newRow.precioManoObra : 0;
+  const previewTotal = modoActual === "normal" ? newRow.precioVenta * cantNum : modoActual === "manoobra" ? newRow.precioManoObra : 0;
   const previewBeneficio = modoActual === "normal" ? (newRow.precioVenta - newRow.precioCompra) * cantNum : 0;
 
   const fechaFormateada = new Date(fecha + "T12:00:00").toLocaleDateString("es-CO", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 
   return (
     <Layout>
       <div className="space-y-6">
-        {/* Screen-only header */}
+        {/* Header */}
         <div className="no-print flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h1 className="text-3xl font-display font-bold text-foreground">Ventas Diarias</h1>
             <p className="text-muted-foreground mt-1">Registra las ventas del día directamente en la tabla.</p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <input
               type="date"
               value={fecha}
@@ -426,7 +408,19 @@ export default function VentasDiarias() {
               className="bg-card border border-border text-foreground px-4 py-2 rounded-xl focus:ring-2 focus:ring-primary outline-none"
             />
             <button
-              onClick={handlePrint}
+              onClick={handleGuardarDia}
+              disabled={guardarDiaMutation.isPending}
+              className={`flex items-center gap-2 px-5 py-2 rounded-xl font-medium transition-all border ${
+                diaYaGuardado
+                  ? "bg-green-500/10 border-green-500/30 text-green-500 cursor-default"
+                  : "bg-primary text-primary-foreground border-primary hover:bg-primary/90 shadow-md shadow-primary/20"
+              }`}
+            >
+              <BookMarked className="w-5 h-5" />
+              {diaYaGuardado ? "Guardado en Historial" : "Guardar en Historial"}
+            </button>
+            <button
+              onClick={() => window.print()}
               className="flex items-center gap-2 px-5 py-2 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border"
             >
               <Printer className="w-5 h-5" />
@@ -435,9 +429,8 @@ export default function VentasDiarias() {
           </div>
         </div>
 
-        {/* Print zone: date + table only */}
+        {/* Table */}
         <div className="print-zone bg-card border border-border rounded-2xl overflow-hidden shadow-xl shadow-black/10">
-          {/* Print-only date header */}
           <div className="print-only print-date-header">
             Ventas Diarias — {fechaFormateada}
           </div>
@@ -455,13 +448,12 @@ export default function VentasDiarias() {
                   <th className="px-3 py-3 font-medium whitespace-nowrap">P. Venta</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">Total</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">Beneficio</th>
-                  <th className="px-3 py-3 font-medium no-print"></th>
+                  <th className="px-3 py-3 font-medium no-print w-20"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {/* New Row Input — hidden when printing */}
+                {/* New Row Input */}
                 <tr className={`no-print bg-background/40 ${modoActual === "manoobra" ? "row-manoobra" : modoActual === "abono" ? "row-credito" : ""}`}>
-                  {/* Save button — FIRST column */}
                   <td className="p-2 no-print">
                     <button
                       onClick={handleAddRow}
@@ -472,8 +464,6 @@ export default function VentasDiarias() {
                       <Save className="w-4 h-4" />
                     </button>
                   </td>
-
-                  {/* Referencia */}
                   <td className="p-2">
                     <input
                       type="text"
@@ -483,8 +473,6 @@ export default function VentasDiarias() {
                       className="w-full bg-background border border-border px-3 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none"
                     />
                   </td>
-
-                  {/* Producto - searchable */}
                   <td className="p-2 min-w-[200px]">
                     <SearchableSelect
                       opciones={opcionesProducto}
@@ -492,7 +480,6 @@ export default function VentasDiarias() {
                       onChange={handleProductoSelect}
                       placeholder="Seleccionar producto..."
                     />
-                    {/* Manual text for Abono */}
                     {modoActual === "abono" && (
                       <input
                         type="text"
@@ -503,8 +490,6 @@ export default function VentasDiarias() {
                       />
                     )}
                   </td>
-
-                  {/* Marca / Info col — changes per mode */}
                   <td className="p-2">
                     {modoActual === "normal" && (
                       <input
@@ -533,12 +518,8 @@ export default function VentasDiarias() {
                         ))}
                       </div>
                     )}
-                    {modoActual === "abono" && (
-                      <span className="text-xs text-blue-400 italic">Abono</span>
-                    )}
+                    {modoActual === "abono" && <span className="text-xs text-blue-400 italic">Abono</span>}
                   </td>
-
-                  {/* Cantidad / Trabajadores label */}
                   <td className="p-2">
                     {modoActual === "normal" && (
                       <input
@@ -549,15 +530,9 @@ export default function VentasDiarias() {
                         className="w-16 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none"
                       />
                     )}
-                    {modoActual === "manoobra" && (
-                      <span className="text-xs text-muted-foreground">
-                        {newRow.trabajadoresSeleccionados.length} trab.
-                      </span>
-                    )}
+                    {modoActual === "manoobra" && <span className="text-xs text-muted-foreground">{newRow.trabajadoresSeleccionados.length} trab.</span>}
                     {modoActual === "abono" && <span className="text-xs text-muted-foreground">—</span>}
                   </td>
-
-                  {/* Precio Compra / Precio M.O. */}
                   <td className="p-2">
                     {modoActual === "normal" && (
                       <input
@@ -587,8 +562,6 @@ export default function VentasDiarias() {
                       />
                     )}
                   </td>
-
-                  {/* Precio Venta — only normal */}
                   <td className="p-2">
                     {modoActual === "normal" ? (
                       <input
@@ -602,11 +575,7 @@ export default function VentasDiarias() {
                       <span className="text-xs text-muted-foreground px-2">—</span>
                     )}
                   </td>
-
-                  {/* Preview total */}
-                  <td className="p-2 font-medium text-primary whitespace-nowrap">
-                    {formatCurrency(previewTotal)}
-                  </td>
+                  <td className="p-2 font-medium text-primary whitespace-nowrap">{formatCurrency(previewTotal)}</td>
                   <td className="p-2 font-medium text-green-500 whitespace-nowrap">
                     {modoActual === "normal" ? formatCurrency(previewBeneficio) : "—"}
                   </td>
@@ -615,25 +584,57 @@ export default function VentasDiarias() {
 
                 {/* Registered rows */}
                 {isLoading ? (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
-                      Cargando ventas...
-                    </td>
-                  </tr>
+                  <tr><td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">Cargando ventas...</td></tr>
                 ) : ventas?.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-6 text-center text-muted-foreground text-sm">
-                      Sin registros para esta fecha.
-                    </td>
-                  </tr>
+                  <tr><td colSpan={10} className="px-4 py-6 text-center text-muted-foreground text-sm">Sin registros para esta fecha.</td></tr>
                 ) : (
                   ventas?.map((venta) => {
-                    const rowCls =
-                      venta.tipoLinea === "manoobra"
-                        ? "row-manoobra"
-                        : venta.tipoLinea === "credito"
-                        ? "row-credito"
-                        : "row-venta";
+                    const rowCls = venta.tipoLinea === "manoobra" ? "row-manoobra" : venta.tipoLinea === "credito" ? "row-credito" : "row-venta";
+                    const isEditing = editingId === venta.id;
+
+                    if (isEditing) {
+                      const editPvU = parseFloat(editValues.precioVentaUnidad) || 0;
+                      const editPcU = parseFloat(editValues.precioCompraUnidad) || 0;
+                      const editCant = parseFloat(editValues.cantidad) || 0;
+                      const editTotal = editPvU * editCant;
+                      const editBen = venta.tipoLinea === "venta" ? (editPvU - editPcU) * editCant : 0;
+                      return (
+                        <tr key={venta.id} className={`${rowCls} ring-2 ring-inset ring-primary/40`}>
+                          <td className="p-2 no-print"></td>
+                          <td className="p-2">
+                            <input value={editValues.referencia} onChange={(e) => setEditValues((v) => ({ ...v, referencia: e.target.value }))} className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" />
+                          </td>
+                          <td className="p-2">
+                            <input value={editValues.productoNombre} onChange={(e) => setEditValues((v) => ({ ...v, productoNombre: e.target.value }))} className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" />
+                          </td>
+                          <td className="p-2">
+                            <input value={editValues.productoMarca} onChange={(e) => setEditValues((v) => ({ ...v, productoMarca: e.target.value }))} className="w-20 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" />
+                          </td>
+                          <td className="p-2">
+                            <input type="number" value={editValues.cantidad} onChange={(e) => setEditValues((v) => ({ ...v, cantidad: e.target.value }))} className="w-14 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" />
+                          </td>
+                          <td className="p-2">
+                            <input type="number" value={editValues.precioCompraUnidad} onChange={(e) => setEditValues((v) => ({ ...v, precioCompraUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" />
+                          </td>
+                          <td className="p-2">
+                            <input type="number" value={editValues.precioVentaUnidad} onChange={(e) => setEditValues((v) => ({ ...v, precioVentaUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" />
+                          </td>
+                          <td className="p-2 font-bold text-primary whitespace-nowrap">{formatCurrency(editTotal)}</td>
+                          <td className="p-2 font-medium text-green-500 whitespace-nowrap">{venta.tipoLinea === "venta" ? formatCurrency(editBen) : "—"}</td>
+                          <td className="p-2 no-print">
+                            <div className="flex gap-1">
+                              <button onClick={() => handleSaveEdit(venta)} disabled={actualizarMutation.isPending} className="p-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors border border-primary/30">
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => setEditingId(null)} className="p-1.5 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors border border-border">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+
                     return (
                       <tr key={venta.id} className={`${rowCls} group hover:brightness-110 transition-all`}>
                         <td className="px-3 py-3 no-print w-10"></td>
@@ -644,16 +645,16 @@ export default function VentasDiarias() {
                         <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioCompraUnidad)}</td>
                         <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioVentaUnidad)}</td>
                         <td className="px-3 py-3 font-bold text-primary">{formatCurrency(venta.precioVentaTotal)}</td>
-                        <td className="px-3 py-3 font-medium text-green-500">
-                          {venta.tipoLinea === "venta" ? formatCurrency(venta.beneficio) : "—"}
-                        </td>
+                        <td className="px-3 py-3 font-medium text-green-500">{venta.tipoLinea === "venta" ? formatCurrency(venta.beneficio) : "—"}</td>
                         <td className="px-3 py-3 no-print">
-                          <button
-                            onClick={() => handleDelete(venta.id)}
-                            className="p-1.5 text-muted-foreground hover:text-destructive bg-background/50 rounded-lg opacity-0 group-hover:opacity-100 transition-all border border-border"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <button onClick={() => openEdit(venta)} className="p-1.5 text-muted-foreground hover:text-primary bg-background/50 rounded-lg transition-all border border-border">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => handleDelete(venta.id)} className="p-1.5 text-muted-foreground hover:text-destructive bg-background/50 rounded-lg transition-all border border-border">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -663,15 +664,10 @@ export default function VentasDiarias() {
               <tfoot className="bg-card border-t-2 border-border">
                 <tr>
                   <td className="no-print"></td>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-3 text-right font-medium text-muted-foreground uppercase text-xs tracking-wider"
-                  >
+                  <td colSpan={6} className="px-4 py-3 text-right font-medium text-muted-foreground uppercase text-xs tracking-wider">
                     Total Ventas del Día (excluye M.O. y Abonos)
                   </td>
-                  <td className="px-4 py-3 font-display font-bold text-xl text-primary">
-                    {formatCurrency(totalVentas)}
-                  </td>
+                  <td className="px-4 py-3 font-display font-bold text-xl text-primary">{formatCurrency(totalVentas)}</td>
                   <td className="no-print" colSpan={2}></td>
                 </tr>
               </tfoot>
@@ -680,15 +676,9 @@ export default function VentasDiarias() {
         </div>
 
         <div className="no-print flex flex-wrap gap-4 text-xs font-medium uppercase tracking-wider text-muted-foreground p-4 bg-card rounded-xl border border-border">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-background border border-border"></div> Venta Normal
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-yellow-500/30 border border-yellow-500/50"></div> Mano de Obra
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-blue-500/30 border border-blue-500/50"></div> Crédito / Abono
-          </div>
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-background border border-border"></div> Venta Normal</div>
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-yellow-500/30 border border-yellow-500/50"></div> Mano de Obra</div>
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500/30 border border-blue-500/50"></div> Crédito / Abono</div>
         </div>
       </div>
     </Layout>

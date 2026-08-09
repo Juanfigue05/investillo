@@ -5,13 +5,15 @@
  * API specification para Sistema de Gestion
  * OpenAPI spec version: 0.1.0
  */
+import type { CreditoLineaInput } from "./creditoLineaInput";
 
 export interface CreditoUpdate {
-  valorAbonado: number;
+  valorAbonado?: number;
   descripcion?: string | null;
   nombreCliente?: string;
   placaVehiculo?: string | null;
   telefonoCliente?: string | null;
   fechaFactura?: Date;
   valorCredito?: number;
+  lineas?: CreditoLineaInput[];
 }

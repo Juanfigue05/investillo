@@ -5,6 +5,7 @@
  * API specification para Sistema de Gestion
  * OpenAPI spec version: 0.1.0
  */
+import type { CreditoLineaInput } from "./creditoLineaInput";
 
 export interface CreditoInput {
   fechaFactura: Date;
@@ -14,4 +15,5 @@ export interface CreditoInput {
   descripcion?: string | null;
   valorCredito: number;
   valorAbonado: number;
+  lineas: CreditoLineaInput[];
 }

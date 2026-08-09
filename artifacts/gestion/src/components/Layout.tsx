@@ -1,14 +1,16 @@
 import { useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { FloatingNotepad } from "./FloatingNotepad";
-import { Bell, Menu } from "lucide-react";
-import { useGetAlertasStock } from "@workspace/api-client-react";
-import { Link } from "wouter";
+import { Bell, Menu, X } from "lucide-react";
+import { getGetAlertasStockQueryKey, useGetAlertasStock } from "@workspace/api-client-react";
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const { data: alertas } = useGetAlertasStock({}, { refetchInterval: 4000 });
+  const { data: alertas } = useGetAlertasStock({
+    query: { queryKey: getGetAlertasStockQueryKey(), refetchInterval: 4000 },
+  });
   const alertCount = alertas?.length || 0;
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -47,8 +49,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <span className="text-base font-display font-bold text-primary sm:hidden">Investillo</span>
 
           <div className="flex items-center gap-3 ml-auto">
-            <Link
-              href="/inventario"
+            <button
+              type="button"
+              aria-label="Ver alertas de inventario"
+              aria-expanded={alertsOpen}
+              onClick={() => setAlertsOpen((open) => !open)}
               className="relative p-2 rounded-full hover:bg-muted transition-colors cursor-pointer block"
             >
               <Bell className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground hover:text-foreground transition-colors" />
@@ -57,7 +62,49 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   {alertCount}
                 </span>
               )}
-            </Link>
+            </button>
+
+            {alertsOpen && (
+              <div className="absolute right-4 lg:right-8 top-14 lg:top-16 z-50 w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                  <div>
+                    <p className="font-semibold text-foreground">Alertas de inventario</p>
+                    <p className="text-xs text-muted-foreground">
+                      {alertCount ? `${alertCount} producto${alertCount === 1 ? "" : "s"} por revisar` : "Todo está abastecido"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Cerrar alertas"
+                    onClick={() => setAlertsOpen(false)}
+                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                {alertCount > 0 ? (
+                  <div className="max-h-72 overflow-y-auto divide-y divide-border">
+                    {alertas?.map((producto) => (
+                      <div key={producto.id} className="px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-foreground">{producto.nombre}</p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {producto.marca || "Sin marca"} · Ref. {producto.referencia || producto.codigo}
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-1 text-xs font-semibold text-destructive">
+                            Stock: {producto.stockActual}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="px-4 py-6 text-center text-sm text-muted-foreground">No hay productos agotándose.</p>
+                )}
+              </div>
+            )}
 
             <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-full bg-gradient-to-tr from-accent to-primary p-[2px] flex-shrink-0">
               <div className="w-full h-full rounded-full border-2 border-background overflow-hidden bg-muted flex items-center justify-center font-bold text-xs lg:text-sm">

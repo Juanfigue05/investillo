@@ -31,6 +31,11 @@ export interface Producto {
   stockMinimo: number;
   creadoEn?: string;
   actualizadoEn?: string;
+  cantidadRecibida?: number | null;
+  fechaLlegada?: string | null;
+  proveedor?: string | null;
+  precioCompraRegistrado?: number | null;
+  precioVentaRegistrado?: number | null;
 }
 
 export interface ProductoInput {
@@ -112,6 +117,18 @@ export interface VentaDiariaInput {
   descripcion?: string | null;
 }
 
+export interface CreditoLinea {
+  id: number;
+  productoId?: number | null;
+  cantidad: number;
+  productoNombre: string;
+  productoCodigo?: string | null;
+  productoMarca?: string | null;
+  precioVenta: number;
+  valorAbonado: number;
+  valorRestante: number;
+}
+
 export interface Credito {
   id: number;
   fechaFactura: string;
@@ -124,6 +141,18 @@ export interface Credito {
   valorRestante: number;
   creadoEn?: string;
   actualizadoEn?: string;
+  lineas: CreditoLinea[];
+}
+
+export interface CreditoLineaInput {
+  id?: number | null;
+  productoId?: number | null;
+  cantidad: number;
+  productoNombre: string;
+  productoCodigo?: string | null;
+  productoMarca?: string | null;
+  precioVenta: number;
+  valorAbonado?: number;
 }
 
 export interface CreditoInput {
@@ -134,16 +163,28 @@ export interface CreditoInput {
   descripcion?: string | null;
   valorCredito: number;
   valorAbonado: number;
+  lineas: CreditoLineaInput[];
 }
 
 export interface CreditoUpdate {
-  valorAbonado: number;
+  valorAbonado?: number;
   descripcion?: string | null;
   nombreCliente?: string;
   placaVehiculo?: string | null;
   telefonoCliente?: string | null;
   fechaFactura?: string;
   valorCredito?: number;
+  lineas?: CreditoLineaInput[];
+}
+
+export interface CreditoAbonoLineaInput {
+  lineaId: number;
+  valor: number;
+}
+
+export interface CreditoAbonoInput {
+  valor: number;
+  lineas: CreditoAbonoLineaInput[];
 }
 
 /**
@@ -168,6 +209,11 @@ export interface Compra {
   estado: CompraEstado;
   creadoEn?: string;
   actualizadoEn?: string;
+  cantidadRecibida?: number | null;
+  fechaLlegada?: string | null;
+  proveedor?: string | null;
+  precioCompraRegistrado?: number | null;
+  precioVentaRegistrado?: number | null;
 }
 
 export type CompraInputEstado =
@@ -197,6 +243,7 @@ export interface CompraUpdate {
   nuevoPrecioCompra?: number | null;
   nuevoPrecioVentaSinIva?: number | null;
   tieneIva?: boolean | null;
+  proveedor?: string | null;
 }
 
 export interface DistribucionTrabajador {
@@ -262,6 +309,23 @@ export interface Notas {
 
 export interface NotasInput {
   contenido: string;
+}
+
+export interface HistorialDia {
+  id: number;
+  fecha: string;
+  notas?: string | null;
+  guardadoEn: string;
+  ventas: VentaDiaria[];
+}
+
+export interface HistorialDiaInput {
+  fecha: string;
+  notas?: string | null;
+}
+
+export interface HistorialDiaUpdate {
+  notas?: string | null;
 }
 
 export interface VentaResumenDia {

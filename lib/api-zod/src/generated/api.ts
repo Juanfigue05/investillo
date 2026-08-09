@@ -33,6 +33,11 @@ export const GetInventarioResponseItem = zod.object({
   stockMinimo: zod.number(),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
+  cantidadRecibida: zod.number().nullish(),
+  fechaLlegada: zod.string().nullish(),
+  proveedor: zod.string().nullish(),
+  precioCompraRegistrado: zod.number().nullish(),
+  precioVentaRegistrado: zod.number().nullish(),
 });
 export const GetInventarioResponse = zod.array(GetInventarioResponseItem);
 
@@ -74,6 +79,11 @@ export const GetProductoResponse = zod.object({
   stockMinimo: zod.number(),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
+  cantidadRecibida: zod.number().nullish(),
+  fechaLlegada: zod.string().nullish(),
+  proveedor: zod.string().nullish(),
+  precioCompraRegistrado: zod.number().nullish(),
+  precioVentaRegistrado: zod.number().nullish(),
 });
 
 /**
@@ -111,6 +121,11 @@ export const ActualizarProductoResponse = zod.object({
   stockMinimo: zod.number(),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
+  cantidadRecibida: zod.number().nullish(),
+  fechaLlegada: zod.string().nullish(),
+  proveedor: zod.string().nullish(),
+  precioCompraRegistrado: zod.number().nullish(),
+  precioVentaRegistrado: zod.number().nullish(),
 });
 
 /**
@@ -154,6 +169,11 @@ export const ActualizarStockResponse = zod.object({
   stockMinimo: zod.number(),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
+  cantidadRecibida: zod.number().nullish(),
+  fechaLlegada: zod.string().nullish(),
+  proveedor: zod.string().nullish(),
+  precioCompraRegistrado: zod.number().nullish(),
+  precioVentaRegistrado: zod.number().nullish(),
 });
 
 /**
@@ -175,6 +195,11 @@ export const GetAlertasStockResponseItem = zod.object({
   stockMinimo: zod.number(),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
+  cantidadRecibida: zod.number().nullish(),
+  fechaLlegada: zod.string().nullish(),
+  proveedor: zod.string().nullish(),
+  precioCompraRegistrado: zod.number().nullish(),
+  precioVentaRegistrado: zod.number().nullish(),
 });
 export const GetAlertasStockResponse = zod.array(GetAlertasStockResponseItem);
 
@@ -324,6 +349,19 @@ export const GetCreditosResponseItem = zod.object({
   valorRestante: zod.number(),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
+  lineas: zod.array(
+    zod.object({
+      id: zod.number(),
+      productoId: zod.number().nullish(),
+      cantidad: zod.number(),
+      productoNombre: zod.string(),
+      productoCodigo: zod.string().nullish(),
+      productoMarca: zod.string().nullish(),
+      precioVenta: zod.number(),
+      valorAbonado: zod.number(),
+      valorRestante: zod.number(),
+    }),
+  ),
 });
 export const GetCreditosResponse = zod.array(GetCreditosResponseItem);
 
@@ -338,6 +376,62 @@ export const CrearCreditoBody = zod.object({
   descripcion: zod.string().nullish(),
   valorCredito: zod.number(),
   valorAbonado: zod.number(),
+  lineas: zod.array(
+    zod.object({
+      id: zod.number().nullish(),
+      productoId: zod.number().nullish(),
+      cantidad: zod.number(),
+      productoNombre: zod.string(),
+      productoCodigo: zod.string().nullish(),
+      productoMarca: zod.string().nullish(),
+      precioVenta: zod.number(),
+      valorAbonado: zod.number().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Registrar un abono sobre productos seleccionados del credito
+ */
+export const AbonarCreditoParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const AbonarCreditoBody = zod.object({
+  valor: zod.number(),
+  lineas: zod.array(
+    zod.object({
+      lineaId: zod.number(),
+      valor: zod.number(),
+    }),
+  ),
+});
+
+export const AbonarCreditoResponse = zod.object({
+  id: zod.number(),
+  fechaFactura: zod.coerce.date(),
+  placaVehiculo: zod.string().nullish(),
+  nombreCliente: zod.string(),
+  telefonoCliente: zod.string().nullish(),
+  descripcion: zod.string().nullish(),
+  valorCredito: zod.number(),
+  valorAbonado: zod.number(),
+  valorRestante: zod.number(),
+  creadoEn: zod.coerce.date().optional(),
+  actualizadoEn: zod.coerce.date().optional(),
+  lineas: zod.array(
+    zod.object({
+      id: zod.number(),
+      productoId: zod.number().nullish(),
+      cantidad: zod.number(),
+      productoNombre: zod.string(),
+      productoCodigo: zod.string().nullish(),
+      productoMarca: zod.string().nullish(),
+      precioVenta: zod.number(),
+      valorAbonado: zod.number(),
+      valorRestante: zod.number(),
+    }),
+  ),
 });
 
 /**
@@ -348,13 +442,27 @@ export const ActualizarCreditoParams = zod.object({
 });
 
 export const ActualizarCreditoBody = zod.object({
-  valorAbonado: zod.number(),
+  valorAbonado: zod.number().optional(),
   descripcion: zod.string().nullish(),
   nombreCliente: zod.string().optional(),
   placaVehiculo: zod.string().nullish(),
   telefonoCliente: zod.string().nullish(),
   fechaFactura: zod.coerce.date().optional(),
   valorCredito: zod.number().optional(),
+  lineas: zod
+    .array(
+      zod.object({
+        id: zod.number().nullish(),
+        productoId: zod.number().nullish(),
+        cantidad: zod.number(),
+        productoNombre: zod.string(),
+        productoCodigo: zod.string().nullish(),
+        productoMarca: zod.string().nullish(),
+        precioVenta: zod.number(),
+        valorAbonado: zod.number().optional(),
+      }),
+    )
+    .optional(),
 });
 
 export const ActualizarCreditoResponse = zod.object({
@@ -369,6 +477,19 @@ export const ActualizarCreditoResponse = zod.object({
   valorRestante: zod.number(),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
+  lineas: zod.array(
+    zod.object({
+      id: zod.number(),
+      productoId: zod.number().nullish(),
+      cantidad: zod.number(),
+      productoNombre: zod.string(),
+      productoCodigo: zod.string().nullish(),
+      productoMarca: zod.string().nullish(),
+      precioVenta: zod.number(),
+      valorAbonado: zod.number(),
+      valorRestante: zod.number(),
+    }),
+  ),
 });
 
 /**
@@ -398,6 +519,11 @@ export const GetComprasResponseItem = zod.object({
     .describe("pendiente=rojo, llegado=verde"),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
+  cantidadRecibida: zod.number().nullish(),
+  fechaLlegada: zod.string().nullish(),
+  proveedor: zod.string().nullish(),
+  precioCompraRegistrado: zod.number().nullish(),
+  precioVentaRegistrado: zod.number().nullish(),
 });
 export const GetComprasResponse = zod.array(GetComprasResponseItem);
 
@@ -422,6 +548,7 @@ export const ActualizarCompraBody = zod.object({
   nuevoPrecioCompra: zod.number().nullish(),
   nuevoPrecioVentaSinIva: zod.number().nullish(),
   tieneIva: zod.boolean().nullish(),
+  proveedor: zod.string().nullish(),
 });
 
 export const ActualizarCompraResponse = zod.object({
@@ -437,6 +564,11 @@ export const ActualizarCompraResponse = zod.object({
     .describe("pendiente=rojo, llegado=verde"),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
+  cantidadRecibida: zod.number().nullish(),
+  fechaLlegada: zod.string().nullish(),
+  proveedor: zod.string().nullish(),
+  precioCompraRegistrado: zod.number().nullish(),
+  precioVentaRegistrado: zod.number().nullish(),
 });
 
 /**
@@ -621,6 +753,110 @@ export const GuardarNotasResponse = zod.object({
   id: zod.number(),
   contenido: zod.string(),
   actualizadoEn: zod.coerce.date().optional(),
+});
+
+/**
+ * @summary Listar días guardados en el historial
+ */
+export const GetHistorialResponseItem = zod.object({
+  id: zod.number(),
+  fecha: zod.coerce.date(),
+  notas: zod.string().nullish(),
+  guardadoEn: zod.coerce.date(),
+  ventas: zod.array(
+    zod.object({
+      id: zod.number(),
+      fecha: zod.coerce.date(),
+      referencia: zod
+        .string()
+        .describe("No. Remision, placa, nombre cliente o descripcion"),
+      tipoLinea: zod
+        .enum(["venta", "manoobra", "credito"])
+        .describe("venta=normal, manoobra=amarillo, credito=azul"),
+      productoId: zod.number().nullish(),
+      productoNombre: zod.string().nullish(),
+      productoCodigo: zod.string().nullish(),
+      productoMarca: zod.string().nullish(),
+      cantidad: zod.number(),
+      precioCompraUnidad: zod.number(),
+      precioVentaUnidad: zod.number(),
+      precioVentaTotal: zod
+        .number()
+        .describe("precioVentaUnidad \* cantidad (ya incluye IVA si aplica)"),
+      beneficio: zod.number().describe("Beneficio de la venta"),
+      descripcion: zod
+        .string()
+        .nullish()
+        .describe("Descripcion adicional (para manoobra o credito)"),
+      creadoEn: zod.coerce.date().optional(),
+    }),
+  ),
+});
+export const GetHistorialResponse = zod.array(GetHistorialResponseItem);
+
+/**
+ * @summary Guardar el día actual en el historial
+ */
+export const GuardarDiaHistorialBody = zod.object({
+  fecha: zod.coerce.date(),
+  notas: zod.string().nullish(),
+});
+
+/**
+ * @summary Editar notas de un día del historial (la fecha no cambia)
+ */
+export const ActualizarHistorialParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ActualizarHistorialBody = zod.object({
+  notas: zod.string().nullish(),
+});
+
+export const ActualizarHistorialResponse = zod.object({
+  id: zod.number(),
+  fecha: zod.coerce.date(),
+  notas: zod.string().nullish(),
+  guardadoEn: zod.coerce.date(),
+  ventas: zod.array(
+    zod.object({
+      id: zod.number(),
+      fecha: zod.coerce.date(),
+      referencia: zod
+        .string()
+        .describe("No. Remision, placa, nombre cliente o descripcion"),
+      tipoLinea: zod
+        .enum(["venta", "manoobra", "credito"])
+        .describe("venta=normal, manoobra=amarillo, credito=azul"),
+      productoId: zod.number().nullish(),
+      productoNombre: zod.string().nullish(),
+      productoCodigo: zod.string().nullish(),
+      productoMarca: zod.string().nullish(),
+      cantidad: zod.number(),
+      precioCompraUnidad: zod.number(),
+      precioVentaUnidad: zod.number(),
+      precioVentaTotal: zod
+        .number()
+        .describe("precioVentaUnidad \* cantidad (ya incluye IVA si aplica)"),
+      beneficio: zod.number().describe("Beneficio de la venta"),
+      descripcion: zod
+        .string()
+        .nullish()
+        .describe("Descripcion adicional (para manoobra o credito)"),
+      creadoEn: zod.coerce.date().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Eliminar un día del historial (no borra las ventas)
+ */
+export const EliminarHistorialParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const EliminarHistorialResponse = zod.object({
+  mensaje: zod.string(),
 });
 
 /**

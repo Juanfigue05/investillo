@@ -5,19 +5,22 @@ import {
   useCrearCredito,
   useActualizarCredito,
   useEliminarCredito,
-  useCrearVenta,
+  useAbonarCredito,
   useGetInventario,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, DollarSign, Trash2, X } from "lucide-react";
+import { Plus, DollarSign, Trash2, X, Pencil } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface LineaCredito {
   id: number;
+  productoId?: number | null;
+  productoCodigo?: string | null;
   cantidad: string;
   productoNombre: string;
   marca: string;
   precioVenta: string;
+  valorAbonado?: number;
 }
 
 const emptyForm = {
@@ -34,25 +37,26 @@ export default function Creditos() {
   const queryClient = useQueryClient();
 
   const [showForm, setShowForm] = useState(false);
+  const [editingCreditoId, setEditingCreditoId] = useState<number | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [lineas, setLineas] = useState<LineaCredito[]>([
-    { id: 1, cantidad: "1", productoNombre: "", marca: "", precioVenta: "" },
+    { id: -1, cantidad: "1", productoNombre: "", marca: "", precioVenta: "" },
   ]);
   const [formErrors, setFormErrors] = useState<string[]>([]);
 
   const [showPay, setShowPay] = useState<number | null>(null);
   const [abono, setAbono] = useState("");
-  const [productoAbono, setProductoAbono] = useState("");
+  const [lineasSeleccionadas, setLineasSeleccionadas] = useState<number[]>([]);
 
   const crearMutation = useCrearCredito();
   const actualizarMutation = useActualizarCredito();
   const eliminarMutation = useEliminarCredito();
-  const crearVentaMutation = useCrearVenta();
+  const abonarMutation = useAbonarCredito();
 
   const addLinea = () => {
     setLineas((prev) => [
       ...prev,
-      { id: Date.now(), cantidad: "1", productoNombre: "", marca: "", precioVenta: "" },
+      { id: -Date.now(), cantidad: "1", productoNombre: "", marca: "", precioVenta: "" },
     ]);
   };
 
@@ -71,7 +75,14 @@ export default function Creditos() {
       setLineas((prev) =>
         prev.map((l) =>
           l.id === lineaId
-            ? { ...l, productoNombre: prod.nombre, marca: prod.marca || "", precioVenta: String(prod.precioVentaConIva) }
+            ? {
+                ...l,
+                productoId: prod.id,
+                productoCodigo: prod.codigo,
+                productoNombre: prod.nombre,
+                marca: prod.marca || "",
+                precioVenta: String(prod.precioVentaConIva),
+              }
             : l
         )
       );
@@ -84,7 +95,42 @@ export default function Creditos() {
     return sum + cant * precio;
   }, 0);
 
-  const handleCrear = () => {
+  const openNewCredit = () => {
+    setEditingCreditoId(null);
+    setShowForm(true);
+    setForm({ ...emptyForm });
+    setLineas([{ id: -Date.now(), cantidad: "1", productoNombre: "", marca: "", precioVenta: "" }]);
+    setFormErrors([]);
+  };
+
+  const openEditCredit = (credito: any) => {
+    setEditingCreditoId(credito.id);
+    setShowForm(true);
+    setForm({
+      fechaFactura: credito.fechaFactura,
+      placaVehiculo: credito.placaVehiculo || "",
+      nombreCliente: credito.nombreCliente,
+      telefonoCliente: credito.telefonoCliente || "",
+      valorAbonado: String(credito.valorAbonado || 0),
+    });
+    setLineas(
+      credito.lineas.length
+        ? credito.lineas.map((linea: any) => ({
+            id: linea.id,
+            productoId: linea.productoId,
+            productoCodigo: linea.productoCodigo,
+            cantidad: String(linea.cantidad),
+            productoNombre: linea.productoNombre,
+            marca: linea.productoMarca || "",
+            precioVenta: String(linea.precioVenta),
+            valorAbonado: linea.valorAbonado,
+          }))
+        : [{ id: -Date.now(), cantidad: "1", productoNombre: "", marca: "", precioVenta: "" }],
+    );
+    setFormErrors([]);
+  };
+
+  const handleGuardar = () => {
     const errors: string[] = [];
     if (!form.nombreCliente.trim()) errors.push("El nombre del cliente es obligatorio");
     if (!form.fechaFactura) errors.push("La fecha es obligatoria");
@@ -97,27 +143,47 @@ export default function Creditos() {
       .map((l) => `${l.cantidad}x ${l.productoNombre}${l.marca ? ` (${l.marca})` : ""} @ ${formatCurrency(parseFloat(l.precioVenta) || 0)}`)
       .join(" | ");
 
-    crearMutation.mutate(
-      {
-        data: {
-          fechaFactura: form.fechaFactura,
-          placaVehiculo: form.placaVehiculo || undefined,
-          nombreCliente: form.nombreCliente,
-          telefonoCliente: form.telefonoCliente || undefined,
-          descripcion: descripcion || undefined,
-          valorCredito: totalLineas,
-          valorAbonado: parseFloat(form.valorAbonado) || 0,
-        },
+    const initialAbono = Math.min(totalLineas, parseFloat(form.valorAbonado) || 0);
+    let remainingInitial = initialAbono;
+    const payloadLineas = lineas
+      .filter((linea) => linea.productoNombre.trim() && parseFloat(linea.precioVenta) > 0)
+      .map((linea) => {
+        const total = (parseFloat(linea.cantidad) || 0) * (parseFloat(linea.precioVenta) || 0);
+        const applied = editingCreditoId ? (linea.valorAbonado || 0) : Math.min(total, remainingInitial);
+        if (!editingCreditoId) remainingInitial -= applied;
+        return {
+          id: linea.id > 0 ? linea.id : undefined,
+          productoId: linea.productoId,
+          productoCodigo: linea.productoCodigo,
+          cantidad: parseFloat(linea.cantidad) || 0,
+          productoNombre: linea.productoNombre,
+          productoMarca: linea.marca || undefined,
+          precioVenta: parseFloat(linea.precioVenta) || 0,
+          valorAbonado: applied,
+        };
+      });
+    const data = {
+      fechaFactura: form.fechaFactura,
+      placaVehiculo: form.placaVehiculo || undefined,
+      nombreCliente: form.nombreCliente,
+      telefonoCliente: form.telefonoCliente || undefined,
+      descripcion: descripcion || undefined,
+      valorCredito: totalLineas,
+      valorAbonado: editingCreditoId ? parseFloat(form.valorAbonado) || 0 : initialAbono,
+      lineas: payloadLineas,
+    };
+
+    const options = {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
+        setShowForm(false);
+        setEditingCreditoId(null);
+        setForm({ ...emptyForm });
+        setLineas([{ id: -Date.now(), cantidad: "1", productoNombre: "", marca: "", precioVenta: "" }]);
       },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
-          setShowForm(false);
-          setForm({ ...emptyForm });
-          setLineas([{ id: 1, cantidad: "1", productoNombre: "", marca: "", precioVenta: "" }]);
-        },
-      }
-    );
+    };
+    if (editingCreditoId) actualizarMutation.mutate({ id: editingCreditoId, data }, options);
+    else crearMutation.mutate({ data }, options);
   };
 
   const handleAbono = (credito: any) => {
@@ -127,37 +193,26 @@ export default function Creditos() {
       alert(`El abono no puede superar el saldo de ${formatCurrency(credito.valorRestante)}`);
       return;
     }
-    actualizarMutation.mutate(
-      { id: credito.id, data: { valorAbonado: credito.valorAbonado + abonoNum } },
+    const selected = credito.lineas.filter((linea: any) => lineasSeleccionadas.includes(linea.id));
+    if (!selected.length) { alert("Selecciona al menos un producto para abonar"); return; }
+    let remaining = abonoNum;
+    const lineasAbono = selected.map((linea: any) => {
+      const value = Math.min(linea.valorRestante, remaining);
+      remaining -= value;
+      return { lineaId: linea.id, valor: value };
+    }).filter((linea: any) => linea.valor > 0);
+    if (remaining > 0.01) { alert("El valor supera el saldo de los productos seleccionados"); return; }
+    abonarMutation.mutate(
+      { id: credito.id, data: { valor: abonoNum, lineas: lineasAbono } },
       {
         onSuccess: () => {
-          crearVentaMutation.mutate(
-            {
-              data: {
-                fecha: new Date().toISOString().split("T")[0],
-                referencia: credito.placaVehiculo ? `${credito.nombreCliente} / ${credito.placaVehiculo}` : credito.nombreCliente,
-                tipoLinea: "credito",
-                productoNombre: productoAbono || "Abono factura",
-                cantidad: 1,
-                precioCompraUnidad: 0,
-                precioVentaUnidad: abonoNum,
-                precioVentaTotal: abonoNum,
-                beneficio: 0,
-                descripcion: `Abono de ${credito.nombreCliente}`,
-              },
-            },
-            {
-              onSuccess: () => {
-                queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
-                queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
-                setShowPay(null);
-                setAbono("");
-                setProductoAbono("");
-              },
-            }
-          );
+          queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+          setShowPay(null);
+          setAbono("");
+          setLineasSeleccionadas([]);
         },
-      }
+      },
     );
   };
 
@@ -182,7 +237,7 @@ export default function Creditos() {
             <p className="text-muted-foreground mt-1">Lleva el control de facturas o cuentas pendientes.</p>
           </div>
           <button
-            onClick={() => { setShowForm(true); setForm({ ...emptyForm }); setLineas([{ id: 1, cantidad: "1", productoNombre: "", marca: "", precioVenta: "" }]); setFormErrors([]); }}
+            onClick={openNewCredit}
             className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
           >
             <Plus className="w-5 h-5" />
@@ -205,7 +260,7 @@ export default function Creditos() {
         {showForm && (
           <div className="bg-card border border-border rounded-2xl p-6 shadow-xl animate-in fade-in slide-in-from-top-4">
             <div className="flex justify-between items-center mb-5">
-              <h3 className="text-xl font-bold text-foreground">Registrar Nuevo Crédito</h3>
+              <h3 className="text-xl font-bold text-foreground">{editingCreditoId ? "Editar Crédito" : "Registrar Nuevo Crédito"}</h3>
               <button onClick={() => setShowForm(false)} className="p-2 hover:bg-muted rounded-lg text-muted-foreground">
                 <X className="w-5 h-5" />
               </button>
@@ -365,11 +420,11 @@ export default function Creditos() {
                 Cancelar
               </button>
               <button
-                onClick={handleCrear}
-                disabled={crearMutation.isPending}
+                onClick={handleGuardar}
+                disabled={crearMutation.isPending || actualizarMutation.isPending}
                 className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors shadow-md"
               >
-                {crearMutation.isPending ? "Guardando..." : `Guardar Crédito — ${formatCurrency(totalLineas)}`}
+                {crearMutation.isPending || actualizarMutation.isPending ? "Guardando..." : `${editingCreditoId ? "Actualizar" : "Guardar"} Crédito — ${formatCurrency(totalLineas)}`}
               </button>
             </div>
           </div>
@@ -397,6 +452,9 @@ export default function Creditos() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="bg-destructive/10 text-destructive text-xs font-bold px-2 py-1 rounded-full uppercase">Pendiente</span>
+                      <button onClick={() => openEditCredit(credito)} className="p-1 text-muted-foreground hover:text-primary rounded-lg" title="Editar crédito">
+                        <Pencil className="w-4 h-4" />
+                      </button>
                       <button onClick={() => handleEliminar(credito.id)} className="p-1 text-muted-foreground hover:text-destructive rounded-lg">
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -433,6 +491,19 @@ export default function Creditos() {
                       <span>Saldo:</span>
                       <span className="text-destructive">{formatCurrency(credito.valorRestante)}</span>
                     </div>
+                    <div className="mt-3 rounded-lg border border-border bg-background/60 p-3">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Productos y saldos</p>
+                      {credito.lineas.length > 0 ? credito.lineas.map((linea) => (
+                        <div key={linea.id} className="flex items-center justify-between gap-3 py-1 text-xs">
+                          <span className="min-w-0 truncate text-foreground">
+                            {linea.cantidad} × {linea.productoNombre}
+                          </span>
+                          <span className="shrink-0 text-muted-foreground">{formatCurrency(linea.valorRestante)}</span>
+                        </div>
+                      )) : (
+                        <p className="text-xs text-muted-foreground">Este crédito fue creado antes del detalle por productos. Edítalo para agregar sus líneas.</p>
+                      )}
+                    </div>
                   </div>
 
                   {showPay === credito.id ? (
@@ -446,20 +517,31 @@ export default function Creditos() {
                           onChange={(e) => setAbono(e.target.value)}
                           className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
-                        <input
-                          type="text"
-                          placeholder="Producto al que abona..."
-                          value={productoAbono}
-                          onChange={(e) => setProductoAbono(e.target.value)}
-                          className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                        />
+                        <div className="rounded-lg border border-border bg-card p-3">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Productos a pagar o abonar</p>
+                          {credito.lineas.length > 0 ? credito.lineas.map((linea) => (
+                            <label key={linea.id} className="flex cursor-pointer items-center justify-between gap-3 border-b border-border py-2 last:border-0">
+                              <span className="flex min-w-0 items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={lineasSeleccionadas.includes(linea.id)}
+                                  disabled={linea.valorRestante <= 0}
+                                  onChange={() => setLineasSeleccionadas((prev) => prev.includes(linea.id) ? prev.filter((id) => id !== linea.id) : [...prev, linea.id])}
+                                  className="h-4 w-4 accent-primary"
+                                />
+                                <span className="truncate">{linea.cantidad} × {linea.productoNombre}</span>
+                              </span>
+                              <span className="shrink-0 text-xs text-muted-foreground">{formatCurrency(linea.valorRestante)}</span>
+                            </label>
+                          )) : <p className="text-xs text-muted-foreground">Edita el crédito para registrar sus productos.</p>}
+                        </div>
                         <div className="flex gap-2">
                           <button onClick={() => setShowPay(null)} className="flex-1 py-2 bg-muted text-foreground rounded-lg text-sm font-medium hover:bg-muted/80">
                             Cancelar
                           </button>
                           <button
                             onClick={() => handleAbono(credito)}
-                            disabled={actualizarMutation.isPending || crearVentaMutation.isPending}
+                            disabled={abonarMutation.isPending || credito.lineas.length === 0}
                             className="flex-1 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90"
                           >
                             Confirmar
@@ -469,7 +551,7 @@ export default function Creditos() {
                     </div>
                   ) : (
                     <button
-                      onClick={() => { setShowPay(credito.id); setAbono(""); setProductoAbono(""); }}
+                      onClick={() => { setShowPay(credito.id); setAbono(""); setLineasSeleccionadas([]); }}
                       className="w-full py-3 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-colors border border-border"
                     >
                       Abonar / Pagar

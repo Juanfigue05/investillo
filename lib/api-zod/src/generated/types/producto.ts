@@ -24,4 +24,9 @@ export interface Producto {
   stockMinimo: number;
   creadoEn?: Date;
   actualizadoEn?: Date;
+  cantidadRecibida?: number | null;
+  fechaLlegada?: string | null;
+  proveedor?: string | null;
+  precioCompraRegistrado?: number | null;
+  precioVentaRegistrado?: number | null;
 }

@@ -201,11 +201,15 @@
     background-color: #fbbf24 !important;
     color: #000 !important;
     font-weight: 600;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   .print-zone .row-credito td {
     background-color: #3b82f6 !important;
     color: #fff !important;
     font-weight: 600;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   /* Allow table to overflow in print */

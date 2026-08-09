@@ -5,6 +5,7 @@
  * API specification para Sistema de Gestion
  * OpenAPI spec version: 0.1.0
  */
+import type { CreditoLinea } from "./creditoLinea";
 
 export interface Credito {
   id: number;
@@ -18,4 +19,5 @@ export interface Credito {
   valorRestante: number;
   creadoEn?: Date;
   actualizadoEn?: Date;
+  lineas: CreditoLinea[];
 }

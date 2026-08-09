@@ -1,0 +1,4 @@
+- [DB recompile required](db-recompile.md) — after schema changes, must run `pnpm tsc -p lib/db/tsconfig.json` AND `pnpm tsc -p lib/api-client-react/tsconfig.json` before running tsc on dependents; `push` alone is not enough.
+- [Historial schema](historial-schema.md) — `historial_dias` table has unique fecha (immutable), notas, guardadoEn; ventas stay in ventas_diarias and are queried by fecha on demand.
+- [Abono flujos distintos](abono-flujos.md) — "Abono A" in Ventas Diarias is a simple blue row, independent of Créditos; credit payments from Créditos page create ONE simple "Abono A" row (not per-product rows).
+- [totalGanado fix](totalganado-fix.md) — manoobra route was using `db.$count()` for totalGanado (wrong); must read worker first then add `dist.valor` to existing total.

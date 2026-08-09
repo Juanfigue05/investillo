@@ -13,4 +13,5 @@ export interface CompraUpdate {
   nuevoPrecioCompra?: number | null;
   nuevoPrecioVentaSinIva?: number | null;
   tieneIva?: boolean | null;
+  proveedor?: string | null;
 }

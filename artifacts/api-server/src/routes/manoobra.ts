@@ -63,12 +63,14 @@ router.post("/", async (req, res) => {
         descuentoOtros: String(parseFloat(dist.descuentoOtros || 0)),
       });
 
-      await db
-        .update(trabajadoresTable)
-        .set({
-          totalGanado: db.$count(trabajadoresTable),
-        })
-        .where(eq(trabajadoresTable.id, dist.trabajadorId));
+      // Accumulate totalGanado for this worker
+      const [trab] = await db.select().from(trabajadoresTable).where(eq(trabajadoresTable.id, dist.trabajadorId));
+      if (trab) {
+        await db
+          .update(trabajadoresTable)
+          .set({ totalGanado: String(toNum(trab.totalGanado) + parseFloat(dist.valor || 0)) })
+          .where(eq(trabajadoresTable.id, dist.trabajadorId));
+      }
     }
   }
 

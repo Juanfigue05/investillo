@@ -196,7 +196,7 @@ export default function Inventario() {
                             {typeof prod.stockActual === "number" ? prod.stockActual.toLocaleString("es-CO", { maximumFractionDigits: 2 }) : prod.stockActual}
                           </span>
                           {prod.stockActual <= prod.stockMinimo && (
-                            <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0" title="Stock bajo mínimo" />
+                            <AlertCircle aria-label="Stock bajo mínimo" className="w-4 h-4 text-destructive flex-shrink-0" />
                           )}
                         </div>
                       </td>

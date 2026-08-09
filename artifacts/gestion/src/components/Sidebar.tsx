@@ -7,6 +7,7 @@ import {
   Truck, 
   Wrench, 
   Receipt,
+  BookOpen,
   LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ const NAV_ITEMS = [
   { href: "/compras", label: "Compras", icon: Truck },
   { href: "/mano-obra", label: "Mano de Obra", icon: Wrench },
   { href: "/facturacion", label: "Facturación DIAN", icon: Receipt },
+  { href: "/historial", label: "Historial de Ventas", icon: BookOpen },
 ];
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
