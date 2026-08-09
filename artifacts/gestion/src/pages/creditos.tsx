@@ -51,6 +51,9 @@ export default function Creditos() {
   const [abono, setAbono] = useState("");
   const [lineasSeleccionadas, setLineasSeleccionadas] = useState<number[]>([]);
   const [busqueda, setBusqueda] = useState("");
+  const [filtroDesde, setFiltroDesde] = useState("");
+  const [filtroHasta, setFiltroHasta] = useState("");
+  const [filtroPlaca, setFiltroPlaca] = useState("");
   const [expandedAbonos, setExpandedAbonos] = useState<Set<number>>(new Set());
 
   const crearMutation = useCrearCredito();
@@ -176,10 +179,17 @@ export default function Creditos() {
   };
 
   const q = busqueda.toLowerCase();
+  const hayFiltros = !!(busqueda || filtroDesde || filtroHasta || filtroPlaca);
   const allCreditos = useMemo(() => {
     if (!creditos) return [];
-    return creditos.filter((c) => !q || c.nombreCliente.toLowerCase().includes(q) || (c.concepto || "").toLowerCase().includes(q) || (c.placaVehiculo || "").toLowerCase().includes(q) || (c.telefonoCliente || "").includes(q));
-  }, [creditos, q]);
+    return creditos.filter((c) => {
+      if (q && !c.nombreCliente.toLowerCase().includes(q) && !(c.concepto || "").toLowerCase().includes(q) && !(c.telefonoCliente || "").includes(q)) return false;
+      if (filtroDesde && c.fechaFactura < filtroDesde) return false;
+      if (filtroHasta && c.fechaFactura > filtroHasta) return false;
+      if (filtroPlaca && !(c.placaVehiculo || "").toLowerCase().includes(filtroPlaca.toLowerCase())) return false;
+      return true;
+    });
+  }, [creditos, q, filtroDesde, filtroHasta, filtroPlaca]);
 
   const pendientes = allCreditos.filter((c) => c.valorRestante > 0);
   const pagados = allCreditos.filter((c) => c.valorRestante <= 0);
@@ -305,11 +315,43 @@ export default function Creditos() {
           </div>
         )}
 
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input type="text" placeholder="Buscar por cliente, concepto, placa o teléfono..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 bg-card border border-border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
-          {busqueda && <button onClick={() => setBusqueda("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>}
+        <div className="flex flex-col gap-3">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input type="text" placeholder="Buscar por cliente, concepto o teléfono..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+              className="w-full pl-9 pr-4 py-2.5 bg-card border border-border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+            {busqueda && <button onClick={() => setBusqueda("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>}
+          </div>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Desde</label>
+              <input type="date" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)}
+                className="bg-card border border-border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Hasta</label>
+              <input type="date" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)}
+                className="bg-card border border-border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none" />
+            </div>
+            <div className="relative">
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Placa</label>
+              <input type="text" placeholder="Ej: ABC123" value={filtroPlaca} onChange={(e) => setFiltroPlaca(e.target.value.toUpperCase())}
+                className="bg-card border border-border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none w-32 font-mono uppercase" />
+              {filtroPlaca && (
+                <button onClick={() => setFiltroPlaca("")} className="absolute right-2.5 top-[2.1rem] text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            {hayFiltros && (
+              <button
+                onClick={() => { setBusqueda(""); setFiltroDesde(""); setFiltroHasta(""); setFiltroPlaca(""); }}
+                className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-xl px-3 py-2 bg-card transition-colors"
+              >
+                Limpiar filtros
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Form */}
@@ -416,7 +458,7 @@ export default function Creditos() {
           <div className="text-center py-8 text-muted-foreground text-sm">Cargando créditos...</div>
         ) : pendientes.length === 0 ? (
           <div className="text-center py-12 bg-card rounded-2xl border border-border">
-            <p className="text-muted-foreground text-sm">{busqueda ? "Sin resultados para esa búsqueda." : "No hay créditos pendientes. ✓"}</p>
+            <p className="text-muted-foreground text-sm">{hayFiltros ? "Sin resultados para los filtros aplicados." : "No hay créditos pendientes. ✓"}</p>
           </div>
         ) : (
           <div className="space-y-6">
