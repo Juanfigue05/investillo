@@ -9,7 +9,7 @@ import {
   useGetInventario,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Trash2, X, Pencil, Search, ChevronDown, ChevronUp, Clock } from "lucide-react";
+import { Plus, Trash2, X, Pencil, Search, ChevronDown, ChevronUp, Clock, Printer } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 const TIPO = "credito";
@@ -185,6 +185,19 @@ export default function Creditos() {
   const pagados = allCreditos.filter((c) => c.valorRestante <= 0);
   const totalDeben = pendientes.reduce((s, c) => s + c.valorRestante, 0);
 
+  // For print: pending credits sorted oldest first
+  const creditosParaImprimir = useMemo(() => {
+    if (!creditos) return [];
+    return creditos
+      .filter((c) => c.valorRestante > 0)
+      .sort((a, b) => a.fechaFactura.localeCompare(b.fechaFactura));
+  }, [creditos]);
+
+  const hoyStr = new Date().toLocaleDateString("es-CO", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+  const hoyLabel = hoyStr.charAt(0).toUpperCase() + hoyStr.slice(1);
+
   // Group pendientes by month
   const porMes = useMemo(() => {
     const map = new Map<string, typeof pendientes>();
@@ -204,15 +217,85 @@ export default function Creditos() {
 
   return (
     <Layout>
+      {/* ===== PRINT ZONE — only visible when printing ===== */}
+      <div className="print-zone print-only">
+        {/* Date header */}
+        <div className="print-date-header">
+          Créditos Pendientes — {hoyLabel}
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style={{ width: "7%" }}>Fecha</th>
+              <th style={{ width: "9%" }}>Vehículo</th>
+              <th style={{ width: "18%" }}>Cliente</th>
+              <th style={{ width: "11%" }}>Teléfono</th>
+              <th style={{ width: "16%" }}>Factura / Concepto</th>
+              <th style={{ width: "10%", textAlign: "right" }}>Total Deuda</th>
+              <th style={{ width: "10%", textAlign: "right" }}>Abono</th>
+              <th style={{ width: "9%" }}>Fecha Abono</th>
+              <th style={{ width: "10%", textAlign: "right" }}>Restante</th>
+            </tr>
+          </thead>
+          <tbody>
+            {creditosParaImprimir.map((c) => {
+              const ultimoAbono = c.abonos && c.abonos.length > 0 ? c.abonos[0] : null;
+              const fechaAbonoStr = ultimoAbono
+                ? new Date(ultimoAbono.fecha + "T12:00:00").toLocaleDateString("es-CO")
+                : "—";
+              return (
+                <>
+                  {/* Data row — no bottom border so it merges with spacer */}
+                  <tr key={`data-${c.id}`} className="print-credito-data">
+                    <td>{new Date(c.fechaFactura + "T12:00:00").toLocaleDateString("es-CO")}</td>
+                    <td>{c.placaVehiculo || "—"}</td>
+                    <td>{c.nombreCliente}</td>
+                    <td>{c.telefonoCliente || "—"}</td>
+                    <td>{c.concepto || "—"}</td>
+                    <td style={{ textAlign: "right" }}>$ {c.valorCredito.toLocaleString("es-CO")}</td>
+                    <td style={{ textAlign: "right" }}>
+                      {c.valorAbonado > 0 ? `$ ${c.valorAbonado.toLocaleString("es-CO")}` : "—"}
+                    </td>
+                    <td>{fechaAbonoStr}</td>
+                    <td style={{ textAlign: "right" }}>$ {c.valorRestante.toLocaleString("es-CO")}</td>
+                  </tr>
+                  {/* Spacer row — blank space for handwritten annotations */}
+                  <tr key={`spacer-${c.id}`} className="print-credito-spacer">
+                    <td colSpan={9}></td>
+                  </tr>
+                </>
+              );
+            })}
+            {creditosParaImprimir.length === 0 && (
+              <tr>
+                <td colSpan={9} style={{ textAlign: "center", padding: "12px", fontStyle: "italic" }}>
+                  No hay créditos pendientes
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {/* ===== END PRINT ZONE ===== */}
+
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h1 className="text-2xl lg:text-3xl font-display font-bold text-foreground">Créditos</h1>
             <p className="text-muted-foreground mt-1 text-sm">Gestión de créditos y cobros pendientes de clientes.</p>
           </div>
-          <button onClick={openNew} className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg text-sm">
-            <Plus className="w-4 h-4" /> Nuevo Crédito
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => window.print()}
+              className="no-print flex items-center gap-2 px-4 py-2.5 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm"
+            >
+              <Printer className="w-4 h-4" />
+              Imprimir
+            </button>
+            <button onClick={openNew} className="no-print flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg text-sm">
+              <Plus className="w-4 h-4" /> Nuevo Crédito
+            </button>
+          </div>
         </div>
 
         {totalDeben > 0 && (

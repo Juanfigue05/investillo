@@ -226,6 +226,21 @@
     text-align: left;
   }
 
+  /* Credits print: data row has no bottom border (spacer provides it) */
+  .print-credito-data td {
+    border-bottom: none !important;
+  }
+
+  /* Credits print: spacer row for handwritten annotations */
+  .print-credito-spacer td {
+    height: 44px !important;
+    border-top: none !important;
+    border-left: 1px solid #d1d5db;
+    border-right: 1px solid #d1d5db;
+    border-bottom: 1px dashed #9ca3af !important;
+    background: white !important;
+  }
+
   @page {
     size: landscape;
     margin: 8mm;
