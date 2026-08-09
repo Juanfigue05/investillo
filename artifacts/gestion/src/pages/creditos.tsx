@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Layout } from "@/components/Layout";
 import {
   useGetCreditos,
@@ -9,7 +9,7 @@ import {
   useGetInventario,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, DollarSign, Trash2, X, Pencil } from "lucide-react";
+import { Plus, Trash2, X, Pencil, Search } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface LineaCredito {
@@ -48,6 +48,9 @@ export default function Creditos() {
   const [abono, setAbono] = useState("");
   const [lineasSeleccionadas, setLineasSeleccionadas] = useState<number[]>([]);
 
+  // Search
+  const [busqueda, setBusqueda] = useState("");
+
   const crearMutation = useCrearCredito();
   const actualizarMutation = useActualizarCredito();
   const eliminarMutation = useEliminarCredito();
@@ -75,14 +78,7 @@ export default function Creditos() {
       setLineas((prev) =>
         prev.map((l) =>
           l.id === lineaId
-            ? {
-                ...l,
-                productoId: prod.id,
-                productoCodigo: prod.codigo,
-                productoNombre: prod.nombre,
-                marca: prod.marca || "",
-                precioVenta: String(prod.precioVentaConIva),
-              }
+            ? { ...l, productoId: prod.id, productoCodigo: prod.codigo, productoNombre: prod.nombre, marca: prod.marca || "", precioVenta: String(prod.precioVentaConIva) }
             : l
         )
       );
@@ -200,32 +196,45 @@ export default function Creditos() {
       const value = Math.min(linea.valorRestante, remaining);
       remaining -= value;
       return { lineaId: linea.id, valor: value };
-    }).filter((linea: any) => linea.valor > 0);
-    if (remaining > 0.01) { alert("El valor supera el saldo de los productos seleccionados"); return; }
+    }).filter((la: any) => la.valor > 0);
+
     abonarMutation.mutate(
       { id: credito.id, data: { valor: abonoNum, lineas: lineasAbono } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
-          queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
           setShowPay(null);
           setAbono("");
           setLineasSeleccionadas([]);
         },
-      },
+      }
     );
   };
 
   const handleEliminar = (id: number) => {
-    if (confirm("¿Eliminar este crédito permanentemente?")) {
-      eliminarMutation.mutate(
-        { id },
-        { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/creditos"] }) }
-      );
+    if (confirm("¿Eliminar este crédito?")) {
+      eliminarMutation.mutate({ id }, {
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/creditos"] }),
+      });
     }
   };
 
-  const totalNosDeben = creditos?.reduce((acc, c) => acc + Math.max(0, c.valorRestante), 0) || 0;
+  // Filtered and separated credits
+  const q = busqueda.toLowerCase();
+  const allCreditos = useMemo(() => {
+    if (!creditos) return [];
+    if (!q) return creditos;
+    return creditos.filter((c) =>
+      c.nombreCliente.toLowerCase().includes(q) ||
+      (c.placaVehiculo || "").toLowerCase().includes(q) ||
+      (c.telefonoCliente || "").toLowerCase().includes(q)
+    );
+  }, [creditos, q]);
+
+  const pendientes = allCreditos.filter((c) => c.valorRestante > 0);
+  const pagados = allCreditos.filter((c) => c.valorRestante <= 0);
+
+  const totalDeben = pendientes.reduce((s, c) => s + c.valorRestante, 0);
 
   return (
     <Layout>
@@ -233,245 +242,204 @@ export default function Creditos() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-display font-bold text-foreground">Créditos de Clientes</h1>
-            <p className="text-muted-foreground mt-1">Lleva el control de facturas o cuentas pendientes.</p>
+            <h1 className="text-2xl lg:text-3xl font-display font-bold text-foreground">Créditos</h1>
+            <p className="text-muted-foreground mt-1 text-sm">Gestión de créditos y cobros pendientes.</p>
           </div>
           <button
             onClick={openNewCredit}
-            className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg text-sm"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4 h-4" />
             Nuevo Crédito
           </button>
         </div>
 
         {/* Total banner */}
-        <div className="bg-gradient-to-r from-card to-muted border border-border p-6 rounded-2xl shadow-lg flex items-center justify-between">
-          <div>
-            <p className="text-muted-foreground font-medium mb-1 uppercase tracking-wider text-sm">Total que nos deben</p>
-            <h2 className="text-4xl font-display font-bold text-destructive">{formatCurrency(totalNosDeben)}</h2>
+        {totalDeben > 0 && (
+          <div className="bg-destructive/10 border border-destructive/20 rounded-2xl px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <p className="text-sm font-medium text-destructive">Total que nos deben</p>
+            <p className="text-2xl font-display font-bold text-destructive">{formatCurrency(totalDeben)}</p>
           </div>
-          <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center">
-            <DollarSign className="w-8 h-8 text-destructive" />
-          </div>
+        )}
+
+        {/* Search */}
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Buscar por cliente, placa o teléfono..."
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            className="w-full pl-9 pr-4 py-2.5 bg-card border border-border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
+          />
+          {busqueda && (
+            <button onClick={() => setBusqueda("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
-        {/* New Credit Form */}
+        {/* Form */}
         {showForm && (
-          <div className="bg-card border border-border rounded-2xl p-6 shadow-xl animate-in fade-in slide-in-from-top-4">
-            <div className="flex justify-between items-center mb-5">
-              <h3 className="text-xl font-bold text-foreground">{editingCreditoId ? "Editar Crédito" : "Registrar Nuevo Crédito"}</h3>
-              <button onClick={() => setShowForm(false)} className="p-2 hover:bg-muted rounded-lg text-muted-foreground">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-top-4">
+            <div className="px-6 py-4 border-b border-border bg-muted/50 flex justify-between items-center">
+              <h3 className="text-lg font-display font-bold text-foreground">
+                {editingCreditoId ? "Editar Crédito" : "Nuevo Crédito"}
+              </h3>
+              <button onClick={() => setShowForm(false)} className="text-muted-foreground hover:text-foreground">
                 <X className="w-5 h-5" />
               </button>
             </div>
+            <div className="p-6 space-y-5">
+              {formErrors.length > 0 && (
+                <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4">
+                  {formErrors.map((e, i) => <p key={i} className="text-destructive text-sm">• {e}</p>)}
+                </div>
+              )}
 
-            {formErrors.length > 0 && (
-              <div className="mb-4 bg-destructive/10 border border-destructive/30 rounded-xl p-3 text-sm text-destructive">
-                {formErrors.map((e, i) => <p key={i}>• {e}</p>)}
-              </div>
-            )}
-
-            {/* Client info */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Fecha <span className="text-destructive">*</span></label>
-                <input type="date" value={form.fechaFactura} onChange={(e) => setForm({ ...form, fechaFactura: e.target.value })}
-                  className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Cliente <span className="text-destructive">*</span></label>
-                <input type="text" placeholder="Nombre completo" value={form.nombreCliente} onChange={(e) => setForm({ ...form, nombreCliente: e.target.value })}
-                  className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Placa</label>
-                <input type="text" placeholder="ABC-123" value={form.placaVehiculo} onChange={(e) => setForm({ ...form, placaVehiculo: e.target.value.toUpperCase() })}
-                  className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Teléfono</label>
-                <input type="text" placeholder="300 000 0000" value={form.telefonoCliente} onChange={(e) => setForm({ ...form, telefonoCliente: e.target.value })}
-                  className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none" />
-              </div>
-            </div>
-
-            {/* Products table */}
-            <div className="mb-5">
-              <div className="flex justify-between items-center mb-3">
-                <label className="text-sm font-medium text-muted-foreground">Productos del crédito <span className="text-destructive">*</span></label>
-                <button type="button" onClick={addLinea} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-muted text-foreground rounded-lg border border-border hover:bg-muted/80 transition-colors">
-                  <Plus className="w-3 h-3" /> Agregar fila
-                </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Nombre Cliente <span className="text-destructive">*</span></label>
+                  <input type="text" value={form.nombreCliente} onChange={(e) => setForm({ ...form, nombreCliente: e.target.value })} className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Fecha <span className="text-destructive">*</span></label>
+                  <input type="date" value={form.fechaFactura} onChange={(e) => setForm({ ...form, fechaFactura: e.target.value })} className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Placa Vehículo</label>
+                  <input type="text" value={form.placaVehiculo} onChange={(e) => setForm({ ...form, placaVehiculo: e.target.value })} className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Teléfono</label>
+                  <input type="text" value={form.telefonoCliente} onChange={(e) => setForm({ ...form, telefonoCliente: e.target.value })} className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+                </div>
               </div>
 
-              <div className="bg-background rounded-xl border border-border overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-muted text-muted-foreground border-b border-border">
-                      <th className="px-3 py-2 font-medium text-left w-16">Cant</th>
-                      <th className="px-3 py-2 font-medium text-left">Producto</th>
-                      <th className="px-3 py-2 font-medium text-left w-28">Marca</th>
-                      <th className="px-3 py-2 font-medium text-left w-32">P. Venta</th>
-                      <th className="px-3 py-2 font-medium text-right w-28">Subtotal</th>
-                      <th className="w-8"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {lineas.map((linea) => {
-                      const sub = (parseFloat(linea.cantidad) || 0) * (parseFloat(linea.precioVenta) || 0);
-                      return (
+              {/* Product lines */}
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-2">Productos</label>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[520px]">
+                    <thead>
+                      <tr className="bg-muted text-muted-foreground border-b border-border">
+                        <th className="px-3 py-2 font-medium text-xs">Producto</th>
+                        <th className="px-3 py-2 font-medium text-xs w-20">Cant</th>
+                        <th className="px-3 py-2 font-medium text-xs w-32">P. Venta</th>
+                        <th className="px-3 py-2 font-medium text-xs w-24">Total</th>
+                        <th className="px-3 py-2 w-8"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {lineas.map((linea) => (
                         <tr key={linea.id}>
-                          <td className="px-2 py-1.5">
-                            <input
-                              type="number"
-                              min="0.1"
-                              step="0.1"
-                              value={linea.cantidad}
-                              onChange={(e) => updateLinea(linea.id, "cantidad", e.target.value)}
-                              className="w-14 bg-card border border-border px-2 py-1.5 rounded-lg focus:ring-1 focus:ring-primary outline-none text-center"
-                            />
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <div className="flex gap-1.5 items-center">
-                              <select
-                                onChange={(e) => handleSelectProducto(linea.id, e.target.value)}
-                                className="text-xs bg-card border border-border px-2 py-1.5 rounded-lg focus:ring-1 focus:ring-primary outline-none text-muted-foreground"
-                                defaultValue=""
-                              >
-                                <option value="">Del inventario...</option>
-                                {productos?.map((p) => (
-                                  <option key={p.id} value={p.id}>{p.nombre}</option>
-                                ))}
-                              </select>
-                              <input
-                                type="text"
-                                placeholder="Nombre producto..."
-                                value={linea.productoNombre}
-                                onChange={(e) => updateLinea(linea.id, "productoNombre", e.target.value)}
-                                className="flex-1 bg-card border border-border px-2 py-1.5 rounded-lg focus:ring-1 focus:ring-primary outline-none"
-                              />
-                            </div>
-                          </td>
-                          <td className="px-2 py-1.5">
+                          <td className="px-3 py-2">
                             <input
                               type="text"
-                              placeholder="Marca"
-                              value={linea.marca}
-                              onChange={(e) => updateLinea(linea.id, "marca", e.target.value)}
-                              className="w-full bg-card border border-border px-2 py-1.5 rounded-lg focus:ring-1 focus:ring-primary outline-none"
+                              placeholder="Nombre del producto..."
+                              value={linea.productoNombre}
+                              onChange={(e) => updateLinea(linea.id, "productoNombre", e.target.value)}
+                              list={`prod-list-${linea.id}`}
+                              className="w-full bg-background border border-border px-3 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"
                             />
+                            <datalist id={`prod-list-${linea.id}`}>
+                              {productos?.map((p) => (
+                                <option key={p.id} value={p.nombre} onClick={() => handleSelectProducto(linea.id, String(p.id))} />
+                              ))}
+                            </datalist>
                           </td>
-                          <td className="px-2 py-1.5">
-                            <input
-                              type="number"
-                              placeholder="0"
-                              value={linea.precioVenta}
-                              onChange={(e) => updateLinea(linea.id, "precioVenta", e.target.value)}
-                              className="w-full bg-card border border-border px-2 py-1.5 rounded-lg focus:ring-1 focus:ring-primary outline-none"
-                            />
+                          <td className="px-3 py-2">
+                            <input type="number" min="1" step="0.01" value={linea.cantidad} onChange={(e) => updateLinea(linea.id, "cantidad", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-center" />
                           </td>
-                          <td className="px-2 py-1.5 text-right font-medium text-primary whitespace-nowrap">
-                            {sub > 0 ? formatCurrency(sub) : "—"}
+                          <td className="px-3 py-2">
+                            <input type="number" min="0" value={linea.precioVenta} onChange={(e) => updateLinea(linea.id, "precioVenta", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" />
                           </td>
-                          <td className="px-1 py-1.5">
-                            <button
-                              type="button"
-                              onClick={() => removeLinea(linea.id)}
-                              disabled={lineas.length === 1}
-                              className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors disabled:opacity-30"
-                            >
+                          <td className="px-3 py-2 font-medium text-primary text-xs">
+                            {formatCurrency((parseFloat(linea.cantidad) || 0) * (parseFloat(linea.precioVenta) || 0))}
+                          </td>
+                          <td className="px-3 py-2">
+                            <button type="button" onClick={() => removeLinea(linea.id)} disabled={lineas.length === 1} className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-30">
                               <X className="w-3.5 h-3.5" />
                             </button>
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot className="bg-muted/50 border-t border-border">
-                    <tr>
-                      <td colSpan={4} className="px-3 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Total Crédito
-                      </td>
-                      <td className="px-2 py-2 text-right font-bold text-lg text-primary">
-                        {formatCurrency(totalLineas)}
-                      </td>
-                      <td></td>
-                    </tr>
-                  </tfoot>
-                </table>
+                      ))}
+                    </tbody>
+                    <tfoot className="border-t border-border bg-muted/30">
+                      <tr>
+                        <td colSpan={3} className="px-3 py-2 text-right text-xs font-medium text-muted-foreground uppercase">Total crédito</td>
+                        <td className="px-3 py-2 font-bold text-primary">{formatCurrency(totalLineas)}</td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                <button type="button" onClick={addLinea} className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors">
+                  <Plus className="w-3.5 h-3.5" />
+                  Agregar producto
+                </button>
               </div>
-            </div>
 
-            {/* Abono inicial */}
-            <div className="mb-5">
-              <label className="block text-sm font-medium text-muted-foreground mb-1">Abono Inicial ($)</label>
-              <input
-                type="number"
-                placeholder="0"
-                value={form.valorAbonado}
-                onChange={(e) => setForm({ ...form, valorAbonado: e.target.value })}
-                className="w-48 bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none"
-              />
-            </div>
+              <div className="mb-5">
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Abono Inicial ($)</label>
+                <input type="number" placeholder="0" value={form.valorAbonado} onChange={(e) => setForm({ ...form, valorAbonado: e.target.value })} className="w-48 bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+              </div>
 
-            <div className="flex gap-3 justify-end border-t border-border pt-4">
-              <button onClick={() => setShowForm(false)} className="px-5 py-2.5 bg-muted text-foreground rounded-xl font-medium hover:bg-muted/80 transition-colors">
-                Cancelar
-              </button>
-              <button
-                onClick={handleGuardar}
-                disabled={crearMutation.isPending || actualizarMutation.isPending}
-                className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors shadow-md"
-              >
-                {crearMutation.isPending || actualizarMutation.isPending ? "Guardando..." : `${editingCreditoId ? "Actualizar" : "Guardar"} Crédito — ${formatCurrency(totalLineas)}`}
-              </button>
+              <div className="flex gap-3 justify-end border-t border-border pt-4">
+                <button onClick={() => setShowForm(false)} className="px-5 py-2.5 bg-muted text-foreground rounded-xl font-medium hover:bg-muted/80 transition-colors text-sm">Cancelar</button>
+                <button onClick={handleGuardar} disabled={crearMutation.isPending || actualizarMutation.isPending} className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors shadow-md text-sm">
+                  {crearMutation.isPending || actualizarMutation.isPending ? "Guardando..." : `${editingCreditoId ? "Actualizar" : "Guardar"} Crédito — ${formatCurrency(totalLineas)}`}
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Credit Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+        {/* ── PENDIENTES ── */}
+        <div>
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-destructive inline-block"></span>
+            Pendientes de pago ({pendientes.length})
+          </h2>
           {isLoading ? (
-            <div className="col-span-full text-center py-8 text-muted-foreground">Cargando créditos...</div>
-          ) : creditos?.filter((c) => c.valorRestante > 0).length === 0 && !showForm ? (
-            <div className="col-span-full text-center py-12 bg-card rounded-2xl border border-border">
-              <p className="text-muted-foreground">No hay créditos pendientes.</p>
+            <div className="text-center py-8 text-muted-foreground text-sm">Cargando créditos...</div>
+          ) : pendientes.length === 0 ? (
+            <div className="text-center py-10 bg-card rounded-2xl border border-border">
+              <p className="text-muted-foreground text-sm">{busqueda ? "Sin resultados para esa búsqueda." : "No hay créditos pendientes. ✓"}</p>
             </div>
           ) : (
-            creditos
-              ?.filter((c) => c.valorRestante > 0)
-              .map((credito) => (
-                <div key={credito.id} className="bg-card border border-border rounded-2xl p-6 shadow-md hover:shadow-xl transition-all flex flex-col">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+              {pendientes.map((credito) => (
+                <div key={credito.id} className="bg-card border border-border rounded-2xl p-5 shadow-md hover:shadow-xl transition-all flex flex-col">
                   <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h3 className="text-lg font-bold text-foreground">{credito.nombreCliente}</h3>
-                      <p className="text-sm text-muted-foreground">
+                    <div className="min-w-0">
+                      <h3 className="text-base font-bold text-foreground truncate">{credito.nombreCliente}</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         {new Date(credito.fechaFactura + "T12:00:00").toLocaleDateString("es-CO")}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="bg-destructive/10 text-destructive text-xs font-bold px-2 py-1 rounded-full uppercase">Pendiente</span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                      <span className="bg-destructive/10 text-destructive text-xs font-bold px-2 py-0.5 rounded-full uppercase">Pendiente</span>
                       <button onClick={() => openEditCredit(credito)} className="p-1 text-muted-foreground hover:text-primary rounded-lg" title="Editar crédito">
-                        <Pencil className="w-4 h-4" />
+                        <Pencil className="w-3.5 h-3.5" />
                       </button>
                       <button onClick={() => handleEliminar(credito.id)} className="p-1 text-muted-foreground hover:text-destructive rounded-lg">
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
 
-                  <div className="space-y-1.5 mb-4 flex-1 text-sm">
+                  <div className="space-y-1 mb-4 flex-1 text-sm">
                     {credito.placaVehiculo && (
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Placa:</span>
-                        <span className="font-medium">{credito.placaVehiculo}</span>
+                        <span className="text-muted-foreground text-xs">Placa:</span>
+                        <span className="font-medium text-xs">{credito.placaVehiculo}</span>
                       </div>
                     )}
                     {credito.telefonoCliente && (
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Tel:</span>
-                        <span>{credito.telefonoCliente}</span>
+                        <span className="text-muted-foreground text-xs">Tel:</span>
+                        <span className="text-xs">{credito.telefonoCliente}</span>
                       </div>
                     )}
                     {credito.descripcion && (
@@ -479,29 +447,27 @@ export default function Creditos() {
                         <p className="text-xs text-muted-foreground leading-relaxed">{credito.descripcion}</p>
                       </div>
                     )}
-                    <div className="flex justify-between pt-2 mt-2">
-                      <span className="text-muted-foreground">Valor inicial:</span>
-                      <span className="font-medium">{formatCurrency(credito.valorCredito)}</span>
+                    <div className="flex justify-between pt-2 mt-1 border-t border-border/50">
+                      <span className="text-muted-foreground text-xs">Valor inicial:</span>
+                      <span className="font-medium text-xs">{formatCurrency(credito.valorCredito)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Abonado:</span>
-                      <span className="font-medium text-green-500">{formatCurrency(credito.valorAbonado)}</span>
+                      <span className="text-muted-foreground text-xs">Abonado:</span>
+                      <span className="font-medium text-xs text-green-500">{formatCurrency(credito.valorAbonado)}</span>
                     </div>
-                    <div className="flex justify-between pt-2 border-t border-border font-bold text-base">
+                    <div className="flex justify-between pt-2 border-t border-border font-bold">
                       <span>Saldo:</span>
                       <span className="text-destructive">{formatCurrency(credito.valorRestante)}</span>
                     </div>
                     <div className="mt-3 rounded-lg border border-border bg-background/60 p-3">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Productos y saldos</p>
-                      {credito.lineas.length > 0 ? credito.lineas.map((linea) => (
+                      {credito.lineas.length > 0 ? credito.lineas.map((linea: any) => (
                         <div key={linea.id} className="flex items-center justify-between gap-3 py-1 text-xs">
-                          <span className="min-w-0 truncate text-foreground">
-                            {linea.cantidad} × {linea.productoNombre}
-                          </span>
+                          <span className="min-w-0 truncate text-foreground">{linea.cantidad} × {linea.productoNombre}</span>
                           <span className="shrink-0 text-muted-foreground">{formatCurrency(linea.valorRestante)}</span>
                         </div>
                       )) : (
-                        <p className="text-xs text-muted-foreground">Este crédito fue creado antes del detalle por productos. Edítalo para agregar sus líneas.</p>
+                        <p className="text-xs text-muted-foreground">Edita el crédito para agregar sus productos.</p>
                       )}
                     </div>
                   </div>
@@ -518,8 +484,8 @@ export default function Creditos() {
                           className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                         <div className="rounded-lg border border-border bg-card p-3">
-                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Productos a pagar o abonar</p>
-                          {credito.lineas.length > 0 ? credito.lineas.map((linea) => (
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Productos a pagar</p>
+                          {credito.lineas.length > 0 ? credito.lineas.map((linea: any) => (
                             <label key={linea.id} className="flex cursor-pointer items-center justify-between gap-3 border-b border-border py-2 last:border-0">
                               <span className="flex min-w-0 items-center gap-2 text-sm">
                                 <input
@@ -536,49 +502,63 @@ export default function Creditos() {
                           )) : <p className="text-xs text-muted-foreground">Edita el crédito para registrar sus productos.</p>}
                         </div>
                         <div className="flex gap-2">
-                          <button onClick={() => setShowPay(null)} className="flex-1 py-2 bg-muted text-foreground rounded-lg text-sm font-medium hover:bg-muted/80">
-                            Cancelar
-                          </button>
-                          <button
-                            onClick={() => handleAbono(credito)}
-                            disabled={abonarMutation.isPending || credito.lineas.length === 0}
-                            className="flex-1 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90"
-                          >
-                            Confirmar
-                          </button>
+                          <button onClick={() => setShowPay(null)} className="flex-1 py-2 bg-muted text-foreground rounded-lg text-sm font-medium hover:bg-muted/80">Cancelar</button>
+                          <button onClick={() => handleAbono(credito)} disabled={abonarMutation.isPending || credito.lineas.length === 0} className="flex-1 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">Confirmar</button>
                         </div>
                       </div>
                     </div>
                   ) : (
                     <button
                       onClick={() => { setShowPay(credito.id); setAbono(""); setLineasSeleccionadas([]); }}
-                      className="w-full py-3 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-colors border border-border"
+                      className="w-full py-2.5 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-colors border border-border text-sm"
                     >
                       Abonar / Pagar
                     </button>
                   )}
                 </div>
-              ))
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Paid credits */}
-        {creditos?.some((c) => c.valorRestante <= 0) && (
+        {/* ── PAGADOS ── */}
+        {pagados.length > 0 && (
           <div>
-            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">Cancelados / Pagados</h3>
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 opacity-60">
-              {creditos?.filter((c) => c.valorRestante <= 0).map((c) => (
-                <div key={c.id} className="bg-card border border-green-500/30 rounded-xl p-4 flex justify-between items-center">
-                  <div>
-                    <p className="font-medium text-foreground">{c.nombreCliente}</p>
-                    <p className="text-xs text-muted-foreground">{formatCurrency(c.valorCredito)}</p>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
+              Pagados al 100% ({pagados.length})
+            </h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+              {pagados.map((c) => (
+                <div key={c.id} className="bg-card border border-green-500/30 rounded-xl p-4 flex flex-col gap-3">
+                  <div className="flex justify-between items-start">
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground truncate">{c.nombreCliente}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(c.fechaFactura + "T12:00:00").toLocaleDateString("es-CO")} · {formatCurrency(c.valorCredito)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                      <span className="text-xs text-green-500 font-bold bg-green-500/10 px-2 py-0.5 rounded-full">Pagado ✓</span>
+                      <button onClick={() => openEditCredit(c)} className="p-1 text-muted-foreground hover:text-primary rounded-lg" title="Editar / corregir abono">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => handleEliminar(c.id)} className="p-1 text-muted-foreground hover:text-destructive rounded-lg">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-500 font-medium">Pagado</span>
-                    <button onClick={() => handleEliminar(c.id)} className="p-1 text-muted-foreground hover:text-destructive rounded">
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
+                  {c.lineas.length > 0 && (
+                    <div className="bg-background rounded-lg border border-border/50 p-2.5 space-y-1">
+                      {c.lineas.map((l: any) => (
+                        <div key={l.id} className="flex justify-between text-xs text-muted-foreground">
+                          <span className="truncate">{l.cantidad} × {l.productoNombre}</span>
+                          <span>{formatCurrency(l.precioVenta * l.cantidad)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {c.descripcion && <p className="text-xs text-muted-foreground italic">{c.descripcion}</p>}
                 </div>
               ))}
             </div>

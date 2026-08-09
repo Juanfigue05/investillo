@@ -81,7 +81,7 @@ function SearchableSelect({
   };
 
   return (
-    <div ref={containerRef} className="relative w-full min-w-[180px]">
+    <div ref={containerRef} className="relative w-full min-w-[160px]">
       <button
         type="button"
         onClick={() => { setOpen(!open); if (!open) setBusqueda(""); }}
@@ -145,7 +145,6 @@ export default function VentasDiarias() {
   const crearManoObraMutation = useCrearManoObra();
   const guardarDiaMutation = useGuardarDiaHistorial();
 
-  // New row state
   const [newRow, setNewRow] = useState({
     referencia: "",
     productoSeleccionado: "" as string,
@@ -159,7 +158,6 @@ export default function VentasDiarias() {
     trabajadoresSeleccionados: [] as number[],
   });
 
-  // Inline editing state
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<EditValues>({
     referencia: "",
@@ -324,7 +322,6 @@ export default function VentasDiarias() {
       return;
     }
 
-    // Normal sale
     const prod = productos?.find((p) => String(p.id) === newRow.productoSeleccionado);
     const nombreProducto = prod?.nombre || "";
     if (!nombreProducto) { alert("Selecciona un producto del inventario"); return; }
@@ -371,18 +368,22 @@ export default function VentasDiarias() {
     guardarDiaMutation.mutate(
       { data: { fecha } },
       {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: ["/api/historial"] });
-          alert("✅ Día guardado en el Historial de Ventas.");
-        },
-        onError: () => {
-          queryClient.invalidateQueries({ queryKey: ["/api/historial"] });
-        },
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/historial"] }),
+        onError: () => queryClient.invalidateQueries({ queryKey: ["/api/historial"] }),
       }
     );
   };
 
-  const totalVentas = ventas?.filter((v) => v.tipoLinea === "venta").reduce((acc, v) => acc + v.precioVentaTotal, 0) || 0;
+  // Computed totals
+  const ventasRows = ventas?.filter((v) => v.tipoLinea === "venta") || [];
+  const moRows = ventas?.filter((v) => v.tipoLinea === "manoobra") || [];
+
+  const totalPCompra = ventasRows.reduce((acc, v) => acc + v.precioCompraUnidad, 0);
+  const totalPVenta = ventasRows.reduce((acc, v) => acc + v.precioVentaUnidad, 0);
+  const totalVentaTotal = ventasRows.reduce((acc, v) => acc + v.precioVentaTotal, 0);
+  const totalBeneficio = ventasRows.reduce((acc, v) => acc + v.beneficio, 0);
+  const totalManoObra = moRows.reduce((acc, v) => acc + v.precioVentaTotal, 0);
+
   const cantNum = parseFloat(newRow.cantidad.replace(",", ".")) || 0;
   const previewTotal = modoActual === "normal" ? newRow.precioVenta * cantNum : modoActual === "manoobra" ? newRow.precioManoObra : 0;
   const previewBeneficio = modoActual === "normal" ? (newRow.precioVenta - newRow.precioCompra) * cantNum : 0;
@@ -393,37 +394,37 @@ export default function VentasDiarias() {
 
   return (
     <Layout>
-      <div className="space-y-6">
+      <div className="space-y-5">
         {/* Header */}
-        <div className="no-print flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="no-print flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div>
-            <h1 className="text-3xl font-display font-bold text-foreground">Ventas Diarias</h1>
-            <p className="text-muted-foreground mt-1">Registra las ventas del día directamente en la tabla.</p>
+            <h1 className="text-2xl lg:text-3xl font-display font-bold text-foreground">Ventas Diarias</h1>
+            <p className="text-muted-foreground mt-1 text-sm">Registra las ventas del día directamente en la tabla.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <input
               type="date"
               value={fecha}
               onChange={(e) => setFecha(e.target.value)}
-              className="bg-card border border-border text-foreground px-4 py-2 rounded-xl focus:ring-2 focus:ring-primary outline-none"
+              className="bg-card border border-border text-foreground px-3 py-2 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
             />
             <button
               onClick={handleGuardarDia}
               disabled={guardarDiaMutation.isPending}
-              className={`flex items-center gap-2 px-5 py-2 rounded-xl font-medium transition-all border ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all border text-sm ${
                 diaYaGuardado
                   ? "bg-green-500/10 border-green-500/30 text-green-500 cursor-default"
                   : "bg-primary text-primary-foreground border-primary hover:bg-primary/90 shadow-md shadow-primary/20"
               }`}
             >
-              <BookMarked className="w-5 h-5" />
-              {diaYaGuardado ? "Guardado en Historial" : "Guardar en Historial"}
+              <BookMarked className="w-4 h-4" />
+              {diaYaGuardado ? "Guardado" : "Guardar en Historial"}
             </button>
             <button
               onClick={() => window.print()}
-              className="flex items-center gap-2 px-5 py-2 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border"
+              className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm"
             >
-              <Printer className="w-5 h-5" />
+              <Printer className="w-4 h-4" />
               Imprimir
             </button>
           </div>
@@ -436,7 +437,7 @@ export default function VentasDiarias() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
+            <table className="w-full text-left border-collapse text-xs lg:text-sm">
               <thead>
                 <tr className="bg-muted text-muted-foreground border-b border-border">
                   <th className="px-2 py-3 font-medium no-print w-10"></th>
@@ -446,8 +447,8 @@ export default function VentasDiarias() {
                   <th className="px-3 py-3 font-medium whitespace-nowrap">Cant</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">P. Compra</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">P. Venta</th>
-                  <th className="px-3 py-3 font-medium whitespace-nowrap">Total</th>
-                  <th className="px-3 py-3 font-medium whitespace-nowrap">Beneficio</th>
+                  <th className="px-3 py-3 font-medium whitespace-nowrap">Total Venta</th>
+                  <th className="px-3 py-3 font-medium whitespace-nowrap">Beneficio/Ganancia</th>
                   <th className="px-3 py-3 font-medium no-print w-20"></th>
                 </tr>
               </thead>
@@ -470,10 +471,10 @@ export default function VentasDiarias() {
                       placeholder="R 1234 24-ENE"
                       value={newRow.referencia}
                       onChange={(e) => setNewRow({ ...newRow, referencia: e.target.value })}
-                      className="w-full bg-background border border-border px-3 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none"
+                      className="w-full bg-background border border-border px-3 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm"
                     />
                   </td>
-                  <td className="p-2 min-w-[200px]">
+                  <td className="p-2 min-w-[180px]">
                     <SearchableSelect
                       opciones={opcionesProducto}
                       value={newRow.productoSeleccionado}
@@ -483,7 +484,7 @@ export default function VentasDiarias() {
                     {modoActual === "abono" && (
                       <input
                         type="text"
-                        placeholder="Nombre cliente / producto..."
+                        placeholder="Nombre cliente..."
                         value={newRow.productoNombreManual}
                         onChange={(e) => setNewRow({ ...newRow, productoNombreManual: e.target.value })}
                         className="w-full mt-1 bg-background border border-blue-500/50 px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
@@ -492,26 +493,13 @@ export default function VentasDiarias() {
                   </td>
                   <td className="p-2">
                     {modoActual === "normal" && (
-                      <input
-                        type="text"
-                        value={newRow.marca}
-                        onChange={(e) => setNewRow({ ...newRow, marca: e.target.value })}
-                        className="w-24 bg-background border border-border px-3 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none"
-                        placeholder="Marca"
-                      />
+                      <input type="text" value={newRow.marca} onChange={(e) => setNewRow({ ...newRow, marca: e.target.value })} className="w-20 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="Marca" />
                     )}
                     {modoActual === "manoobra" && (
-                      <div className="flex flex-wrap gap-1 max-w-[180px]">
+                      <div className="flex flex-wrap gap-1 max-w-[160px]">
                         {trabajadores?.map((t) => (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => toggleTrabajador(t.id)}
-                            className={`px-2 py-1 rounded-lg border text-xs font-medium transition-all ${
-                              newRow.trabajadoresSeleccionados.includes(t.id)
-                                ? "bg-yellow-500/20 border-yellow-500 text-yellow-400"
-                                : "bg-background border-border text-muted-foreground hover:border-yellow-500/50"
-                            }`}
+                          <button key={t.id} type="button" onClick={() => toggleTrabajador(t.id)}
+                            className={`px-2 py-1 rounded-lg border text-xs font-medium transition-all ${newRow.trabajadoresSeleccionados.includes(t.id) ? "bg-yellow-500/20 border-yellow-500 text-yellow-400" : "bg-background border-border text-muted-foreground hover:border-yellow-500/50"}`}
                           >
                             {t.nombre}
                           </button>
@@ -522,55 +510,25 @@ export default function VentasDiarias() {
                   </td>
                   <td className="p-2">
                     {modoActual === "normal" && (
-                      <input
-                        type="text"
-                        placeholder="1"
-                        value={newRow.cantidad}
-                        onChange={(e) => setNewRow({ ...newRow, cantidad: e.target.value })}
-                        className="w-16 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none"
-                      />
+                      <input type="text" placeholder="1" value={newRow.cantidad} onChange={(e) => setNewRow({ ...newRow, cantidad: e.target.value })} className="w-14 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" />
                     )}
                     {modoActual === "manoobra" && <span className="text-xs text-muted-foreground">{newRow.trabajadoresSeleccionados.length} trab.</span>}
                     {modoActual === "abono" && <span className="text-xs text-muted-foreground">—</span>}
                   </td>
                   <td className="p-2">
                     {modoActual === "normal" && (
-                      <input
-                        type="number"
-                        value={newRow.precioCompra || ""}
-                        onChange={(e) => setNewRow({ ...newRow, precioCompra: parseFloat(e.target.value) || 0 })}
-                        className="w-28 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none"
-                        placeholder="P. Compra"
-                      />
+                      <input type="number" value={newRow.precioCompra || ""} onChange={(e) => setNewRow({ ...newRow, precioCompra: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="P.Compra" />
                     )}
                     {modoActual === "manoobra" && (
-                      <input
-                        type="number"
-                        value={newRow.precioManoObra || ""}
-                        onChange={(e) => setNewRow({ ...newRow, precioManoObra: parseFloat(e.target.value) || 0 })}
-                        className="w-28 bg-background border border-yellow-500/50 px-2 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 outline-none"
-                        placeholder="Precio M.O."
-                      />
+                      <input type="number" value={newRow.precioManoObra || ""} onChange={(e) => setNewRow({ ...newRow, precioManoObra: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-yellow-500/50 px-2 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 outline-none text-sm" placeholder="Precio M.O." />
                     )}
                     {modoActual === "abono" && (
-                      <input
-                        type="number"
-                        value={newRow.valorAbono || ""}
-                        onChange={(e) => setNewRow({ ...newRow, valorAbono: parseFloat(e.target.value) || 0 })}
-                        className="w-28 bg-background border border-blue-500/50 px-2 py-2 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none"
-                        placeholder="Valor abono"
-                      />
+                      <input type="number" value={newRow.valorAbono || ""} onChange={(e) => setNewRow({ ...newRow, valorAbono: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-blue-500/50 px-2 py-2 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm" placeholder="Valor" />
                     )}
                   </td>
                   <td className="p-2">
                     {modoActual === "normal" ? (
-                      <input
-                        type="number"
-                        value={newRow.precioVenta || ""}
-                        onChange={(e) => setNewRow({ ...newRow, precioVenta: parseFloat(e.target.value) || 0 })}
-                        className="w-28 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none"
-                        placeholder="P. Venta"
-                      />
+                      <input type="number" value={newRow.precioVenta || ""} onChange={(e) => setNewRow({ ...newRow, precioVenta: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="P.Venta" />
                     ) : (
                       <span className="text-xs text-muted-foreground px-2">—</span>
                     )}
@@ -601,34 +559,18 @@ export default function VentasDiarias() {
                       return (
                         <tr key={venta.id} className={`${rowCls} ring-2 ring-inset ring-primary/40`}>
                           <td className="p-2 no-print"></td>
-                          <td className="p-2">
-                            <input value={editValues.referencia} onChange={(e) => setEditValues((v) => ({ ...v, referencia: e.target.value }))} className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" />
-                          </td>
-                          <td className="p-2">
-                            <input value={editValues.productoNombre} onChange={(e) => setEditValues((v) => ({ ...v, productoNombre: e.target.value }))} className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" />
-                          </td>
-                          <td className="p-2">
-                            <input value={editValues.productoMarca} onChange={(e) => setEditValues((v) => ({ ...v, productoMarca: e.target.value }))} className="w-20 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" />
-                          </td>
-                          <td className="p-2">
-                            <input type="number" value={editValues.cantidad} onChange={(e) => setEditValues((v) => ({ ...v, cantidad: e.target.value }))} className="w-14 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" />
-                          </td>
-                          <td className="p-2">
-                            <input type="number" value={editValues.precioCompraUnidad} onChange={(e) => setEditValues((v) => ({ ...v, precioCompraUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" />
-                          </td>
-                          <td className="p-2">
-                            <input type="number" value={editValues.precioVentaUnidad} onChange={(e) => setEditValues((v) => ({ ...v, precioVentaUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" />
-                          </td>
+                          <td className="p-2"><input value={editValues.referencia} onChange={(e) => setEditValues((v) => ({ ...v, referencia: e.target.value }))} className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
+                          <td className="p-2"><input value={editValues.productoNombre} onChange={(e) => setEditValues((v) => ({ ...v, productoNombre: e.target.value }))} className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
+                          <td className="p-2"><input value={editValues.productoMarca} onChange={(e) => setEditValues((v) => ({ ...v, productoMarca: e.target.value }))} className="w-20 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
+                          <td className="p-2"><input type="number" value={editValues.cantidad} onChange={(e) => setEditValues((v) => ({ ...v, cantidad: e.target.value }))} className="w-14 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
+                          <td className="p-2"><input type="number" value={editValues.precioCompraUnidad} onChange={(e) => setEditValues((v) => ({ ...v, precioCompraUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
+                          <td className="p-2"><input type="number" value={editValues.precioVentaUnidad} onChange={(e) => setEditValues((v) => ({ ...v, precioVentaUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
                           <td className="p-2 font-bold text-primary whitespace-nowrap">{formatCurrency(editTotal)}</td>
                           <td className="p-2 font-medium text-green-500 whitespace-nowrap">{venta.tipoLinea === "venta" ? formatCurrency(editBen) : "—"}</td>
                           <td className="p-2 no-print">
                             <div className="flex gap-1">
-                              <button onClick={() => handleSaveEdit(venta)} disabled={actualizarMutation.isPending} className="p-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors border border-primary/30">
-                                <Check className="w-3.5 h-3.5" />
-                              </button>
-                              <button onClick={() => setEditingId(null)} className="p-1.5 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors border border-border">
-                                <X className="w-3.5 h-3.5" />
-                              </button>
+                              <button onClick={() => handleSaveEdit(venta)} disabled={actualizarMutation.isPending} className="p-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors border border-primary/30"><Check className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => setEditingId(null)} className="p-1.5 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors border border-border"><X className="w-3.5 h-3.5" /></button>
                             </div>
                           </td>
                         </tr>
@@ -661,15 +603,35 @@ export default function VentasDiarias() {
                   })
                 )}
               </tbody>
-              <tfoot className="bg-card border-t-2 border-border">
-                <tr>
-                  <td className="no-print"></td>
-                  <td colSpan={6} className="px-4 py-3 text-right font-medium text-muted-foreground uppercase text-xs tracking-wider">
-                    Total Ventas del Día (excluye M.O. y Abonos)
-                  </td>
-                  <td className="px-4 py-3 font-display font-bold text-xl text-primary">{formatCurrency(totalVentas)}</td>
-                  <td className="no-print" colSpan={2}></td>
-                </tr>
+
+              {/* ── Totals footer ── */}
+              <tfoot className="border-t-2 border-border">
+                {/* Row 1: Sales totals */}
+                {(ventasRows.length > 0) && (
+                  <tr className="bg-card">
+                    <td className="no-print"></td>
+                    <td colSpan={4} className="px-3 py-2.5 text-right font-medium text-muted-foreground uppercase text-xs tracking-wider">
+                      Total Ventas del Día
+                    </td>
+                    <td className="px-3 py-2.5 font-bold text-foreground whitespace-nowrap text-xs">{formatCurrency(totalPCompra)}</td>
+                    <td className="px-3 py-2.5 font-bold text-foreground whitespace-nowrap text-xs">{formatCurrency(totalPVenta)}</td>
+                    <td className="px-3 py-2.5 font-display font-bold text-lg text-primary whitespace-nowrap">{formatCurrency(totalVentaTotal)}</td>
+                    <td className="px-3 py-2.5 font-bold text-green-500 whitespace-nowrap">{formatCurrency(totalBeneficio)}</td>
+                    <td className="no-print"></td>
+                  </tr>
+                )}
+
+                {/* Row 2: Mano de Obra total — yellow in print */}
+                {moRows.length > 0 && (
+                  <tr className="bg-yellow-500/5 print-mo-total-row">
+                    <td className="no-print"></td>
+                    <td colSpan={6} className="px-3 py-2.5 text-right font-bold text-yellow-600 uppercase text-xs tracking-wider">
+                      MANO DE OBRA TOTAL DEL DÍA
+                    </td>
+                    <td className="px-3 py-2.5 font-display font-bold text-lg text-yellow-600 whitespace-nowrap">{formatCurrency(totalManoObra)}</td>
+                    <td colSpan={2} className="no-print"></td>
+                  </tr>
+                )}
               </tfoot>
             </table>
           </div>

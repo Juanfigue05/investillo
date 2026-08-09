@@ -20,7 +20,9 @@ function mapProducto(p: typeof productosTable.$inferSelect) {
     nombre: p.nombre,
     codigo: p.codigo,
     marca: p.marca,
+    tipo: p.tipo,
     referencia: p.referencia,
+    adicional: p.adicional,
     precioCompra: toNum(p.precioCompra),
     precioVentaSinIva: toNum(p.precioVentaSinIva),
     precioVentaConIva: toNum(p.precioVentaConIva),
@@ -56,7 +58,7 @@ router.get("/:id", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const { nombre, codigo, marca, referencia, precioCompra, precioVentaSinIva, tieneIva, stockActual, stockMinimo } = req.body;
+  const { nombre, codigo, marca, tipo, referencia, adicional, precioCompra, precioVentaSinIva, tieneIva, stockActual, stockMinimo } = req.body;
 
   const pvSinIva = parseFloat(precioVentaSinIva);
   const pvConIva = tieneIva ? calcPrecioConIva(pvSinIva) : pvSinIva;
@@ -65,7 +67,9 @@ router.post("/", async (req, res) => {
     nombre,
     codigo,
     marca: marca || null,
+    tipo: tipo || null,
     referencia: referencia || null,
+    adicional: adicional || null,
     precioCompra: String(parseFloat(precioCompra)),
     precioVentaSinIva: String(pvSinIva),
     precioVentaConIva: String(pvConIva),
@@ -79,7 +83,7 @@ router.post("/", async (req, res) => {
 
 router.put("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
-  const { nombre, codigo, marca, referencia, precioCompra, precioVentaSinIva, tieneIva, stockActual, stockMinimo } = req.body;
+  const { nombre, codigo, marca, tipo, referencia, adicional, precioCompra, precioVentaSinIva, tieneIva, stockActual, stockMinimo } = req.body;
 
   const pvSinIva = parseFloat(precioVentaSinIva);
   const pvConIva = tieneIva ? calcPrecioConIva(pvSinIva) : pvSinIva;
@@ -90,7 +94,9 @@ router.put("/:id", async (req, res) => {
       nombre,
       codigo,
       marca: marca || null,
+      tipo: tipo || null,
       referencia: referencia || null,
+      adicional: adicional || null,
       precioCompra: String(parseFloat(precioCompra)),
       precioVentaSinIva: String(pvSinIva),
       precioVentaConIva: String(pvConIva),

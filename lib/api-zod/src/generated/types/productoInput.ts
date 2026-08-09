@@ -10,7 +10,9 @@ export interface ProductoInput {
   nombre: string;
   codigo: string;
   marca?: string;
+  tipo?: string;
   referencia?: string;
+  adicional?: string;
   precioCompra: number;
   precioVentaSinIva: number;
   tieneIva: boolean;

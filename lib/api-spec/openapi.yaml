@@ -735,8 +735,16 @@ components:
           type: string
         marca:
           type: string
+        tipo:
+          type: string
+          nullable: true
+          description: Tipo de producto
         referencia:
           type: string
+        adicional:
+          type: string
+          nullable: true
+          description: Información adicional del producto
         precioCompra:
           type: number
           description: Precio de compra en COP
@@ -794,7 +802,11 @@ components:
           type: string
         marca:
           type: string
+        tipo:
+          type: string
         referencia:
+          type: string
+        adicional:
           type: string
         precioCompra:
           type: number
@@ -1434,6 +1446,9 @@ components:
         noDeben:
           type: number
           description: Total que nos deben en creditos pendientes
+        totalComprasRecibidas:
+          type: number
+          description: Suma total de compras recibidas (estado=llegado)
         productosAlerta:
           type: integer
           description: Cantidad de productos con alerta de stock bajo
@@ -1446,6 +1461,7 @@ components:
         - totalVentasHoy
         - totalManoObraHoy
         - noDeben
+        - totalComprasRecibidas
         - productosAlerta
         - productosAgotados
         - ventasHoy

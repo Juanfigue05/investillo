@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { creditoLineasTable, creditosTable, ventasDiariasTable } from "@workspace/db/schema";
+import { creditoLineasTable, creditosTable } from "@workspace/db/schema";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -209,20 +209,6 @@ router.post("/:id/abono", async (req, res) => {
         .set({ valorAbonado: String(toNum(linea.valorAbonado) + appliedValue) })
         .where(eq(creditoLineasTable.id, linea.id));
     }
-
-    // One simple "Abono A" row per payment, not one per product
-    await tx.insert(ventasDiariasTable).values({
-      fecha: new Date().toISOString().split("T")[0],
-      referencia: credito.nombreCliente,
-      tipoLinea: "credito",
-      productoNombre: `Abono A ${credito.nombreCliente}`,
-      cantidad: "1",
-      precioCompraUnidad: "0",
-      precioVentaUnidad: String(appliedTotal),
-      precioVentaTotal: String(appliedTotal),
-      beneficio: "0",
-      descripcion: `Abono de crédito — ${credito.nombreCliente}`,
-    });
 
     const newAbonado = toNum(credito.valorAbonado) + appliedTotal;
     const [updatedCredito] = await tx.update(creditosTable)

@@ -11,7 +11,11 @@ export interface Producto {
   nombre: string;
   codigo: string;
   marca?: string;
+  /** Tipo de producto */
+  tipo?: string | null;
   referencia?: string;
+  /** Información adicional del producto */
+  adicional?: string | null;
   /** Precio de compra en COP */
   precioCompra: number;
   /** Precio de venta sin IVA en COP */

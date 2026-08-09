@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { ventasDiariasTable, creditosTable, productosTable } from "@workspace/db/schema";
+import { ventasDiariasTable, creditosTable, productosTable, comprasTable } from "@workspace/db/schema";
 import { eq, lte, sql, and } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -12,7 +12,13 @@ function toNum(v: unknown): number {
 router.get("/", async (req, res) => {
   const today = new Date().toISOString().split("T")[0];
 
-  const ventasHoy = await db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.fecha, today));
+  const [ventasHoy, creditos, productosAlerta, productosAgotados, comprasLlegadas] = await Promise.all([
+    db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.fecha, today)),
+    db.select().from(creditosTable),
+    db.select().from(productosTable).where(lte(productosTable.stockActual, sql`${productosTable.stockMinimo} + 1`)),
+    db.select().from(productosTable).where(lte(productosTable.stockActual, productosTable.stockMinimo)),
+    db.select().from(comprasTable).where(eq(comprasTable.estado, "llegado")),
+  ]);
 
   const totalVentasHoy = ventasHoy
     .filter(v => v.tipoLinea === "venta")
@@ -22,26 +28,22 @@ router.get("/", async (req, res) => {
     .filter(v => v.tipoLinea === "manoobra")
     .reduce((acc, v) => acc + toNum(v.precioVentaTotal), 0);
 
-  const creditos = await db.select().from(creditosTable);
   const noDeben = creditos.reduce((acc, c) => {
     const restante = toNum(c.valorCredito) - toNum(c.valorAbonado);
     return acc + (restante > 0 ? restante : 0);
   }, 0);
 
-  const productosAlerta = await db
-    .select()
-    .from(productosTable)
-    .where(lte(productosTable.stockActual, sql`${productosTable.stockMinimo} + 1`));
-
-  const productosAgotados = await db
-    .select()
-    .from(productosTable)
-    .where(lte(productosTable.stockActual, productosTable.stockMinimo));
+  const totalComprasRecibidas = comprasLlegadas.reduce((acc, c) => {
+    const cant = toNum(c.cantidadRecibida ?? "0");
+    const precio = toNum(c.precioCompraRegistrado ?? "0");
+    return acc + cant * precio;
+  }, 0);
 
   res.json({
     totalVentasHoy,
     totalManoObraHoy,
     noDeben,
+    totalComprasRecibidas,
     productosAlerta: productosAlerta.length,
     productosAgotados: productosAgotados.length,
     ventasHoy: ventasHoy.filter(v => v.tipoLinea === "venta").length,

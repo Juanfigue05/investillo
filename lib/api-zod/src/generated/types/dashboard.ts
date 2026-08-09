@@ -11,6 +11,8 @@ export interface Dashboard {
   totalManoObraHoy: number;
   /** Total que nos deben en creditos pendientes */
   noDeben: number;
+  /** Suma total de compras recibidas (estado=llegado) */
+  totalComprasRecibidas: number;
   /** Cantidad de productos con alerta de stock bajo */
   productosAlerta: number;
   productosAgotados: number;

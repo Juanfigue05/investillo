@@ -18,7 +18,11 @@ export interface Producto {
   nombre: string;
   codigo: string;
   marca?: string;
+  /** Tipo de producto */
+  tipo?: string | null;
   referencia?: string;
+  /** Información adicional del producto */
+  adicional?: string | null;
   /** Precio de compra en COP */
   precioCompra: number;
   /** Precio de venta sin IVA en COP */
@@ -42,7 +46,9 @@ export interface ProductoInput {
   nombre: string;
   codigo: string;
   marca?: string;
+  tipo?: string;
   referencia?: string;
+  adicional?: string;
   precioCompra: number;
   precioVentaSinIva: number;
   tieneIva: boolean;
@@ -340,6 +346,8 @@ export interface Dashboard {
   totalManoObraHoy: number;
   /** Total que nos deben en creditos pendientes */
   noDeben: number;
+  /** Suma total de compras recibidas (estado=llegado) */
+  totalComprasRecibidas: number;
   /** Cantidad de productos con alerta de stock bajo */
   productosAlerta: number;
   productosAgotados: number;

@@ -22,7 +22,12 @@ export const GetInventarioResponseItem = zod.object({
   nombre: zod.string(),
   codigo: zod.string(),
   marca: zod.string().optional(),
+  tipo: zod.string().nullish().describe("Tipo de producto"),
   referencia: zod.string().optional(),
+  adicional: zod
+    .string()
+    .nullish()
+    .describe("Información adicional del producto"),
   precioCompra: zod.number().describe("Precio de compra en COP"),
   precioVentaSinIva: zod.number().describe("Precio de venta sin IVA en COP"),
   precioVentaConIva: zod
@@ -48,7 +53,9 @@ export const CrearProductoBody = zod.object({
   nombre: zod.string(),
   codigo: zod.string(),
   marca: zod.string().optional(),
+  tipo: zod.string().optional(),
   referencia: zod.string().optional(),
+  adicional: zod.string().optional(),
   precioCompra: zod.number(),
   precioVentaSinIva: zod.number(),
   tieneIva: zod.boolean(),
@@ -68,7 +75,12 @@ export const GetProductoResponse = zod.object({
   nombre: zod.string(),
   codigo: zod.string(),
   marca: zod.string().optional(),
+  tipo: zod.string().nullish().describe("Tipo de producto"),
   referencia: zod.string().optional(),
+  adicional: zod
+    .string()
+    .nullish()
+    .describe("Información adicional del producto"),
   precioCompra: zod.number().describe("Precio de compra en COP"),
   precioVentaSinIva: zod.number().describe("Precio de venta sin IVA en COP"),
   precioVentaConIva: zod
@@ -97,7 +109,9 @@ export const ActualizarProductoBody = zod.object({
   nombre: zod.string(),
   codigo: zod.string(),
   marca: zod.string().optional(),
+  tipo: zod.string().optional(),
   referencia: zod.string().optional(),
+  adicional: zod.string().optional(),
   precioCompra: zod.number(),
   precioVentaSinIva: zod.number(),
   tieneIva: zod.boolean(),
@@ -110,7 +124,12 @@ export const ActualizarProductoResponse = zod.object({
   nombre: zod.string(),
   codigo: zod.string(),
   marca: zod.string().optional(),
+  tipo: zod.string().nullish().describe("Tipo de producto"),
   referencia: zod.string().optional(),
+  adicional: zod
+    .string()
+    .nullish()
+    .describe("Información adicional del producto"),
   precioCompra: zod.number().describe("Precio de compra en COP"),
   precioVentaSinIva: zod.number().describe("Precio de venta sin IVA en COP"),
   precioVentaConIva: zod
@@ -158,7 +177,12 @@ export const ActualizarStockResponse = zod.object({
   nombre: zod.string(),
   codigo: zod.string(),
   marca: zod.string().optional(),
+  tipo: zod.string().nullish().describe("Tipo de producto"),
   referencia: zod.string().optional(),
+  adicional: zod
+    .string()
+    .nullish()
+    .describe("Información adicional del producto"),
   precioCompra: zod.number().describe("Precio de compra en COP"),
   precioVentaSinIva: zod.number().describe("Precio de venta sin IVA en COP"),
   precioVentaConIva: zod
@@ -184,7 +208,12 @@ export const GetAlertasStockResponseItem = zod.object({
   nombre: zod.string(),
   codigo: zod.string(),
   marca: zod.string().optional(),
+  tipo: zod.string().nullish().describe("Tipo de producto"),
   referencia: zod.string().optional(),
+  adicional: zod
+    .string()
+    .nullish()
+    .describe("Información adicional del producto"),
   precioCompra: zod.number().describe("Precio de compra en COP"),
   precioVentaSinIva: zod.number().describe("Precio de venta sin IVA en COP"),
   precioVentaConIva: zod
@@ -866,6 +895,9 @@ export const GetDashboardResponse = zod.object({
   totalVentasHoy: zod.number(),
   totalManoObraHoy: zod.number(),
   noDeben: zod.number().describe("Total que nos deben en creditos pendientes"),
+  totalComprasRecibidas: zod
+    .number()
+    .describe("Suma total de compras recibidas (estado=llegado)"),
   productosAlerta: zod
     .number()
     .describe("Cantidad de productos con alerta de stock bajo"),

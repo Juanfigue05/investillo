@@ -70,12 +70,18 @@ export function FloatingNotepad() {
         )}
       </AnimatePresence>
 
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-xl flex items-center justify-center hover:scale-105 hover:shadow-primary/25 transition-all duration-200 active:scale-95"
-      >
-        <StickyNote className="w-6 h-6" />
-      </button>
+      <div className="relative group/note">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-xl flex items-center justify-center hover:scale-105 hover:shadow-primary/25 transition-all duration-200 active:scale-95"
+          aria-label="Notas rápidas"
+        >
+          <StickyNote className="w-6 h-6" />
+        </button>
+        <span className="absolute right-16 top-1/2 -translate-y-1/2 bg-card border border-border text-foreground text-xs font-medium px-2.5 py-1 rounded-lg shadow-lg whitespace-nowrap opacity-0 group-hover/note:opacity-100 transition-opacity pointer-events-none">
+          Notas Rápidas
+        </span>
+      </div>
     </div>
   );
 }
