@@ -13,7 +13,8 @@ interface ConceptoEntrada {
 interface CierreTrabajador {
   id: string;
   nombre: string;
-  totalMO: string;
+  /** 10 raw MO input values (typed in thousands shorthand, e.g. "55" = 55000) */
+  moEntradas: string[];
   seguro: string;
   leDamos: ConceptoEntrada[];
   nosDebe: ConceptoEntrada[];
@@ -23,37 +24,47 @@ interface CierreTrabajador {
 // ---------- helpers ----------
 const roundUp1000 = (n: number) => Math.ceil(n / 1000) * 1000;
 
-const emptyEntradas = (): ConceptoEntrada[] => [
-  { descripcion: "", valor: "" },
-  { descripcion: "", valor: "" },
-  { descripcion: "", valor: "" },
-];
+const emptyConceptos = (): ConceptoEntrada[] => Array.from({ length: 3 }, () => ({ descripcion: "", valor: "" }));
+const emptyMO = (): string[] => Array.from({ length: 10 }, () => "");
 
 const newTrabajador = (nombre = ""): CierreTrabajador => ({
   id: `${Date.now()}-${Math.random()}`,
   nombre,
-  totalMO: "",
+  moEntradas: emptyMO(),
   seguro: "30000",
-  leDamos: emptyEntradas(),
-  nosDebe: emptyEntradas(),
+  leDamos: emptyConceptos(),
+  nosDebe: emptyConceptos(),
   expandido: true,
 });
 
-const sumaEntradas = (arr: ConceptoEntrada[]) =>
+/**
+ * Parse a MO shorthand value:
+ *   "55"   → 55_000
+ *   "45.5" → 45_500
+ *   ""     → 0
+ * Rule: multiply raw input by 1000 always (user types in thousands).
+ */
+const parseMO = (raw: string): number => {
+  if (!raw.trim()) return 0;
+  const n = parseFloat(raw.replace(",", "."));
+  return isNaN(n) ? 0 : n * 1000;
+};
+
+const sumaConceptos = (arr: ConceptoEntrada[]) =>
   arr.reduce((s, e) => s + (parseFloat(e.valor) || 0), 0);
 
 function calcTrabajador(t: CierreTrabajador) {
-  const mo = parseFloat(t.totalMO) || 0;
-  const descuento = roundUp1000(mo * 0.3);
+  const mo = t.moEntradas.reduce((s, v) => s + parseMO(v), 0);
+  const descuento = mo > 0 ? roundUp1000(mo * 0.3) : 0;
   const seguro = parseFloat(t.seguro) || 0;
-  const leDamos = sumaEntradas(t.leDamos);
-  const nosDebe = sumaEntradas(t.nosDebe);
+  const leDamos = sumaConceptos(t.leDamos);
+  const nosDebe = sumaConceptos(t.nosDebe);
   const total = mo - descuento - seguro + leDamos - nosDebe;
   return { mo, descuento, seguro, leDamos, nosDebe, total };
 }
 
 // ---------- sub-components ----------
-function EntradaRow({
+function ConceptoRows({
   label,
   entries,
   color,
@@ -82,7 +93,7 @@ function EntradaRow({
               placeholder="$ 0"
               value={e.valor}
               onChange={(ev) => onChange(idx, "valor", ev.target.value)}
-              className="w-28 px-2.5 py-1.5 bg-background border border-border rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-foreground placeholder:text-muted-foreground text-right"
+              className="w-28 px-2.5 py-1.5 bg-background border border-border rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-foreground text-right"
             />
           </div>
         ))}
@@ -91,7 +102,7 @@ function EntradaRow({
   );
 }
 
-// ---------- main component ----------
+// ---------- main ----------
 export default function CierreDiario() {
   const { data: trabajadores } = useGetTrabajadores();
 
@@ -104,13 +115,11 @@ export default function CierreDiario() {
   const [showSelect, setShowSelect] = useState(false);
   const [nombreLibre, setNombreLibre] = useState("");
 
-  // Add worker from list
   const agregarDesdeLista = (nombre: string) => {
     setItems((prev) => [...prev, newTrabajador(nombre)]);
     setShowSelect(false);
   };
 
-  // Add worker with free-text name
   const agregarLibre = () => {
     const n = nombreLibre.trim();
     if (!n) return;
@@ -119,14 +128,24 @@ export default function CierreDiario() {
     setShowSelect(false);
   };
 
-  // Generic field updater
   const updateItem = (id: string, patch: Partial<CierreTrabajador>) =>
     setItems((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 
   const removeItem = (id: string) =>
     setItems((prev) => prev.filter((t) => t.id !== id));
 
-  const updateEntrada = (
+  const updateMO = (id: string, idx: number, val: string) => {
+    setItems((prev) =>
+      prev.map((t) => {
+        if (t.id !== id) return t;
+        const arr = [...t.moEntradas];
+        arr[idx] = val;
+        return { ...t, moEntradas: arr };
+      })
+    );
+  };
+
+  const updateConcepto = (
     id: string,
     tipo: "leDamos" | "nosDebe",
     idx: number,
@@ -143,7 +162,6 @@ export default function CierreDiario() {
     );
   };
 
-  // Grand total
   const grandTotal = useMemo(
     () => items.reduce((s, t) => s + calcTrabajador(t).total, 0),
     [items]
@@ -160,7 +178,6 @@ export default function CierreDiario() {
             </h1>
             <p className="text-sm text-muted-foreground mt-1">{hoyLabel}</p>
           </div>
-
           <button
             onClick={() => setShowSelect((v) => !v)}
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg text-sm"
@@ -169,7 +186,7 @@ export default function CierreDiario() {
           </button>
         </div>
 
-        {/* Worker selector dropdown */}
+        {/* Worker selector */}
         {showSelect && (
           <div className="bg-card border border-border rounded-2xl p-4 shadow-lg space-y-3">
             <p className="text-sm font-medium text-foreground">Selecciona o escribe el nombre:</p>
@@ -211,152 +228,168 @@ export default function CierreDiario() {
           </div>
         )}
 
-        {/* Worker cards */}
-        {items.map((t) => {
-          const { mo, descuento, seguro, leDamos, nosDebe, total } = calcTrabajador(t);
-          return (
-            <div key={t.id} className="bg-card border border-border rounded-2xl shadow-lg overflow-hidden">
-              {/* Card header */}
-              <div
-                className="flex items-center justify-between px-5 py-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
-                onClick={() => updateItem(t.id, { expandido: !t.expandido })}
-              >
-                <div className="flex items-center gap-3">
-                  {t.expandido ? (
-                    <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                  )}
-                  <span className="font-semibold text-foreground">{t.nombre || "Trabajador"}</span>
-                  {mo > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      MO: {formatCurrency(mo)} → Descuento: {formatCurrency(descuento)}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  {mo > 0 && (
-                    <span className={`text-sm font-bold ${total >= 0 ? "text-primary" : "text-destructive"}`}>
-                      Total: {formatCurrency(total)}
-                    </span>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); removeItem(t.id); }}
-                    className="p-1.5 text-muted-foreground hover:text-destructive bg-muted rounded-lg transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
+        {/* ===== 2-column grid of worker cards ===== */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {items.map((t) => {
+            const { mo, descuento, seguro, leDamos, nosDebe, total } = calcTrabajador(t);
+            const moSum = t.moEntradas.reduce((s, v) => s + parseMO(v), 0);
 
-              {/* Card body */}
-              {t.expandido && (
-                <div className="px-5 pb-5 space-y-5 border-t border-border pt-4">
-                  {/* Name + MO + Seguro row */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1">Nombre</label>
-                      <input
-                        type="text"
-                        value={t.nombre}
-                        onChange={(e) => updateItem(t.id, { nombre: e.target.value })}
-                        className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-foreground"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1">
-                        Total Mano de Obra
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="0"
-                        value={t.totalMO}
-                        onChange={(e) => updateItem(t.id, { totalMO: e.target.value })}
-                        className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-foreground"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1">
-                        Seguro (deducción fija)
-                      </label>
-                      <input
-                        type="number"
-                        value={t.seguro}
-                        onChange={(e) => updateItem(t.id, { seguro: e.target.value })}
-                        className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-foreground"
-                      />
-                    </div>
+            return (
+              <div key={t.id} className="bg-card border border-border rounded-2xl shadow-lg overflow-hidden flex flex-col">
+                {/* Card header */}
+                <div
+                  className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+                  onClick={() => updateItem(t.id, { expandido: !t.expandido })}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    {t.expandido ? <ChevronUp className="w-4 h-4 text-muted-foreground flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
+                    <span className="font-semibold text-foreground truncate">{t.nombre || "Trabajador"}</span>
+                    {mo > 0 && (
+                      <span className="text-xs text-muted-foreground hidden sm:block whitespace-nowrap">
+                        MO: {formatCurrency(mo)}
+                      </span>
+                    )}
                   </div>
-
-                  {/* Le damos / Nos debe side by side */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <EntradaRow
-                      label="➕ Le damos"
-                      entries={t.leDamos}
-                      color="text-green-400"
-                      onChange={(idx, field, val) =>
-                        updateEntrada(t.id, "leDamos", idx, field, val)
-                      }
-                    />
-                    <EntradaRow
-                      label="➖ Nos debe"
-                      entries={t.nosDebe}
-                      color="text-destructive"
-                      onChange={(idx, field, val) =>
-                        updateEntrada(t.id, "nosDebe", idx, field, val)
-                      }
-                    />
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {mo > 0 && (
+                      <span className={`text-sm font-bold ${total >= 0 ? "text-primary" : "text-destructive"}`}>
+                        {formatCurrency(total)}
+                      </span>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeItem(t.id); }}
+                      className="p-1.5 text-muted-foreground hover:text-destructive bg-muted rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
+                </div>
 
-                  {/* Summary box */}
-                  <div className="bg-muted/50 border border-border rounded-xl p-4">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                {/* Card body */}
+                {t.expandido && (
+                  <div className="px-4 pb-4 space-y-4 border-t border-border pt-4 flex-1">
+                    {/* Name + Seguro */}
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <p className="text-xs text-muted-foreground">Total MO</p>
-                        <p className="font-semibold text-foreground">{formatCurrency(mo)}</p>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Nombre</label>
+                        <input
+                          type="text"
+                          value={t.nombre}
+                          onChange={(e) => updateItem(t.id, { nombre: e.target.value })}
+                          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-foreground"
+                        />
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">
-                          Descuento 30%
-                          {mo > 0 && mo * 0.3 !== descuento && (
-                            <span className="ml-1 text-[10px] text-amber-400">
-                              (aprox. a {formatCurrency(descuento)})
-                            </span>
-                          )}
-                        </p>
-                        <p className="font-semibold text-destructive">− {formatCurrency(descuento)}</p>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Seguro (deducción)</label>
+                        <input
+                          type="number"
+                          value={t.seguro}
+                          onChange={(e) => updateItem(t.id, { seguro: e.target.value })}
+                          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-foreground"
+                        />
                       </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Seguro</p>
-                        <p className="font-semibold text-destructive">− {formatCurrency(seguro)}</p>
+                    </div>
+
+                    {/* MO entries — 10 rows in 2 columns */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          Manos de Obra{" "}
+                          <span className="text-[10px] text-muted-foreground/60">(escribe en miles: 55 = $55.000)</span>
+                        </label>
+                        {moSum > 0 && (
+                          <span className="text-xs font-bold text-primary">
+                            Σ {formatCurrency(moSum)}
+                          </span>
+                        )}
                       </div>
-                      {leDamos > 0 && (
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {t.moEntradas.map((v, idx) => (
+                          <div key={idx} className="relative">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              placeholder={`MO ${idx + 1}`}
+                              value={v}
+                              onChange={(e) => updateMO(t.id, idx, e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-background border border-border rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-foreground placeholder:text-muted-foreground/50 text-right pr-8"
+                            />
+                            {v && parseMO(v) > 0 && (
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground pointer-events-none">
+                                k
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Le damos / Nos debe */}
+                    <div className="grid grid-cols-1 gap-4">
+                      <ConceptoRows
+                        label="➕ Le damos"
+                        entries={t.leDamos}
+                        color="text-green-400"
+                        onChange={(idx, field, val) => updateConcepto(t.id, "leDamos", idx, field, val)}
+                      />
+                      <ConceptoRows
+                        label="➖ Nos debe"
+                        entries={t.nosDebe}
+                        color="text-destructive"
+                        onChange={(idx, field, val) => updateConcepto(t.id, "nosDebe", idx, field, val)}
+                      />
+                    </div>
+
+                    {/* Summary */}
+                    <div className="bg-muted/50 border border-border rounded-xl p-3">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                          <p className="text-xs text-muted-foreground">Le damos</p>
-                          <p className="font-semibold text-green-400">+ {formatCurrency(leDamos)}</p>
+                          <p className="text-muted-foreground">Total MO</p>
+                          <p className="font-semibold text-foreground">{formatCurrency(mo)}</p>
                         </div>
-                      )}
-                      {nosDebe > 0 && (
                         <div>
-                          <p className="text-xs text-muted-foreground">Nos debe</p>
-                          <p className="font-semibold text-destructive">− {formatCurrency(nosDebe)}</p>
+                          <p className="text-muted-foreground">
+                            Desc. 30%
+                            {mo > 0 && mo * 0.3 !== descuento && (
+                              <span className="ml-1 text-[10px] text-amber-400">
+                                (≈ {formatCurrency(descuento)})
+                              </span>
+                            )}
+                          </p>
+                          <p className="font-semibold text-destructive">− {formatCurrency(descuento)}</p>
                         </div>
-                      )}
-                      <div className="sm:col-start-3">
-                        <p className="text-xs text-muted-foreground font-bold">Total a cuadrar</p>
-                        <p className={`text-lg font-bold ${total >= 0 ? "text-primary" : "text-destructive"}`}>
+                        <div>
+                          <p className="text-muted-foreground">Seguro</p>
+                          <p className="font-semibold text-destructive">− {formatCurrency(seguro)}</p>
+                        </div>
+                        {leDamos > 0 && (
+                          <div>
+                            <p className="text-muted-foreground">Le damos</p>
+                            <p className="font-semibold text-green-400">+ {formatCurrency(leDamos)}</p>
+                          </div>
+                        )}
+                        {nosDebe > 0 && (
+                          <div>
+                            <p className="text-muted-foreground">Nos debe</p>
+                            <p className="font-semibold text-destructive">− {formatCurrency(nosDebe)}</p>
+                          </div>
+                        )}
+                      </div>
+                      <div className="border-t border-border mt-2 pt-2 flex justify-between items-center">
+                        <span className="text-xs font-bold text-foreground">Total a cuadrar</span>
+                        <span className={`text-base font-bold ${total >= 0 ? "text-primary" : "text-destructive"}`}>
                           {formatCurrency(total)}
-                        </p>
+                        </span>
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+                )}
+              </div>
+            );
+          })}
+        </div>
 
-        {/* Grand total footer */}
+        {/* Grand total */}
         {items.length > 1 && (
           <div className="bg-card border border-primary/30 rounded-2xl px-6 py-4 flex justify-between items-center shadow-lg">
             <span className="text-sm font-medium text-muted-foreground">
