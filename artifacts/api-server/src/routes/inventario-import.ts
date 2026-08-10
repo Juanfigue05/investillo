@@ -6,27 +6,41 @@ import { productosTable } from "@workspace/db/schema";
 import { sql } from "drizzle-orm";
 
 const router: IRouter = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
 
 function calcPrecioConIva(precioSinIva: number): number {
   const conIva = precioSinIva * 1.19;
   return Math.ceil(conIva / 1000) * 1000;
 }
 
-/** Parse a price cell that may look like "$1,234", "1234", "$1.234,56", etc. */
+/** Safely parse a price cell — handles number, empty string, undefined */
 function parsePrecio(raw: unknown): number {
-  if (typeof raw === "number") return raw;
-  if (!raw) return 0;
-  const str = String(raw).replace(/[$\s]/g, "").replace(/,/g, "");
-  const n = parseFloat(str);
+  if (raw === null || raw === undefined || raw === "") return 0;
+  if (typeof raw === "number") return isNaN(raw) ? 0 : raw;
+  const n = parseFloat(String(raw).replace(/[$\s,]/g, "").replace(/\./g, ""));
   return isNaN(n) ? 0 : n;
 }
 
 function cleanStr(v: unknown): string {
   if (v === null || v === undefined) return "";
-  return String(v).trim();
+  const s = String(v).trim();
+  // "0" from a number cell that was empty → treat as empty
+  return s === "0" ? s : s;
 }
 
+// ---------------------------------------------------------------------------
+// POST /api/inventario-import
+// Expects multipart/form-data with field "archivo" containing the .xlsx file.
+//
+// Excel column layout (row 1 = headers, data starts at row 2):
+//   A(0) = CODIGO
+//   B(1) = REFERENCIA (nombre / Producto)
+//   C(2) = REFERENCIA (referencia parte 1)
+//   D(3) = REFERENCIA 2 (referencia parte 2, concatenado con C)
+//   E(4) = MARCA
+//   F(5) = SE COMPRA  (precioCompra)
+//   G(6) = SE VENDE A (precioVentaSinIva)
+// ---------------------------------------------------------------------------
 router.post("/", upload.single("archivo"), async (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: "No se recibió ningún archivo" });
@@ -34,40 +48,48 @@ router.post("/", upload.single("archivo"), async (req, res) => {
   }
 
   try {
+    // Read workbook — raw:false gives us formatted strings but defval:"" fills blanks.
+    // We use raw:true for numbers to keep numeric values as JS numbers, but defval:""
+    // ensures empty cells don't come back as undefined.
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
 
-    // Convert to array of arrays (raw values)
-    const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
+    // header:1 → array of arrays; raw:true → numbers stay as numbers; defval:"" → no undefined
+    const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      raw: true,
+      defval: "",
+    });
 
-    // Skip header row (index 0)
-    const dataRows = rows.slice(1).filter((row) => row && row.length > 0);
+    // Row 0 = headers, data starts at row 1
+    const dataRows = rows.slice(1).filter((row) => Array.isArray(row) && row.length >= 2);
 
-    // Column mapping:
-    // A(0)=codigo  B(1)=nombre  C(2)=ref1  D(3)=ref2  E(4)=marca  F(5)=precioCompra  G(6)=precioVentaSinIva
     const items: (typeof productosTable.$inferInsert)[] = [];
     const skipped: number[] = [];
 
     for (let i = 0; i < dataRows.length; i++) {
-      const row = dataRows[i];
-      const codigo = cleanStr(row[0]);
-      if (!codigo) {
-        skipped.push(i + 2); // +2 because 1-based and we skipped header
-        continue;
-      }
+      const row = dataRows[i] as unknown[];
 
+      const codigo = cleanStr(row[0]);
       const nombre = cleanStr(row[1]);
-      if (!nombre) {
-        skipped.push(i + 2);
+
+      // Skip rows without code or product name
+      if (!codigo || !nombre) {
+        skipped.push(i + 2); // +2: 1-based + header offset
         continue;
       }
 
       const ref1 = cleanStr(row[2]);
       const ref2 = cleanStr(row[3]);
-      const referencia = [ref1, ref2].filter(Boolean).join(" ").trim() || null;
+      // Combine ref columns; ignore "0" placeholders from empty numeric cells
+      const refParts = [ref1, ref2].filter((s) => s && s !== "0");
+      const referencia = refParts.length > 0 ? refParts.join(" ").trim() : null;
 
-      const marca = cleanStr(row[4]) || null;
+      // Marca: "X" is a valid brand mark; empty → null
+      const marcaRaw = cleanStr(row[4]);
+      const marca = marcaRaw || null;
+
       const precioCompra = parsePrecio(row[5]);
       const precioVentaSinIva = parsePrecio(row[6]);
       const precioVentaConIva = calcPrecioConIva(precioVentaSinIva);
@@ -93,45 +115,49 @@ router.post("/", upload.single("archivo"), async (req, res) => {
       return;
     }
 
-    // Batch upsert in chunks of 500 to avoid query size limits
-    const CHUNK = 500;
-    let insertados = 0;
-    let actualizados = 0;
+    // Process in small chunks to keep queries manageable (~100 rows × 12 params = 1200 params)
+    const CHUNK = 100;
+    let procesados = 0;
 
     for (let i = 0; i < items.length; i += CHUNK) {
       const chunk = items.slice(i, i + CHUNK);
-      const result = await db
+
+      await db
         .insert(productosTable)
         .values(chunk)
         .onConflictDoUpdate({
           target: productosTable.codigo,
           set: {
-            nombre: sql`excluded.nombre`,
-            referencia: sql`excluded.referencia`,
-            marca: sql`excluded.marca`,
-            precioCompra: sql`excluded.precio_compra`,
-            precioVentaSinIva: sql`excluded.precio_venta_sin_iva`,
-            precioVentaConIva: sql`excluded.precio_venta_con_iva`,
-            actualizadoEn: new Date(),
+            nombre:            sql`EXCLUDED.nombre`,
+            referencia:        sql`EXCLUDED.referencia`,
+            marca:             sql`EXCLUDED.marca`,
+            precioCompra:      sql`EXCLUDED.precio_compra`,
+            precioVentaSinIva: sql`EXCLUDED.precio_venta_sin_iva`,
+            precioVentaConIva: sql`EXCLUDED.precio_venta_con_iva`,
+            actualizadoEn:     sql`now()`,
           },
-        })
-        .returning({ id: productosTable.id, codigo: productosTable.codigo });
+        });
 
-      // Drizzle doesn't distinguish insert vs update on conflict easily,
-      // so we track totals by chunk size
-      insertados += result.length;
+      procesados += chunk.length;
     }
 
     res.json({
       ok: true,
       total: items.length,
-      procesados: insertados,
+      procesados,
       omitidos: skipped.length,
       filasOmitidas: skipped.slice(0, 20),
     });
-  } catch (err) {
-    console.error("Error importando Excel:", err);
-    res.status(500).json({ error: String(err) });
+  } catch (err: any) {
+    // Log full error server-side for debugging
+    console.error("Error importando Excel:", err?.message ?? err);
+    if (err?.cause) console.error("Causa:", err.cause);
+
+    // Return a useful but short error to the client
+    const msg = err?.message
+      ? err.message.split("\n")[0].substring(0, 300)
+      : "Error desconocido";
+    res.status(500).json({ error: msg });
   }
 });
 
