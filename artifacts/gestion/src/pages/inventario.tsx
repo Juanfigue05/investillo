@@ -12,6 +12,7 @@ interface ImportResult {
   total: number;
   procesados: number;
   omitidos: number;
+  duplicados?: number;
   filasOmitidas?: number[];
   error?: string;
 }
@@ -254,6 +255,7 @@ export default function Inventario() {
                   <p className="font-bold">Importación completada</p>
                   <p className="mt-0.5 opacity-80">
                     {importResult.procesados} producto{importResult.procesados !== 1 ? "s" : ""} procesados
+                    {(importResult.duplicados ?? 0) > 0 && ` · ${importResult.duplicados} código${importResult.duplicados !== 1 ? "s" : ""} duplicado${importResult.duplicados !== 1 ? "s" : ""} en el archivo (se conservó la última aparición)`}
                     {importResult.omitidos > 0 && ` · ${importResult.omitidos} fila${importResult.omitidos !== 1 ? "s" : ""} omitida${importResult.omitidos !== 1 ? "s" : ""} (sin código o nombre)`}
                   </p>
                 </>

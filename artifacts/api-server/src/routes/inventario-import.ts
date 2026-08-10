@@ -108,6 +108,23 @@ router.post("/", upload.single("archivo"), async (req, res) => {
       return;
     }
 
+    // Deduplicate by codigo — keep the LAST occurrence of each code so the most
+    // recent row in the spreadsheet wins. PostgreSQL's ON CONFLICT DO UPDATE
+    // cannot affect the same row twice in a single statement.
+    const seen = new Map<string, number>(); // codigo → final index in arrays
+    for (let i = 0; i < codigos.length; i++) seen.set(codigos[i], i);
+    const idxs = Array.from(seen.values());
+
+    const uNombres    = idxs.map((i) => nombres[i]);
+    const uCodigos    = idxs.map((i) => codigos[i]);
+    const uMarcas     = idxs.map((i) => marcas[i]);
+    const uRefs       = idxs.map((i) => referencias[i]);
+    const uCompra     = idxs.map((i) => preciosCompra[i]);
+    const uVentaSin   = idxs.map((i) => preciosVentaSin[i]);
+    const uVentaCon   = idxs.map((i) => preciosVentaCon[i]);
+
+    const duplicados = codigos.length - idxs.length;
+
     // Single UNNEST-based upsert — PostgreSQL handles all rows in one round-trip
     // Uses pg pool directly to avoid any Drizzle ORM abstraction issues
     const client = await pool.connect();
@@ -134,7 +151,7 @@ router.post("/", upload.single("archivo"), async (req, res) => {
           precio_venta_sin_iva = EXCLUDED.precio_venta_sin_iva,
           precio_venta_con_iva = EXCLUDED.precio_venta_con_iva,
           actualizado_en     = now()
-      `, [nombres, codigos, marcas, referencias, preciosCompra, preciosVentaSin, preciosVentaCon]);
+      `, [uNombres, uCodigos, uMarcas, uRefs, uCompra, uVentaSin, uVentaCon]);
     } finally {
       client.release();
     }
@@ -142,8 +159,9 @@ router.post("/", upload.single("archivo"), async (req, res) => {
     res.json({
       ok: true,
       total: codigos.length,
-      procesados: codigos.length,
+      procesados: idxs.length,
       omitidos: skipped.length,
+      duplicados,
       filasOmitidas: skipped.slice(0, 20),
     });
   } catch (err: any) {
