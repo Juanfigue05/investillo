@@ -1564,8 +1564,6 @@ components:
       properties:
         totalVentasHoy:
           type: number
-        totalManoObraHoy:
-          type: number
         noDeben:
           type: number
           description: Total pendiente en creditos (tipo=credito)
@@ -1585,7 +1583,6 @@ components:
           description: Numero de ventas del dia
       required:
         - totalVentasHoy
-        - totalManoObraHoy
         - noDeben
         - totalNosDebe
         - totalComprasRecibidas

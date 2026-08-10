@@ -3,7 +3,6 @@ import { useGetDashboard, useGetAlertasStock, useGetVentasResumen } from "@works
 import { formatCurrency } from "@/lib/utils";
 import {
   TrendingUp,
-  Wrench,
   CreditCard,
   AlertTriangle,
   PackageX,
@@ -73,7 +72,7 @@ export default function Dashboard() {
   const { data: ventasMes } = useGetVentasResumen({ desde: mesRange.desde, hasta: mesRange.hasta });
 
   function fillDays(data: typeof ventas15, desde: string, hasta: string) {
-    const result: { fecha: string; label: string; totalVentas: number; totalManoObra: number }[] = [];
+    const result: { fecha: string; label: string; totalVentas: number }[] = [];
     const start = new Date(desde + "T12:00:00Z");
     const end = new Date(hasta + "T12:00:00Z");
     const map = new Map((data || []).map((d) => [d.fecha, d]));
@@ -84,7 +83,6 @@ export default function Dashboard() {
         fecha: key,
         label: format(d, "dd MMM", { locale: es }),
         totalVentas: entry?.totalVentas || 0,
-        totalManoObra: entry?.totalManoObra || 0,
       });
     }
     return result;
@@ -94,11 +92,8 @@ export default function Dashboard() {
   const chartDataMes = fillDays(ventasMes, mesRange.desde, mesRange.hasta);
 
   const total15Ventas = chartData15.reduce((a, d) => a + d.totalVentas, 0);
-  const total15Mo = chartData15.reduce((a, d) => a + d.totalManoObra, 0);
   const total7Ventas = (ventas7 || []).reduce((a, d) => a + (d.totalVentas || 0), 0);
-  const total7Mo = (ventas7 || []).reduce((a, d) => a + (d.totalManoObra || 0), 0);
   const totalMesVentas = chartDataMes.reduce((a, d) => a + d.totalVentas, 0);
-  const totalMesMo = chartDataMes.reduce((a, d) => a + d.totalManoObra, 0);
 
   if (isLoading || !dashboard) {
     return (
@@ -118,14 +113,6 @@ export default function Dashboard() {
       icon: TrendingUp,
       color: "text-green-500",
       bg: "bg-green-500/10",
-    },
-    {
-      title: "Mano de Obra Hoy",
-      value: formatCurrency(dashboard.totalManoObraHoy),
-      subtitle: "Servicios facturados hoy",
-      icon: Wrench,
-      color: "text-yellow-500",
-      bg: "bg-yellow-500/10",
     },
     {
       title: "Créditos",
@@ -224,7 +211,6 @@ export default function Dashboard() {
                 wrapperStyle={{ fontSize: "11px", color: "hsl(var(--muted-foreground))", paddingTop: "12px" }}
               />
               <Bar dataKey="totalVentas" name="Ventas" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="totalManoObra" name="Mano de Obra" fill="#eab308" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
 
@@ -235,34 +221,24 @@ export default function Dashboard() {
                 <tr className="text-xs text-muted-foreground uppercase tracking-wider">
                   <th className="text-left pb-2 font-medium">Período</th>
                   <th className="text-right pb-2 font-medium">Ventas</th>
-                  <th className="text-right pb-2 font-medium">M. Obra</th>
-                  <th className="text-right pb-2 font-medium">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
                 <tr>
                   <td className="py-2 text-muted-foreground text-xs">Hoy</td>
-                  <td className="py-2 text-right font-medium text-primary">{formatCurrency(dashboard.totalVentasHoy)}</td>
-                  <td className="py-2 text-right font-medium text-yellow-500">{formatCurrency(dashboard.totalManoObraHoy)}</td>
-                  <td className="py-2 text-right font-bold text-foreground">{formatCurrency(dashboard.totalVentasHoy + dashboard.totalManoObraHoy)}</td>
+                  <td className="py-2 text-right font-bold text-foreground">{formatCurrency(dashboard.totalVentasHoy)}</td>
                 </tr>
                 <tr>
                   <td className="py-2 text-muted-foreground text-xs">Últimos 7 días</td>
-                  <td className="py-2 text-right font-medium text-primary">{formatCurrency(total7Ventas)}</td>
-                  <td className="py-2 text-right font-medium text-yellow-500">{formatCurrency(total7Mo)}</td>
-                  <td className="py-2 text-right font-bold text-foreground">{formatCurrency(total7Ventas + total7Mo)}</td>
+                  <td className="py-2 text-right font-bold text-foreground">{formatCurrency(total7Ventas)}</td>
                 </tr>
                 <tr>
                   <td className="py-2 text-muted-foreground text-xs">Últimos 15 días</td>
-                  <td className="py-2 text-right font-medium text-primary">{formatCurrency(total15Ventas)}</td>
-                  <td className="py-2 text-right font-medium text-yellow-500">{formatCurrency(total15Mo)}</td>
-                  <td className="py-2 text-right font-bold text-foreground">{formatCurrency(total15Ventas + total15Mo)}</td>
+                  <td className="py-2 text-right font-bold text-foreground">{formatCurrency(total15Ventas)}</td>
                 </tr>
                 <tr>
                   <td className="py-2 text-muted-foreground text-xs">Mes anterior</td>
-                  <td className="py-2 text-right font-medium text-primary">{formatCurrency(totalMesVentas)}</td>
-                  <td className="py-2 text-right font-medium text-yellow-500">{formatCurrency(totalMesMo)}</td>
-                  <td className="py-2 text-right font-bold text-foreground">{formatCurrency(totalMesVentas + totalMesMo)}</td>
+                  <td className="py-2 text-right font-bold text-foreground">{formatCurrency(totalMesVentas)}</td>
                 </tr>
               </tbody>
             </table>

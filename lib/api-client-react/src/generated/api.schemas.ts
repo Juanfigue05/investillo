@@ -378,7 +378,6 @@ export interface VentaResumenDia {
 
 export interface Dashboard {
   totalVentasHoy: number;
-  totalManoObraHoy: number;
   /** Total pendiente en creditos (tipo=credito) */
   noDeben: number;
   /** Total pendiente en Nos Debe (tipo=nosdebe) */

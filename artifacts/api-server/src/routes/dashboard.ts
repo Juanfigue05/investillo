@@ -25,10 +25,6 @@ router.get("/", async (req, res) => {
     .filter(v => v.tipoLinea === "venta")
     .reduce((acc, v) => acc + toNum(v.precioVentaTotal), 0);
 
-  const totalManoObraHoy = ventasHoy
-    .filter(v => v.tipoLinea === "manoobra")
-    .reduce((acc, v) => acc + toNum(v.precioVentaTotal), 0);
-
   const noDeben = creditosRows.reduce((acc, c) => {
     const restante = toNum(c.valorCredito) - toNum(c.valorAbonado);
     return acc + (restante > 0 ? restante : 0);
@@ -47,7 +43,6 @@ router.get("/", async (req, res) => {
 
   res.json({
     totalVentasHoy,
-    totalManoObraHoy,
     noDeben,
     totalNosDebe,
     totalComprasRecibidas,

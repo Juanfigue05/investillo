@@ -976,8 +976,8 @@ export const EliminarHistorialResponse = zod.object({
  */
 export const GetDashboardResponse = zod.object({
   totalVentasHoy: zod.number(),
-  totalManoObraHoy: zod.number(),
   noDeben: zod.number().describe("Total que nos deben en creditos pendientes"),
+  totalNosDebe: zod.number().describe("Total pendiente en Nos Debe (tipo=nosdebe)"),
   totalComprasRecibidas: zod
     .number()
     .describe("Suma total de compras recibidas (estado=llegado)"),
