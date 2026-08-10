@@ -86,7 +86,7 @@ export function FloatingPriceCheck() {
   const grandTotalConIva = calcLines.reduce((s, l) => s + l.subtotalConIva, 0);
 
   return (
-    <div ref={containerRef}>
+    <div ref={containerRef} className="flex flex-col items-end">
       <AnimatePresence>
         {isOpen && (
           <motion.div

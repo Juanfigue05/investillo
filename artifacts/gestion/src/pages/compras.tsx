@@ -8,7 +8,7 @@ import {
   useGetInventario,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
-import { PackageCheck, Truck, Plus, X } from "lucide-react";
+import { PackageCheck, Truck, Plus, X, Printer } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface LlegadaForm {
@@ -146,6 +146,19 @@ export default function Compras() {
   const actualizarMutation = useActualizarCompra();
   const crearMutation = useCrearCompra();
   const eliminarMutation = useEliminarCompra();
+
+  const [printMenu, setPrintMenu] = useState(false);
+
+  const handlePrintWithOrientation = (orientation: "portrait" | "landscape") => {
+    const prev = document.getElementById("__print_page_size");
+    if (prev) prev.remove();
+    const s = document.createElement("style");
+    s.id = "__print_page_size";
+    s.textContent = `@page { size: ${orientation}; }`;
+    document.head.appendChild(s);
+    setPrintMenu(false);
+    requestAnimationFrame(() => window.print());
+  };
 
   const [llegadaOpen, setLlegadaOpen] = useState<number | null>(null);
   const [llegadaForm, setLlegadaForm] = useState<LlegadaForm>({
@@ -329,13 +342,34 @@ export default function Compras() {
             <h1 className="text-2xl lg:text-3xl font-display font-bold text-foreground">Módulo de Compras</h1>
             <p className="text-muted-foreground mt-1 text-sm">Pedidos pendientes y registro histórico de llegadas.</p>
           </div>
-          <button
-            onClick={() => { setShowAddForm(!showAddForm); setProductoSeleccionado(null); }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-md text-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Agregar Producto
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <button
+                onClick={() => setPrintMenu((p) => !p)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm"
+              >
+                <Printer className="w-4 h-4" />
+                Imprimir
+              </button>
+              {printMenu && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-xl shadow-2xl overflow-hidden w-52">
+                  <button onClick={() => handlePrintWithOrientation("portrait")} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted text-sm text-left transition-colors">
+                    <span className="text-base">📄</span> Vertical (retrato)
+                  </button>
+                  <button onClick={() => handlePrintWithOrientation("landscape")} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted text-sm text-left transition-colors">
+                    <span className="text-base">📃</span> Horizontal (paisaje)
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => { setShowAddForm(!showAddForm); setProductoSeleccionado(null); }}
+              className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-md text-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Agregar Producto
+            </button>
+          </div>
         </div>
 
         {/* Autocomplete add form */}

@@ -2,15 +2,34 @@ import { useState, useMemo } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetHistorialPrecios } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
-import { TrendingUp, TrendingDown, Minus, Search } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, Search, Trash2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+
+const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 
 export default function HistorialPreciosPage() {
-  const { data: registros, isLoading } = useGetHistorialPrecios();
+  const { data: registros, isLoading, refetch } = useGetHistorialPrecios();
+  const queryClient = useQueryClient();
   const [busqueda, setBusqueda] = useState("");
   const [productoFiltro, setProductoFiltro] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const handleDeleteEntry = async (id: number) => {
+    if (!confirm("¿Eliminar este registro de precio?")) return;
+    setDeletingId(id);
+    try {
+      await fetch(`${API}/historial-precios/${id}`, { method: "DELETE" });
+      queryClient.invalidateQueries({ queryKey: ["/api/historial-precios"] });
+      refetch();
+    } catch (e) {
+      alert("Error al eliminar");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   // Unique products that have price history
   const productos = useMemo(() => {
@@ -234,6 +253,7 @@ export default function HistorialPreciosPage() {
                           <th className="px-4 py-2 font-medium hidden sm:table-cell">Proveedor</th>
                           <th className="px-4 py-2 font-medium hidden sm:table-cell">Origen</th>
                           <th className="px-4 py-2 font-medium hidden md:table-cell">Actualizó Inventario</th>
+                          <th className="px-2 py-2 w-8"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border/50">
@@ -242,7 +262,7 @@ export default function HistorialPreciosPage() {
                           const subio = prev && e.precioCompra > prev.precioCompra;
                           const bajo = prev && e.precioCompra < prev.precioCompra;
                           return (
-                            <tr key={e.id} className={`hover:bg-muted/20 transition-colors ${idx === 0 ? "font-semibold" : ""}`}>
+                            <tr key={e.id} className={`hover:bg-muted/20 transition-colors group ${idx === 0 ? "font-semibold" : ""}`}>
                               <td className="px-4 py-2.5 whitespace-nowrap text-xs">
                                 {new Date(e.fecha + "T12:00:00").toLocaleDateString("es-CO")}
                                 {idx === 0 && <span className="ml-1.5 text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">Último</span>}
@@ -264,6 +284,16 @@ export default function HistorialPreciosPage() {
                                   <span className="text-xs text-muted-foreground">No</span>
                                 )}
                               </td>
+                               <td className="px-2 py-2 text-right">
+                                 <button
+                                   onClick={() => handleDeleteEntry(e.id)}
+                                   disabled={deletingId === e.id}
+                                   title="Eliminar"
+                                   className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-muted-foreground hover:text-destructive rounded"
+                                 >
+                                   {deletingId === e.id ? "…" : <Trash2 className="w-3.5 h-3.5" />}
+                                 </button>
+                               </td>
                             </tr>
                           );
                         })}

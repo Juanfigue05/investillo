@@ -34,4 +34,11 @@ router.get("/", async (req, res) => {
   res.json(registros.map(mapHistorial));
 });
 
+router.delete("/:id", async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "id inválido" }); return; }
+  await db.delete(historialPreciosTable).where(eq(historialPreciosTable.id, id));
+  res.json({ ok: true });
+});
+
 export default router;

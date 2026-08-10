@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetInventario, useCrearProducto, useActualizarProducto, useEliminarProducto } from "@workspace/api-client-react";
 import { formatCurrency, calcularPrecioConIva } from "@/lib/utils";
@@ -71,6 +71,12 @@ export default function Inventario() {
     marcaBusqueda: "",
     tipoBusqueda: "",
   });
+
+  // Pagination
+  const PAGE_SIZES = [20, 50, 100, 150] as const;
+  const [pageSize, setPageSize] = useState<number>(50);
+  const [currentPage, setCurrentPage] = useState(1);
+  useEffect(() => { setCurrentPage(1); }, [search, filters, sortCol, sortDir]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importando, setImportando] = useState(false);
@@ -228,6 +234,9 @@ export default function Inventario() {
         return 0;
       });
   }, [productos, search, filters, sortCol, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProductos.length / pageSize));
+  const paginatedProductos = filteredProductos.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const openEdit = (prod: any) => {
     setFormData({
@@ -572,6 +581,16 @@ export default function Inventario() {
             )}
             <ChevDown className={`w-4 h-4 transition-transform ${showFilters ? "rotate-180" : ""}`} />
           </button>
+          <select
+            value={pageSize}
+            onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+            className="bg-card border border-border px-3 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none whitespace-nowrap"
+            title="Productos por página"
+          >
+            {PAGE_SIZES.map((s) => (
+              <option key={s} value={s}>{s} por pág.</option>
+            ))}
+          </select>
         </div>
 
         {/* Filter Panel */}
@@ -701,10 +720,10 @@ export default function Inventario() {
               <tbody className="divide-y divide-border">
                 {isLoading ? (
                   <tr><td colSpan={10} className="px-6 py-8 text-center text-muted-foreground">Cargando inventario...</td></tr>
-                ) : filteredProductos?.length === 0 ? (
+                ) : filteredProductos.length === 0 ? (
                   <tr><td colSpan={10} className="px-6 py-8 text-center text-muted-foreground">No se encontraron productos.</td></tr>
                 ) : (
-                  filteredProductos?.map((prod) => (
+                  paginatedProductos.map((prod) => (
                     <tr key={prod.id} className="hover:bg-muted/50 transition-colors group">
                       <td className="px-3 py-3 text-foreground font-mono text-xs">{prod.codigo}</td>
                       <td className="px-3 py-3 text-foreground font-medium max-w-[180px] truncate">{prod.nombre}</td>
@@ -740,11 +759,11 @@ export default function Inventario() {
                   ))
                 )}
               </tbody>
-              {filteredProductos && filteredProductos.length > 0 && (
+              {filteredProductos.length > 0 && (
                 <tfoot className="bg-muted/30 border-t border-border">
                   <tr>
                     <td colSpan={8} className="px-3 py-2 text-xs text-muted-foreground text-right">
-                      {filteredProductos.length} producto{filteredProductos.length !== 1 ? "s" : ""}
+                      Mostrando {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredProductos.length)} de {filteredProductos.length} producto{filteredProductos.length !== 1 ? "s" : ""}
                     </td>
                     <td colSpan={2}></td>
                   </tr>
@@ -753,6 +772,25 @@ export default function Inventario() {
             </table>
           </div>
         </div>
+
+        {/* Pagination controls */}
+        {filteredProductos.length > pageSize && (
+          <div className="flex items-center justify-center gap-3 py-2">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 rounded-lg border border-border bg-card text-sm text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
+            >← Anterior</button>
+            <span className="text-sm text-muted-foreground">
+              Página {currentPage} de {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 rounded-lg border border-border bg-card text-sm text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
+            >Siguiente →</button>
+          </div>
+        )}
       </div>
 
       {/* Form Dialog */}

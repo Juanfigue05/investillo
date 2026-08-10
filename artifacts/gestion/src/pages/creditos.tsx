@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import {
   useGetCreditos,
@@ -39,6 +39,20 @@ export default function Creditos() {
   const { data: creditos, isLoading } = useGetCreditos({ tipo: TIPO });
   const { data: productos } = useGetInventario();
   const queryClient = useQueryClient();
+
+  const printMenuRef = useRef<HTMLDivElement>(null);
+  const [printMenu, setPrintMenu] = useState(false);
+
+  const handlePrintWithOrientation = (orientation: "portrait" | "landscape") => {
+    const prev = document.getElementById("__print_page_size");
+    if (prev) prev.remove();
+    const s = document.createElement("style");
+    s.id = "__print_page_size";
+    s.textContent = `@page { size: ${orientation}; }`;
+    document.head.appendChild(s);
+    setPrintMenu(false);
+    requestAnimationFrame(() => window.print());
+  };
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -295,13 +309,25 @@ export default function Creditos() {
             <p className="text-muted-foreground mt-1 text-sm">Gestión de créditos y cobros pendientes de clientes.</p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={() => window.print()}
-              className="no-print flex items-center gap-2 px-4 py-2.5 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm"
-            >
-              <Printer className="w-4 h-4" />
-              Imprimir
-            </button>
+            <div ref={printMenuRef} className="relative no-print">
+              <button
+                onClick={() => setPrintMenu((p) => !p)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm"
+              >
+                <Printer className="w-4 h-4" />
+                Imprimir
+              </button>
+              {printMenu && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-xl shadow-2xl overflow-hidden w-52">
+                  <button onClick={() => handlePrintWithOrientation("portrait")} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted text-sm text-left transition-colors">
+                    <span className="text-base">📄</span> Vertical (retrato)
+                  </button>
+                  <button onClick={() => handlePrintWithOrientation("landscape")} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted text-sm text-left transition-colors">
+                    <span className="text-base">📃</span> Horizontal (paisaje)
+                  </button>
+                </div>
+              )}
+            </div>
             <button onClick={openNew} className="no-print flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg text-sm">
               <Plus className="w-4 h-4" /> Nuevo Crédito
             </button>

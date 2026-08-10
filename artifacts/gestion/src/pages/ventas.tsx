@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Layout } from "@/components/Layout";
 import {
   useGetVentas,
@@ -52,6 +53,8 @@ function SearchableSelect({
   const [open, setOpen] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [dropdownRect, setDropdownRect] = useState<DOMRect | null>(null);
 
   const selected = opciones.find((o) => o.id === value);
 
@@ -74,17 +77,34 @@ function SearchableSelect({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Close on scroll so the fixed dropdown doesn't drift
+  useEffect(() => {
+    if (!open) return;
+    const close = () => { setOpen(false); setBusqueda(""); };
+    window.addEventListener("scroll", close, true);
+    return () => window.removeEventListener("scroll", close, true);
+  }, [open]);
+
   const handleSelect = (id: string) => {
     onChange(id);
     setOpen(false);
     setBusqueda("");
   };
 
+  const handleToggle = () => {
+    if (!open && triggerRef.current) {
+      setDropdownRect(triggerRef.current.getBoundingClientRect());
+    }
+    setOpen((prev) => !prev);
+    if (!open) setBusqueda("");
+  };
+
   return (
     <div ref={containerRef} className="relative w-full min-w-[160px]">
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => { setOpen(!open); if (!open) setBusqueda(""); }}
+        onClick={handleToggle}
         className="w-full flex items-center justify-between bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-left"
       >
         <span className={selected ? "text-foreground" : "text-muted-foreground"}>
@@ -93,8 +113,17 @@ function SearchableSelect({
         <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0 ml-2" />
       </button>
 
-      {open && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-2xl overflow-hidden">
+      {open && dropdownRect && createPortal(
+        <div
+          style={{
+            position: "fixed",
+            top: dropdownRect.bottom + 4,
+            left: dropdownRect.left,
+            width: dropdownRect.width,
+            zIndex: 9999,
+          }}
+          className="bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+        >
           <div className="p-2 border-b border-border">
             <input
               autoFocus
@@ -125,7 +154,8 @@ function SearchableSelect({
               ))
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -171,6 +201,18 @@ export default function VentasDiarias() {
   });
 
   const diaYaGuardado = historial?.some((d) => d.fecha === fecha);
+
+  const [printMenu, setPrintMenu] = useState(false);
+  const handlePrintWithOrientation = (orientation: "portrait" | "landscape") => {
+    const prev = document.getElementById("__print_page_size");
+    if (prev) prev.remove();
+    const s = document.createElement("style");
+    s.id = "__print_page_size";
+    s.textContent = `@page { size: ${orientation}; }`;
+    document.head.appendChild(s);
+    setPrintMenu(false);
+    requestAnimationFrame(() => window.print());
+  };
 
   const opcionesProducto: ProductoOpcion[] = [
     { id: SPECIAL_MANOOBRA, nombre: "🔧 Mano de Obra", special: "manoobra" },
@@ -417,13 +459,25 @@ export default function VentasDiarias() {
               <BookMarked className="w-4 h-4" />
               {diaYaGuardado ? "Guardado" : "Guardar en Historial"}
             </button>
-            <button
-              onClick={() => window.print()}
-              className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm"
-            >
-              <Printer className="w-4 h-4" />
-              Imprimir
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setPrintMenu((p) => !p)}
+                className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm"
+              >
+                <Printer className="w-4 h-4" />
+                Imprimir
+              </button>
+              {printMenu && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-xl shadow-2xl overflow-hidden w-52">
+                  <button onClick={() => handlePrintWithOrientation("portrait")} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted text-sm text-left transition-colors">
+                    <span className="text-base">📄</span> Vertical (retrato)
+                  </button>
+                  <button onClick={() => handlePrintWithOrientation("landscape")} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted text-sm text-left transition-colors">
+                    <span className="text-base">📃</span> Horizontal (paisaje)
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -433,9 +487,9 @@ export default function VentasDiarias() {
             Ventas Diarias — {fechaFormateada}
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[62vh]">
             <table className="w-full text-left border-collapse text-xs lg:text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr className="bg-muted text-muted-foreground border-b border-border">
                   <th className="px-2 py-3 font-medium no-print w-10"></th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">No. Remisión / Ref</th>
