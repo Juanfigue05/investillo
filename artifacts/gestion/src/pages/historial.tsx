@@ -146,7 +146,6 @@ export default function Historial() {
                 weekday: "long", year: "numeric", month: "long", day: "numeric",
               });
               const totalVentas = dia.ventas.filter((v) => v.tipoLinea === "venta").reduce((s, v) => s + v.precioVentaTotal, 0);
-              const totalMO = dia.ventas.filter((v) => v.tipoLinea === "manoobra").reduce((s, v) => s + v.precioVentaTotal, 0);
               const isOpen = expandedDia === dia.id;
 
               return (
@@ -161,7 +160,6 @@ export default function Historial() {
                       <div className="flex flex-wrap gap-4 mt-1 text-sm text-muted-foreground">
                         <span>{dia.ventas.length} registro{dia.ventas.length !== 1 ? "s" : ""}</span>
                         {totalVentas > 0 && <span className="text-primary font-medium">Ventas: {formatCurrency(totalVentas)}</span>}
-                        {totalMO > 0 && <span className="text-yellow-500 font-medium">M.O.: {formatCurrency(totalMO)}</span>}
                         <span className="text-muted-foreground text-xs">
                           Guardado el {new Date(dia.guardadoEn).toLocaleDateString("es-CO")}
                         </span>
@@ -295,7 +293,7 @@ export default function Historial() {
                             <tfoot className="border-t border-border bg-muted/30">
                               <tr>
                                 <td colSpan={6} className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Total ventas del día</td>
-                                <td className="px-4 py-2 font-bold text-primary">{formatCurrency(totalVentas + totalMO)}</td>
+                                <td className="px-4 py-2 font-bold text-primary">{formatCurrency(totalVentas)}</td>
                                 <td></td>
                               </tr>
                             </tfoot>

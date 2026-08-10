@@ -376,14 +376,11 @@ export default function VentasDiarias() {
 
   // Computed totals
   const ventasRows = ventas?.filter((v) => v.tipoLinea === "venta") || [];
-  const moRows = ventas?.filter((v) => v.tipoLinea === "manoobra") || [];
 
   const totalPCompra = ventasRows.reduce((acc, v) => acc + v.precioCompraUnidad, 0);
   const totalPVenta = ventasRows.reduce((acc, v) => acc + v.precioVentaUnidad, 0);
   const totalVentaTotal = ventasRows.reduce((acc, v) => acc + v.precioVentaTotal, 0);
   const totalBeneficio = ventasRows.reduce((acc, v) => acc + v.beneficio, 0);
-  const totalManoObra = moRows.reduce((acc, v) => acc + v.precioVentaTotal, 0);
-
   const cantNum = parseFloat(newRow.cantidad.replace(",", ".")) || 0;
   const previewTotal = modoActual === "normal" ? newRow.precioVenta * cantNum : modoActual === "manoobra" ? newRow.precioManoObra : 0;
   const previewBeneficio = modoActual === "normal" ? (newRow.precioVenta - newRow.precioCompra) * cantNum : 0;
@@ -621,17 +618,6 @@ export default function VentasDiarias() {
                   </tr>
                 )}
 
-                {/* Row 2: Mano de Obra total — yellow in print */}
-                {moRows.length > 0 && (
-                  <tr className="bg-yellow-500/5 print-mo-total-row">
-                    <td className="no-print"></td>
-                    <td colSpan={6} className="px-3 py-2.5 text-right font-bold text-yellow-600 uppercase text-xs tracking-wider">
-                      MANO DE OBRA TOTAL DEL DÍA
-                    </td>
-                    <td className="px-3 py-2.5 font-display font-bold text-lg text-yellow-600 whitespace-nowrap">{formatCurrency(totalManoObra)}</td>
-                    <td colSpan={2} className="no-print"></td>
-                  </tr>
-                )}
               </tfoot>
             </table>
           </div>
