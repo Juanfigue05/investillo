@@ -35,10 +35,13 @@ export function FloatingPriceCheck() {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  // Close dropdown on scroll so fixed portal stays aligned
+  // Close dropdown on scroll only when scroll happens outside the portal
   useEffect(() => {
     if (dropdownOpen === null) return;
-    const close = () => setDropdownOpen(null);
+    const close = (e: Event) => {
+      if (portalRef.current && portalRef.current.contains(e.target as Node)) return;
+      setDropdownOpen(null);
+    };
     window.addEventListener("scroll", close, true);
     return () => window.removeEventListener("scroll", close, true);
   }, [dropdownOpen]);

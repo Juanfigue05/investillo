@@ -82,10 +82,13 @@ function SearchableSelect({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Close on scroll so the fixed dropdown doesn't drift
+  // Close on scroll ONLY when the scroll happens outside the portal
   useEffect(() => {
     if (!open) return;
-    const close = () => { setOpen(false); setBusqueda(""); };
+    const close = (e: Event) => {
+      if (portalRef.current && portalRef.current.contains(e.target as Node)) return;
+      setOpen(false); setBusqueda("");
+    };
     window.addEventListener("scroll", close, true);
     return () => window.removeEventListener("scroll", close, true);
   }, [open]);
