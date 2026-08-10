@@ -2,20 +2,40 @@ import { useState, useMemo, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetInventario, useCrearProducto, useActualizarProducto, useEliminarProducto } from "@workspace/api-client-react";
 import { formatCurrency, calcularPrecioConIva } from "@/lib/utils";
-import { Plus, Search, Edit2, Trash2, AlertCircle, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, ChevronDown as ChevDown, Upload, CheckCircle2, Loader2, FileDown } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, AlertCircle, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, ChevronDown as ChevDown, Upload, CheckCircle2, Loader2, FileDown, GitMerge } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
+
+interface ParsedRow {
+  codigo: string;
+  nombre: string;
+  referencia: string | null;
+  marca: string | null;
+  precioCompra: string;
+  precioVentaSinIva: string;
+  precioVentaConIva: string;
+}
+
+interface ConflictoItem {
+  codigo: string;
+  opcionA: ParsedRow;
+  opcionB: ParsedRow;
+}
 
 interface ImportResult {
   ok: boolean;
   total: number;
   procesados: number;
   omitidos: number;
-  duplicados?: number;
-  filasOmitidas?: number[];
+  conflictos?: ConflictoItem[];
   error?: string;
 }
+
+const fmtP = (v: string) => {
+  const n = parseFloat(v);
+  return isNaN(n) ? "—" : `$${n.toLocaleString("es-CO")}`;
+};
 
 type SortCol = "codigo" | "nombre" | "marca" | "tipo" | "precioCompra" | "precioVentaConIva" | "stockActual";
 type SortDir = "asc" | "desc";
@@ -56,24 +76,65 @@ export default function Inventario() {
   const [importando, setImportando] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
+  // conflict resolution state
+  const [conflictos, setConflictos] = useState<ConflictoItem[]>([]);
+  const [choices, setChoices] = useState<Record<string, "A" | "B">>({});
+  const [resolviendo, setResolviendo] = useState(false);
+  const [resolvedOk, setResolvedOk] = useState(false);
+
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
     setImportando(true);
     setImportResult(null);
+    setConflictos([]);
+    setChoices({});
+    setResolvedOk(false);
     try {
       const form = new FormData();
       form.append("archivo", file);
       const res = await fetch(`${API}/inventario-import`, { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error desconocido");
+      const data: ImportResult = await res.json();
+      if (!res.ok) throw new Error((data as any).error || "Error desconocido");
       setImportResult(data);
+      if (data.conflictos?.length) {
+        setConflictos(data.conflictos);
+        // default all choices to "A" (first occurrence already imported)
+        const init: Record<string, "A" | "B"> = {};
+        data.conflictos.forEach((c) => { init[c.codigo] = "A"; });
+        setChoices(init);
+      }
       queryClient.invalidateQueries({ queryKey: ["inventario"] });
     } catch (err) {
       setImportResult({ ok: false, total: 0, procesados: 0, omitidos: 0, error: String(err) });
     } finally {
       setImportando(false);
+    }
+  };
+
+  const handleResolver = async () => {
+    // Build list of items the user chose "B" for (those need to be upserted)
+    const items = conflictos
+      .filter((c) => choices[c.codigo] === "B")
+      .map((c) => c.opcionB);
+    setResolviendo(true);
+    try {
+      if (items.length > 0) {
+        const res = await fetch(`${API}/inventario-import/resolver`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error);
+      }
+      setResolvedOk(true);
+      setConflictos([]);
+      queryClient.invalidateQueries({ queryKey: ["inventario"] });
+    } catch (err) {
+      alert("Error al aplicar selecciones: " + err);
+    } finally {
+      setResolviendo(false);
     }
   };
 
@@ -245,18 +306,20 @@ export default function Inventario() {
               : "bg-destructive/10 border-destructive/30 text-destructive"
           }`}>
             <div className="flex-shrink-0 mt-0.5">
-              {importResult.ok
-                ? <CheckCircle2 className="w-5 h-5" />
-                : <AlertCircle className="w-5 h-5" />}
+              {importResult.ok ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
             </div>
             <div className="flex-1 text-sm">
               {importResult.ok ? (
                 <>
-                  <p className="font-bold">Importación completada</p>
+                  <p className="font-bold">
+                    Importación completada
+                    {resolvedOk && " · conflictos resueltos ✓"}
+                  </p>
                   <p className="mt-0.5 opacity-80">
-                    {importResult.procesados} producto{importResult.procesados !== 1 ? "s" : ""} procesados
-                    {(importResult.duplicados ?? 0) > 0 && ` · ${importResult.duplicados} código${importResult.duplicados !== 1 ? "s" : ""} duplicado${importResult.duplicados !== 1 ? "s" : ""} en el archivo (se conservó la última aparición)`}
-                    {importResult.omitidos > 0 && ` · ${importResult.omitidos} fila${importResult.omitidos !== 1 ? "s" : ""} omitida${importResult.omitidos !== 1 ? "s" : ""} (sin código o nombre)`}
+                    {importResult.procesados} productos importados
+                    {importResult.omitidos > 0 && ` · ${importResult.omitidos} filas sin código/nombre omitidas`}
+                    {(importResult.conflictos?.length ?? 0) > 0 && !resolvedOk &&
+                      ` · ${importResult.conflictos!.length} con datos distintos — revisa abajo`}
                   </p>
                 </>
               ) : (
@@ -266,9 +329,127 @@ export default function Inventario() {
                 </>
               )}
             </div>
-            <button onClick={() => setImportResult(null)} className="flex-shrink-0 text-current opacity-60 hover:opacity-100">
+            <button onClick={() => { setImportResult(null); setConflictos([]); setResolvedOk(false); }}
+              className="flex-shrink-0 text-current opacity-60 hover:opacity-100">
               <X className="w-4 h-4" />
             </button>
+          </div>
+        )}
+
+        {/* ── Conflict resolution panel ── */}
+        {conflictos.length > 0 && !resolvedOk && (
+          <div className="bg-card border border-amber-500/30 rounded-2xl shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 bg-amber-500/10 border-b border-amber-500/20">
+              <div className="flex items-center gap-2">
+                <GitMerge className="w-5 h-5 text-amber-400" />
+                <div>
+                  <p className="font-bold text-foreground text-sm">
+                    {conflictos.length} código{conflictos.length !== 1 ? "s" : ""} con información diferente
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Opción A = primera aparición en el archivo (ya importada) · Opción B = segunda aparición. Selecciona cuál conservar.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                <button
+                  onClick={() => setChoices((prev) => { const n = { ...prev }; conflictos.forEach((c) => { n[c.codigo] = "A"; }); return n; })}
+                  className="px-3 py-1.5 text-xs bg-muted border border-border rounded-lg hover:bg-muted/80 transition-colors"
+                >Todas → A</button>
+                <button
+                  onClick={() => setChoices((prev) => { const n = { ...prev }; conflictos.forEach((c) => { n[c.codigo] = "B"; }); return n; })}
+                  className="px-3 py-1.5 text-xs bg-muted border border-border rounded-lg hover:bg-muted/80 transition-colors"
+                >Todas → B</button>
+                <button
+                  onClick={handleResolver}
+                  disabled={resolviendo}
+                  className="flex items-center gap-2 px-4 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60"
+                >
+                  {resolviendo ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Aplicando...</> : "Aplicar selecciones"}
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
+                  <tr className="text-muted-foreground uppercase tracking-wider text-[10px]">
+                    <th className="px-4 py-2 text-left font-medium">Código</th>
+                    <th className="px-3 py-2 text-left font-medium">Opción</th>
+                    <th className="px-3 py-2 text-left font-medium">Nombre</th>
+                    <th className="px-3 py-2 text-left font-medium">Referencia</th>
+                    <th className="px-3 py-2 text-left font-medium">Marca</th>
+                    <th className="px-3 py-2 text-right font-medium">P. Compra</th>
+                    <th className="px-3 py-2 text-right font-medium">P. Venta s/IVA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {conflictos.map((c) => (
+                    <>
+                      {/* Option A row */}
+                      <tr
+                        key={`${c.codigo}-A`}
+                        onClick={() => setChoices((p) => ({ ...p, [c.codigo]: "A" }))}
+                        className={`cursor-pointer border-t border-border/40 transition-colors ${
+                          choices[c.codigo] === "A" ? "bg-primary/10" : "hover:bg-muted/30"
+                        }`}
+                      >
+                        <td className="px-4 py-2 font-mono text-muted-foreground align-top" rowSpan={2}>{c.codigo}</td>
+                        <td className="px-3 py-2 align-middle">
+                          <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                            choices[c.codigo] === "A" ? "border-primary bg-primary" : "border-muted-foreground"
+                          }`}>
+                            {choices[c.codigo] === "A" && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 font-medium">{c.opcionA.nombre}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{c.opcionA.referencia ?? "—"}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{c.opcionA.marca ?? "—"}</td>
+                        <td className="px-3 py-2 text-right">{fmtP(c.opcionA.precioCompra)}</td>
+                        <td className="px-3 py-2 text-right">{fmtP(c.opcionA.precioVentaSinIva)}</td>
+                      </tr>
+                      {/* Option B row */}
+                      <tr
+                        key={`${c.codigo}-B`}
+                        onClick={() => setChoices((p) => ({ ...p, [c.codigo]: "B" }))}
+                        className={`cursor-pointer border-b border-border transition-colors ${
+                          choices[c.codigo] === "B" ? "bg-amber-500/10" : "hover:bg-muted/30"
+                        }`}
+                      >
+                        <td className="px-3 py-2 align-middle">
+                          <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                            choices[c.codigo] === "B" ? "border-amber-400 bg-amber-400" : "border-muted-foreground"
+                          }`}>
+                            {choices[c.codigo] === "B" && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 font-medium">{c.opcionB.nombre}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{c.opcionB.referencia ?? "—"}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{c.opcionB.marca ?? "—"}</td>
+                        <td className="px-3 py-2 text-right">{fmtP(c.opcionB.precioCompra)}</td>
+                        <td className="px-3 py-2 text-right">{fmtP(c.opcionB.precioVentaSinIva)}</td>
+                      </tr>
+                    </>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer summary */}
+            <div className="px-5 py-3 border-t border-border bg-muted/30 flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                {conflictos.filter((c) => choices[c.codigo] === "B").length} seleccionadas para reemplazar con opción B
+              </span>
+              <button
+                onClick={handleResolver}
+                disabled={resolviendo}
+                className="flex items-center gap-2 px-4 py-1.5 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60"
+              >
+                {resolviendo ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Aplicando...</> : "Aplicar selecciones"}
+              </button>
+            </div>
           </div>
         )}
 
