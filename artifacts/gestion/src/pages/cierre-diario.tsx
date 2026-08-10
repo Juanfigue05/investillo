@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetTrabajadores } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
-import { Calculator, Plus, Trash2, ChevronDown, ChevronUp, Save, CheckCircle } from "lucide-react";
+import { Calculator, Plus, Trash2, ChevronDown, ChevronUp, Save, CheckCircle, Pencil } from "lucide-react";
 
 // ---------- types ----------
 interface ConceptoEntrada {
@@ -138,6 +138,38 @@ async function guardarCierre(fecha: string, datos: unknown, totalPagar: number) 
   return res.json();
 }
 
+// ---------- helpers: restore from snapshot ----------
+function snapshotToItem(snap: TrabajadorSnapshot): CierreTrabajador {
+  // Ensure arrays have the expected lengths
+  const moEntradas = Array.from({ length: 10 }, (_, i) => snap.moEntradas?.[i] ?? "");
+  const emptyC = (): ConceptoEntrada[] => Array.from({ length: 3 }, () => ({ descripcion: "", valor: "" }));
+  const leDamos = snap.leDamos
+    ? snap.leDamos.slice(0, 3).concat(emptyC().slice(snap.leDamos.length))
+    : emptyC();
+  const nosDebe = snap.nosDebe
+    ? snap.nosDebe.slice(0, 3).concat(emptyC().slice(snap.nosDebe.length))
+    : emptyC();
+  return {
+    id: snap.id ?? `${Date.now()}-${Math.random()}`,
+    nombre: snap.nombre ?? "",
+    moEntradas,
+    seguro: snap.seguro ?? "30",
+    leDamos,
+    nosDebe,
+    expandido: true,
+  };
+}
+
+interface TrabajadorSnapshot {
+  id: string;
+  nombre: string;
+  moEntradas: string[];
+  seguro: string;
+  leDamos: { descripcion: string; valor: string }[];
+  nosDebe: { descripcion: string; valor: string }[];
+  calc?: unknown;
+}
+
 // ---------- main ----------
 export default function CierreDiario() {
   const { data: trabajadores } = useGetTrabajadores();
@@ -153,6 +185,22 @@ export default function CierreDiario() {
   const [nombreLibre, setNombreLibre] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [guardadoOk, setGuardadoOk] = useState(false);
+  // Edit mode: fecha being edited (null = new cierre for today)
+  const [editFecha, setEditFecha] = useState<string | null>(null);
+
+  // On mount, check sessionStorage for a cierre to edit
+  useEffect(() => {
+    const raw = sessionStorage.getItem("editarCierre");
+    if (!raw) return;
+    sessionStorage.removeItem("editarCierre");
+    try {
+      const { fecha, datos } = JSON.parse(raw) as { fecha: string; datos: TrabajadorSnapshot[] };
+      setEditFecha(fecha);
+      setItems(datos.map(snapshotToItem));
+    } catch {
+      // ignore malformed data
+    }
+  }, []);
 
   const agregarDesdeLista = (nombre: string) => {
     setItems((prev) => [...prev, newTrabajador(nombre)]);
@@ -212,7 +260,8 @@ export default function CierreDiario() {
         const calc = calcTrabajador(t);
         return { ...t, calc };
       });
-      await guardarCierre(fechaHoy, datos, grandTotal);
+      // Use editFecha when editing a past cierre, otherwise today
+      await guardarCierre(editFecha ?? fechaHoy, datos, grandTotal);
       setGuardadoOk(true);
       setTimeout(() => setGuardadoOk(false), 3000);
     } catch (e) {
@@ -229,12 +278,29 @@ export default function CierreDiario() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-display font-bold text-foreground flex items-center gap-2">
-              <Calculator className="w-6 h-6 text-primary" /> Cierre Diario
+              {editFecha ? <Pencil className="w-6 h-6 text-amber-400" /> : <Calculator className="w-6 h-6 text-primary" />}
+              {editFecha ? "Editar Cierre" : "Cierre Diario"}
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">{hoyStr}</p>
-            <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-              Todos los campos de precio se escriben en miles: 55 = $55.000 · 45.5 = $45.500
-            </p>
+            {editFecha ? (
+              <>
+                <p className="text-sm text-amber-400 font-medium mt-1">
+                  Editando cierre del{" "}
+                  {new Date(editFecha + "T12:00:00").toLocaleDateString("es-CO", {
+                    weekday: "long", year: "numeric", month: "long", day: "numeric",
+                  })}
+                </p>
+                <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                  Guardar sobrescribirá el cierre existente para esa fecha.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground mt-1">{hoyStr}</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                  Todos los campos de precio se escriben en miles: 55 = $55.000 · 45.5 = $45.500
+                </p>
+              </>
+            )}
           </div>
           <div className="flex gap-2 flex-wrap">
             {items.length > 0 && (

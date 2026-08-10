@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { Layout } from "@/components/Layout";
 import { formatCurrency } from "@/lib/utils";
-import { History, ChevronDown, ChevronUp, Trash2, AlertCircle } from "lucide-react";
+import { History, ChevronDown, ChevronUp, Trash2, AlertCircle, Pencil } from "lucide-react";
 
 // ---------- types ----------
 interface CierreGuardado {
@@ -51,6 +52,7 @@ const fmtFecha = (iso: string) =>
 
 // ---------- main ----------
 export default function HistorialCierres() {
+  const [, navigate] = useLocation();
   const [cierres, setCierres] = useState<CierreGuardado[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +81,11 @@ export default function HistorialCierres() {
       else next.add(id);
       return next;
     });
+  };
+
+  const handleEditar = (c: CierreGuardado) => {
+    sessionStorage.setItem("editarCierre", JSON.stringify({ fecha: c.fecha, datos: c.datos }));
+    navigate("/cierre-diario");
   };
 
   const handleDelete = async (id: number) => {
@@ -154,6 +161,13 @@ export default function HistorialCierres() {
                       <p className="text-xs text-muted-foreground">Total a pagar</p>
                       <p className="text-lg font-bold text-primary">{formatCurrency(c.totalPagar)}</p>
                     </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleEditar(c); }}
+                      className="p-1.5 text-muted-foreground hover:text-primary bg-muted rounded-lg transition-colors"
+                      title="Editar cierre"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }}
                       disabled={deleting === c.id}
