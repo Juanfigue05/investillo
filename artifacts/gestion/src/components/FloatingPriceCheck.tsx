@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Calculator, Minus, X, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useGetInventario } from "@workspace/api-client-react";
@@ -16,16 +17,40 @@ export function FloatingPriceCheck() {
   const [dropdownOpen, setDropdownOpen] = useState<number | null>(null);
   const { data: productos } = useGetInventario();
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const portalRef = useRef<HTMLDivElement | null>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        containerRef.current && !containerRef.current.contains(target) &&
+        !(portalRef.current && portalRef.current.contains(target))
+      ) {
         setDropdownOpen(null);
       }
     }
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
+
+  // Close dropdown on scroll so fixed portal stays aligned
+  useEffect(() => {
+    if (dropdownOpen === null) return;
+    const close = () => setDropdownOpen(null);
+    window.addEventListener("scroll", close, true);
+    return () => window.removeEventListener("scroll", close, true);
+  }, [dropdownOpen]);
+
+  const openDropdown = (i: number) => {
+    const el = inputRefs.current[i];
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    }
+    setDropdownOpen(i);
+  };
 
   const addLinea = () => {
     if (lineas.length >= 5) return;
@@ -46,7 +71,7 @@ export function FloatingPriceCheck() {
   const updateBusqueda = (i: number, val: string) => {
     setBusquedas((prev) => prev.map((b, idx) => (idx === i ? val : b)));
     setLineas((prev) => prev.map((l, idx) => (idx === i ? { ...l, productoId: "" } : l)));
-    setDropdownOpen(i);
+    openDropdown(i);
   };
 
   const selectProducto = (i: number, productoId: string, nombre: string) => {
@@ -64,7 +89,7 @@ export function FloatingPriceCheck() {
           p.codigo.toLowerCase().includes(q) ||
           (p.marca || "").toLowerCase().includes(q)
       )
-      .slice(0, 8);
+      .slice(0, 10);
   };
 
   const calcLine = (linea: LineaConsulta) => {
@@ -93,9 +118,9 @@ export function FloatingPriceCheck() {
             initial={{ opacity: 0, y: 20, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.9 }}
-            className="mb-4 w-[320px] sm:w-96 bg-card border border-border shadow-2xl rounded-2xl overflow-hidden flex flex-col"
+            className="mb-4 w-[420px] sm:w-[520px] bg-card border border-border shadow-2xl rounded-2xl flex flex-col"
           >
-            <div className="bg-muted px-4 py-3 border-b border-border flex items-center justify-between">
+            <div className="bg-muted px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-2 text-foreground font-medium text-sm">
                 <Calculator className="w-4 h-4 text-green-500" />
                 Consulta Rápida de Precios
@@ -109,7 +134,7 @@ export function FloatingPriceCheck() {
               </button>
             </div>
 
-            <div className="p-4 space-y-4 max-h-[420px] overflow-y-auto">
+            <div className="p-4 space-y-4 max-h-[580px] overflow-y-auto">
               {lineas.map((linea, i) => {
                 const calc = calcLine(linea);
                 const opts = filteredProductos(i);
@@ -119,28 +144,14 @@ export function FloatingPriceCheck() {
                     <div className="flex gap-2 items-start">
                       <div className="flex-1 relative">
                         <input
+                          ref={(el) => { inputRefs.current[i] = el; }}
                           type="text"
                           placeholder="Buscar producto..."
                           value={busquedas[i]}
                           onChange={(e) => updateBusqueda(i, e.target.value)}
-                          onFocus={() => setDropdownOpen(i)}
-                          className="w-full bg-background border border-border px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-green-500 outline-none"
+                          onFocus={() => openDropdown(i)}
+                          className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-green-500 outline-none"
                         />
-                        {dropdownOpen === i && hasQ && opts.length > 0 && (
-                          <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-xl overflow-hidden max-h-36 overflow-y-auto">
-                            {opts.map((p) => (
-                              <button
-                                key={p.id}
-                                type="button"
-                                onMouseDown={(e) => { e.preventDefault(); selectProducto(i, String(p.id), p.nombre); }}
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors"
-                              >
-                                <span className="font-medium text-foreground">{p.nombre}</span>
-                                {p.marca && <span className="text-muted-foreground ml-1">— {p.marca}</span>}
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </div>
                       <input
                         type="number"
@@ -148,13 +159,13 @@ export function FloatingPriceCheck() {
                         step="1"
                         value={linea.cantidad}
                         onChange={(e) => updateCantidad(i, e.target.value)}
-                        className="w-14 bg-background border border-border px-2 py-1.5 rounded-lg text-sm text-center focus:ring-1 focus:ring-green-500 outline-none"
+                        className="w-16 bg-background border border-border px-2 py-2 rounded-lg text-sm text-center focus:ring-1 focus:ring-green-500 outline-none"
                         placeholder="1"
                       />
                       {lineas.length > 1 && (
                         <button
                           onClick={() => removeLinea(i)}
-                          className="p-1.5 text-muted-foreground hover:text-destructive rounded-lg transition-colors flex-shrink-0"
+                          className="p-2 text-muted-foreground hover:text-destructive rounded-lg transition-colors flex-shrink-0"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -196,6 +207,34 @@ export function FloatingPriceCheck() {
                         )}
                       </div>
                     )}
+
+                    {/* Portal dropdown — renders at body level, escapes overflow */}
+                    {dropdownOpen === i && hasQ && opts.length > 0 && dropdownPos && createPortal(
+                      <div
+                        ref={(el) => { portalRef.current = el; }}
+                        style={{
+                          position: "fixed",
+                          top: dropdownPos.top,
+                          left: dropdownPos.left,
+                          width: dropdownPos.width,
+                          zIndex: 9999,
+                        }}
+                        className="bg-card border border-border rounded-lg shadow-2xl overflow-hidden max-h-52 overflow-y-auto"
+                      >
+                        {opts.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onMouseDown={(e) => { e.preventDefault(); selectProducto(i, String(p.id), p.nombre); }}
+                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted transition-colors border-b border-border/40 last:border-0"
+                          >
+                            <span className="font-medium text-foreground">{p.nombre}</span>
+                            {p.marca && <span className="text-muted-foreground ml-1.5 text-xs">— {p.marca}</span>}
+                          </button>
+                        ))}
+                      </div>,
+                      document.body
+                    )}
                   </div>
                 );
               })}
@@ -203,7 +242,7 @@ export function FloatingPriceCheck() {
               {lineas.length < 5 && (
                 <button
                   onClick={addLinea}
-                  className="w-full py-2 border border-dashed border-border rounded-lg text-xs text-muted-foreground hover:text-foreground hover:border-green-500 transition-colors flex items-center justify-center gap-1"
+                  className="w-full py-2.5 border border-dashed border-border rounded-lg text-xs text-muted-foreground hover:text-foreground hover:border-green-500 transition-colors flex items-center justify-center gap-1"
                 >
                   <Plus className="w-3 h-3" />
                   Agregar producto ({lineas.length}/5)
@@ -212,7 +251,7 @@ export function FloatingPriceCheck() {
             </div>
 
             {calcLines.length > 0 && (
-              <div className="border-t-2 border-border bg-muted/50 px-4 py-3 space-y-1.5">
+              <div className="border-t-2 border-border bg-muted/50 px-4 py-3 space-y-1.5 flex-shrink-0">
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Gran Total</p>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground text-xs">Total Compra</span>

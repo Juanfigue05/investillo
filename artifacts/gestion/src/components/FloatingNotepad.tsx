@@ -35,6 +35,7 @@ export function FloatingNotepad() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.9 }}
             className="mb-4 w-80 bg-card border border-border shadow-2xl rounded-2xl overflow-hidden flex flex-col"
+            style={{ fontSize: "16.5px" }}
           >
             <div className="bg-muted px-4 py-3 border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-2 text-foreground font-medium">

@@ -54,6 +54,7 @@ function SearchableSelect({
   const [busqueda, setBusqueda] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const portalRef = useRef<HTMLDivElement | null>(null);
   const [dropdownRect, setDropdownRect] = useState<DOMRect | null>(null);
 
   const selected = opciones.find((o) => o.id === value);
@@ -68,7 +69,11 @@ function SearchableSelect({
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        containerRef.current && !containerRef.current.contains(target) &&
+        !(portalRef.current && portalRef.current.contains(target))
+      ) {
         setOpen(false);
         setBusqueda("");
       }
@@ -115,6 +120,7 @@ function SearchableSelect({
 
       {open && dropdownRect && createPortal(
         <div
+          ref={(el) => { portalRef.current = el; }}
           style={{
             position: "fixed",
             top: dropdownRect.bottom + 4,

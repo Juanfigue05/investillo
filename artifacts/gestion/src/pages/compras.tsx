@@ -337,7 +337,7 @@ export default function Compras() {
       )}
 
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="no-print flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h1 className="text-2xl lg:text-3xl font-display font-bold text-foreground">Módulo de Compras</h1>
             <p className="text-muted-foreground mt-1 text-sm">Pedidos pendientes y registro histórico de llegadas.</p>
@@ -374,7 +374,7 @@ export default function Compras() {
 
         {/* Autocomplete add form */}
         {showAddForm && (
-          <div className="bg-card border border-border rounded-2xl p-5 animate-in fade-in slide-in-from-top-3 shadow-xl">
+          <div className="no-print bg-card border border-border rounded-2xl p-5 animate-in fade-in slide-in-from-top-3 shadow-xl">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold text-foreground">Agregar producto a lista de compras</h3>
               <button onClick={() => setShowAddForm(false)} className="p-1 hover:bg-muted rounded-lg">
@@ -409,7 +409,7 @@ export default function Compras() {
         ) : (
           <div className="space-y-8">
             {pendientes.length > 0 && (
-              <div>
+              <div className="no-print">
                 <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-destructive inline-block"></span>
                   Pedidos Pendientes ({pendientes.length})
@@ -502,12 +502,16 @@ export default function Compras() {
             )}
 
             {llegados.length > 0 && (
-              <div>
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+              <div className="print-zone">
+                <h3 className="no-print text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
                   Historial de Llegadas ({llegados.length})
                 </h3>
                 <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-lg">
+                  <div className="print-only print-date-header">
+                    <strong>Historial de Llegadas — Compras</strong>
+                    <span style={{ float: "right" }}>{new Date().toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })}</span>
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
                       <thead>
@@ -520,7 +524,7 @@ export default function Compras() {
                           <th className="px-4 py-3 font-medium whitespace-nowrap hidden md:table-cell">P. Venta</th>
                           <th className="px-4 py-3 font-medium whitespace-nowrap">Total Compra</th>
                           <th className="px-4 py-3 font-medium whitespace-nowrap hidden lg:table-cell">Proveedor</th>
-                          <th className="px-4 py-3 font-medium"></th>
+                          <th className="px-4 py-3 font-medium no-print"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
@@ -541,7 +545,7 @@ export default function Compras() {
                               <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{precioV > 0 ? formatCurrency(precioV) : "—"}</td>
                               <td className="px-4 py-3 font-bold text-primary">{totalCompra > 0 ? formatCurrency(totalCompra) : "—"}</td>
                               <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{compra.proveedor || <span className="italic text-xs">Sin registrar</span>}</td>
-                              <td className="px-4 py-3">
+                              <td className="px-4 py-3 no-print">
                                 <button onClick={() => handleEliminar(compra.id)} className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors">
                                   <X className="w-4 h-4" />
                                 </button>
