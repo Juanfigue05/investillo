@@ -1,9 +1,20 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetInventario, useCrearProducto, useActualizarProducto, useEliminarProducto } from "@workspace/api-client-react";
 import { formatCurrency, calcularPrecioConIva } from "@/lib/utils";
-import { Plus, Search, Edit2, Trash2, AlertCircle, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, ChevronDown as ChevDown } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, AlertCircle, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, ChevronDown as ChevDown, Upload, CheckCircle2, Loader2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+
+const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
+
+interface ImportResult {
+  ok: boolean;
+  total: number;
+  procesados: number;
+  omitidos: number;
+  filasOmitidas?: number[];
+  error?: string;
+}
 
 type SortCol = "codigo" | "nombre" | "marca" | "tipo" | "precioCompra" | "precioVentaConIva" | "stockActual";
 type SortDir = "asc" | "desc";
@@ -39,6 +50,31 @@ export default function Inventario() {
     marcaBusqueda: "",
     tipoBusqueda: "",
   });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importando, setImportando] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setImportando(true);
+    setImportResult(null);
+    try {
+      const form = new FormData();
+      form.append("archivo", file);
+      const res = await fetch(`${API}/inventario-import`, { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error desconocido");
+      setImportResult(data);
+      queryClient.invalidateQueries({ queryKey: ["inventario"] });
+    } catch (err) {
+      setImportResult({ ok: false, total: 0, procesados: 0, omitidos: 0, error: String(err) });
+    } finally {
+      setImportando(false);
+    }
+  };
 
   const [formData, setFormData] = useState({
     nombre: "",
@@ -158,18 +194,71 @@ export default function Inventario() {
             <h1 className="text-2xl lg:text-3xl font-display font-bold text-foreground">Inventario</h1>
             <p className="text-muted-foreground mt-1 text-sm">Gestiona tus productos, precios y alertas de stock.</p>
           </div>
-          <button
-            onClick={() => {
-              setEditingId(null);
-              setFormData({ nombre: "", codigo: "", marca: "", tipo: "", referencia: "", adicional: "", precioCompra: 0, precioVentaSinIva: 0, tieneIva: true, stockActual: 0, stockMinimo: 0 });
-              setShowForm(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg hover:shadow-primary/25 whitespace-nowrap text-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Nuevo Producto
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            {/* Import Excel button */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={handleImport}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importando}
+              className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm disabled:opacity-60"
+            >
+              {importando
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Importando...</>
+                : <><Upload className="w-4 h-4 text-primary" /> Importar Excel</>}
+            </button>
+            <button
+              onClick={() => {
+                setEditingId(null);
+                setFormData({ nombre: "", codigo: "", marca: "", tipo: "", referencia: "", adicional: "", precioCompra: 0, precioVentaSinIva: 0, tieneIva: true, stockActual: 0, stockMinimo: 0 });
+                setShowForm(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg hover:shadow-primary/25 whitespace-nowrap text-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Nuevo Producto
+            </button>
+          </div>
         </div>
+
+        {/* Import result banner */}
+        {importResult && (
+          <div className={`rounded-2xl border px-5 py-4 flex items-start gap-3 shadow-lg ${
+            importResult.ok
+              ? "bg-green-900/20 border-green-700/40 text-green-300"
+              : "bg-destructive/10 border-destructive/30 text-destructive"
+          }`}>
+            <div className="flex-shrink-0 mt-0.5">
+              {importResult.ok
+                ? <CheckCircle2 className="w-5 h-5" />
+                : <AlertCircle className="w-5 h-5" />}
+            </div>
+            <div className="flex-1 text-sm">
+              {importResult.ok ? (
+                <>
+                  <p className="font-bold">Importación completada</p>
+                  <p className="mt-0.5 opacity-80">
+                    {importResult.procesados} producto{importResult.procesados !== 1 ? "s" : ""} procesados
+                    {importResult.omitidos > 0 && ` · ${importResult.omitidos} fila${importResult.omitidos !== 1 ? "s" : ""} omitida${importResult.omitidos !== 1 ? "s" : ""} (sin código o nombre)`}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-bold">Error en la importación</p>
+                  <p className="mt-0.5 opacity-80">{importResult.error}</p>
+                </>
+              )}
+            </div>
+            <button onClick={() => setImportResult(null)} className="flex-shrink-0 text-current opacity-60 hover:opacity-100">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Search + Filter bar */}
         <div className="flex flex-col sm:flex-row gap-3">

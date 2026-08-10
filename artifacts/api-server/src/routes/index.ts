@@ -11,11 +11,13 @@ import historialRouter from "./historial";
 import dashboardRouter from "./dashboard";
 import historialPreciosRouter from "./historial-precios";
 import cierreDiarioRouter from "./cierre-diario";
+import inventarioImportRouter from "./inventario-import";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use("/inventario", inventarioRouter);
+router.use("/inventario-import", inventarioImportRouter);
 router.use("/ventas", ventasRouter);
 router.use("/creditos", creditosRouter);
 router.use("/compras", comprasRouter);

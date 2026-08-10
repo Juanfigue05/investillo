@@ -64,7 +64,8 @@ export function FloatingNotepad() {
               onChange={(e) => setContent(e.target.value)}
               onBlur={handleSave}
               placeholder="Anota cosas pendientes aquí..."
-              className="w-full h-64 p-4 bg-card text-foreground resize-none focus:outline-none placeholder:text-muted-foreground/50 text-sm"
+              className="w-full h-72 p-4 bg-card text-foreground resize-none focus:outline-none placeholder:text-muted-foreground/40 text-base font-semibold leading-relaxed tracking-wide"
+              style={{ color: "hsl(var(--foreground))", caretColor: "hsl(var(--primary))" }}
             />
           </motion.div>
         )}
