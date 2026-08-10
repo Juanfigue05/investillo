@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetInventario, useCrearProducto, useActualizarProducto, useEliminarProducto } from "@workspace/api-client-react";
 import { formatCurrency, calcularPrecioConIva } from "@/lib/utils";
@@ -78,7 +78,8 @@ export default function Inventario() {
 
   // conflict resolution state
   const [conflictos, setConflictos] = useState<ConflictoItem[]>([]);
-  const [choices, setChoices] = useState<Record<string, "A" | "B">>({});
+  const [choices, setChoices] = useState<Record<string, "A" | "B" | "C">>({});
+  const [newCodes, setNewCodes] = useState<Record<string, string>>({}); // codigo → nuevo código para opción C
   const [resolviendo, setResolviendo] = useState(false);
   const [resolvedOk, setResolvedOk] = useState(false);
 
@@ -90,6 +91,7 @@ export default function Inventario() {
     setImportResult(null);
     setConflictos([]);
     setChoices({});
+    setNewCodes({});
     setResolvedOk(false);
     try {
       const form = new FormData();
@@ -100,8 +102,7 @@ export default function Inventario() {
       setImportResult(data);
       if (data.conflictos?.length) {
         setConflictos(data.conflictos);
-        // default all choices to "A" (first occurrence already imported)
-        const init: Record<string, "A" | "B"> = {};
+        const init: Record<string, "A" | "B" | "C"> = {};
         data.conflictos.forEach((c) => { init[c.codigo] = "A"; });
         setChoices(init);
       }
@@ -114,10 +115,33 @@ export default function Inventario() {
   };
 
   const handleResolver = async () => {
-    // Build list of items the user chose "B" for (those need to be upserted)
-    const items = conflictos
+    // Validate "C" selections: new code must be non-empty and different from original
+    for (const c of conflictos) {
+      if (choices[c.codigo] === "C") {
+        const nc = (newCodes[c.codigo] ?? "").trim();
+        if (!nc) {
+          alert(`El código ${c.codigo}: debes escribir un código nuevo antes de continuar.`);
+          return;
+        }
+        if (nc === c.codigo) {
+          alert(`El código ${c.codigo}: el código nuevo no puede ser igual al original.`);
+          return;
+        }
+      }
+    }
+
+    // B: upsert with same code (replaces A)
+    const itemsB = conflictos
       .filter((c) => choices[c.codigo] === "B")
       .map((c) => c.opcionB);
+
+    // C: insert with NEW code (creates separate product)
+    const itemsC = conflictos
+      .filter((c) => choices[c.codigo] === "C")
+      .map((c) => ({ ...c.opcionB, codigo: (newCodes[c.codigo] ?? "").trim() }));
+
+    const items = [...itemsB, ...itemsC];
+
     setResolviendo(true);
     try {
       if (items.length > 0) {
@@ -348,7 +372,9 @@ export default function Inventario() {
                     {conflictos.length} código{conflictos.length !== 1 ? "s" : ""} con información diferente
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Opción A = primera aparición en el archivo (ya importada) · Opción B = segunda aparición. Selecciona cuál conservar.
+                    <span className="text-primary font-medium">A</span> = ya importada (primera aparición) ·{" "}
+                    <span className="text-amber-400 font-medium">B</span> = reemplazar con segunda aparición ·{" "}
+                    <span className="text-emerald-400 font-medium">Nuevo</span> = crear segunda como producto separado con otro código
                   </p>
                 </div>
               </div>
@@ -374,10 +400,10 @@ export default function Inventario() {
             {/* Table */}
             <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
               <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
+                <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
                   <tr className="text-muted-foreground uppercase tracking-wider text-[10px]">
-                    <th className="px-4 py-2 text-left font-medium">Código</th>
-                    <th className="px-3 py-2 text-left font-medium">Opción</th>
+                    <th className="px-4 py-2 text-left font-medium w-28">Código</th>
+                    <th className="px-3 py-2 text-center font-medium w-10"></th>
                     <th className="px-3 py-2 text-left font-medium">Nombre</th>
                     <th className="px-3 py-2 text-left font-medium">Referencia</th>
                     <th className="px-3 py-2 text-left font-medium">Marca</th>
@@ -386,61 +412,127 @@ export default function Inventario() {
                   </tr>
                 </thead>
                 <tbody>
-                  {conflictos.map((c) => (
-                    <>
-                      {/* Option A row */}
-                      <tr
-                        key={`${c.codigo}-A`}
-                        onClick={() => setChoices((p) => ({ ...p, [c.codigo]: "A" }))}
-                        className={`cursor-pointer border-t border-border/40 transition-colors ${
-                          choices[c.codigo] === "A" ? "bg-primary/10" : "hover:bg-muted/30"
-                        }`}
-                      >
-                        <td className="px-4 py-2 font-mono text-muted-foreground align-top" rowSpan={2}>{c.codigo}</td>
-                        <td className="px-3 py-2 align-middle">
-                          <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                            choices[c.codigo] === "A" ? "border-primary bg-primary" : "border-muted-foreground"
-                          }`}>
-                            {choices[c.codigo] === "A" && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 font-medium">{c.opcionA.nombre}</td>
-                        <td className="px-3 py-2 text-muted-foreground">{c.opcionA.referencia ?? "—"}</td>
-                        <td className="px-3 py-2 text-muted-foreground">{c.opcionA.marca ?? "—"}</td>
-                        <td className="px-3 py-2 text-right">{fmtP(c.opcionA.precioCompra)}</td>
-                        <td className="px-3 py-2 text-right">{fmtP(c.opcionA.precioVentaSinIva)}</td>
-                      </tr>
-                      {/* Option B row */}
-                      <tr
-                        key={`${c.codigo}-B`}
-                        onClick={() => setChoices((p) => ({ ...p, [c.codigo]: "B" }))}
-                        className={`cursor-pointer border-b border-border transition-colors ${
-                          choices[c.codigo] === "B" ? "bg-amber-500/10" : "hover:bg-muted/30"
-                        }`}
-                      >
-                        <td className="px-3 py-2 align-middle">
-                          <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                            choices[c.codigo] === "B" ? "border-amber-400 bg-amber-400" : "border-muted-foreground"
-                          }`}>
-                            {choices[c.codigo] === "B" && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 font-medium">{c.opcionB.nombre}</td>
-                        <td className="px-3 py-2 text-muted-foreground">{c.opcionB.referencia ?? "—"}</td>
-                        <td className="px-3 py-2 text-muted-foreground">{c.opcionB.marca ?? "—"}</td>
-                        <td className="px-3 py-2 text-right">{fmtP(c.opcionB.precioCompra)}</td>
-                        <td className="px-3 py-2 text-right">{fmtP(c.opcionB.precioVentaSinIva)}</td>
-                      </tr>
-                    </>
-                  ))}
+                  {conflictos.map((c) => {
+                    const sel = choices[c.codigo];
+                    const nc = newCodes[c.codigo] ?? "";
+                    const ncInvalid = sel === "C" && (nc.trim() === "" || nc.trim() === c.codigo);
+                    return (
+                      <React.Fragment key={c.codigo}>
+                        {/* ── Row A: first occurrence (already imported) ── */}
+                        <tr
+                          onClick={() => setChoices((p) => ({ ...p, [c.codigo]: "A" }))}
+                          className={`cursor-pointer border-t border-border/50 transition-colors ${
+                            sel === "A" ? "bg-primary/10" : "hover:bg-muted/30"
+                          }`}
+                        >
+                          <td className="px-4 py-2 font-mono text-muted-foreground align-middle" rowSpan={3}>{c.codigo}</td>
+                          <td className="px-3 py-2 text-center align-middle">
+                            <div className={`w-4 h-4 rounded-full border-2 mx-auto flex items-center justify-center ${
+                              sel === "A" ? "border-primary bg-primary" : "border-muted-foreground/50"
+                            }`}>
+                              {sel === "A" && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 font-medium" colSpan={5}>
+                            <div className="flex items-center gap-3">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/15 px-1.5 py-0.5 rounded">A</span>
+                              <span>{c.opcionA.nombre}</span>
+                              {c.opcionA.referencia && <span className="text-muted-foreground">{c.opcionA.referencia}</span>}
+                              {c.opcionA.marca && <span className="text-muted-foreground">· {c.opcionA.marca}</span>}
+                              <span className="ml-auto text-muted-foreground">{fmtP(c.opcionA.precioCompra)} / {fmtP(c.opcionA.precioVentaSinIva)}</span>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* ── Row B: second occurrence (replace) ── */}
+                        <tr
+                          onClick={() => setChoices((p) => ({ ...p, [c.codigo]: "B" }))}
+                          className={`cursor-pointer transition-colors ${
+                            sel === "B" ? "bg-amber-500/10" : "hover:bg-muted/30"
+                          }`}
+                        >
+                          <td className="px-3 py-2 text-center align-middle">
+                            <div className={`w-4 h-4 rounded-full border-2 mx-auto flex items-center justify-center ${
+                              sel === "B" ? "border-amber-400 bg-amber-400" : "border-muted-foreground/50"
+                            }`}>
+                              {sel === "B" && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2" colSpan={5}>
+                            <div className="flex items-center gap-3">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-400/15 px-1.5 py-0.5 rounded">B</span>
+                              <span className="font-medium">{c.opcionB.nombre}</span>
+                              {c.opcionB.referencia && <span className="text-muted-foreground">{c.opcionB.referencia}</span>}
+                              {c.opcionB.marca && <span className="text-muted-foreground">· {c.opcionB.marca}</span>}
+                              <span className="ml-auto text-muted-foreground">{fmtP(c.opcionB.precioCompra)} / {fmtP(c.opcionB.precioVentaSinIva)}</span>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* ── Row C: create new with different code ── */}
+                        <tr
+                          className={`border-b border-border transition-colors ${
+                            sel === "C" ? "bg-emerald-500/10" : "hover:bg-muted/30"
+                          }`}
+                        >
+                          <td
+                            className="px-3 py-2 text-center align-middle cursor-pointer"
+                            onClick={() => setChoices((p) => ({ ...p, [c.codigo]: "C" }))}
+                          >
+                            <div className={`w-4 h-4 rounded-full border-2 mx-auto flex items-center justify-center ${
+                              sel === "C" ? "border-emerald-400 bg-emerald-400" : "border-muted-foreground/50"
+                            }`}>
+                              {sel === "C" && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2" colSpan={5}>
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span
+                                className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-400/15 px-1.5 py-0.5 rounded cursor-pointer"
+                                onClick={() => setChoices((p) => ({ ...p, [c.codigo]: "C" }))}
+                              >Nuevo</span>
+                              <span className="text-muted-foreground text-[11px]">
+                                Crear <span className="font-medium text-foreground">{c.opcionB.nombre}</span> como producto separado con código:
+                              </span>
+                              <input
+                                type="text"
+                                placeholder="Escribe el nuevo código…"
+                                value={nc}
+                                onFocus={() => setChoices((p) => ({ ...p, [c.codigo]: "C" }))}
+                                onChange={(e) =>
+                                  setNewCodes((p) => ({ ...p, [c.codigo]: e.target.value }))
+                                }
+                                className={`flex-1 min-w-[160px] max-w-[280px] px-3 py-1 rounded-lg border text-xs font-mono bg-background focus:outline-none focus:ring-2 transition-colors ${
+                                  sel === "C" && ncInvalid
+                                    ? "border-destructive focus:ring-destructive/40 text-destructive"
+                                    : sel === "C"
+                                    ? "border-emerald-500 focus:ring-emerald-500/40"
+                                    : "border-border focus:ring-primary/40"
+                                }`}
+                              />
+                              {sel === "C" && ncInvalid && (
+                                <span className="text-destructive text-[11px]">
+                                  {nc.trim() === "" ? "Obligatorio" : "Debe ser diferente al código original"}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
             {/* Footer summary */}
-            <div className="px-5 py-3 border-t border-border bg-muted/30 flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                {conflictos.filter((c) => choices[c.codigo] === "B").length} seleccionadas para reemplazar con opción B
+            <div className="px-5 py-3 border-t border-border bg-muted/30 flex items-center justify-between gap-4 text-xs text-muted-foreground flex-wrap">
+              <span className="flex gap-3">
+                <span>{conflictos.filter((c) => choices[c.codigo] === "A").length} mantienen A</span>
+                <span>·</span>
+                <span>{conflictos.filter((c) => choices[c.codigo] === "B").length} reemplazan con B</span>
+                <span>·</span>
+                <span>{conflictos.filter((c) => choices[c.codigo] === "C").length} crean producto nuevo</span>
               </span>
               <button
                 onClick={handleResolver}
