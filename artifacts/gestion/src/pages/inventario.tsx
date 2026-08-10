@@ -2,7 +2,7 @@ import { useState, useMemo, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetInventario, useCrearProducto, useActualizarProducto, useEliminarProducto } from "@workspace/api-client-react";
 import { formatCurrency, calcularPrecioConIva } from "@/lib/utils";
-import { Plus, Search, Edit2, Trash2, AlertCircle, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, ChevronDown as ChevDown, Upload, CheckCircle2, Loader2 } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, AlertCircle, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, ChevronDown as ChevDown, Upload, CheckCircle2, Loader2, FileDown } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
@@ -195,6 +195,16 @@ export default function Inventario() {
             <p className="text-muted-foreground mt-1 text-sm">Gestiona tus productos, precios y alertas de stock.</p>
           </div>
           <div className="flex gap-2 flex-wrap">
+            {/* Download template */}
+            <a
+              href={`${API}/inventario-import/template`}
+              download="plantilla_inventario.xlsx"
+              className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm"
+            >
+              <FileDown className="w-4 h-4 text-green-400" />
+              Plantilla
+            </a>
+
             {/* Import Excel button */}
             <input
               ref={fileInputRef}
