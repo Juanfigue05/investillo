@@ -2,20 +2,19 @@ import { useState, useMemo } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetTrabajadores } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
-import { Calculator, Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Calculator, Plus, Trash2, ChevronDown, ChevronUp, Save, CheckCircle } from "lucide-react";
 
 // ---------- types ----------
 interface ConceptoEntrada {
   descripcion: string;
-  valor: string;
+  valor: string; // raw miles input e.g. "55" = 55000
 }
 
 interface CierreTrabajador {
   id: string;
   nombre: string;
-  /** 10 raw MO input values (typed in thousands shorthand, e.g. "55" = 55000) */
-  moEntradas: string[];
-  seguro: string;
+  moEntradas: string[];   // 10 rows, miles shorthand
+  seguro: string;         // miles shorthand e.g. "30" = 30000
   leDamos: ConceptoEntrada[];
   nosDebe: ConceptoEntrada[];
   expandido: boolean;
@@ -24,39 +23,34 @@ interface CierreTrabajador {
 // ---------- helpers ----------
 const roundUp1000 = (n: number) => Math.ceil(n / 1000) * 1000;
 
-const emptyConceptos = (): ConceptoEntrada[] => Array.from({ length: 3 }, () => ({ descripcion: "", valor: "" }));
+/** Parse a "miles" shorthand: "55" → 55000, "45.5" → 45500, "" → 0 */
+const parseMiles = (raw: string): number => {
+  if (!raw.trim()) return 0;
+  const n = parseFloat(raw.replace(",", "."));
+  return isNaN(n) ? 0 : n * 1000;
+};
+
+const emptyConceptos = (): ConceptoEntrada[] =>
+  Array.from({ length: 3 }, () => ({ descripcion: "", valor: "" }));
 const emptyMO = (): string[] => Array.from({ length: 10 }, () => "");
 
 const newTrabajador = (nombre = ""): CierreTrabajador => ({
   id: `${Date.now()}-${Math.random()}`,
   nombre,
   moEntradas: emptyMO(),
-  seguro: "30000",
+  seguro: "30",        // 30 → $30.000
   leDamos: emptyConceptos(),
   nosDebe: emptyConceptos(),
   expandido: true,
 });
 
-/**
- * Parse a MO shorthand value:
- *   "55"   → 55_000
- *   "45.5" → 45_500
- *   ""     → 0
- * Rule: multiply raw input by 1000 always (user types in thousands).
- */
-const parseMO = (raw: string): number => {
-  if (!raw.trim()) return 0;
-  const n = parseFloat(raw.replace(",", "."));
-  return isNaN(n) ? 0 : n * 1000;
-};
-
 const sumaConceptos = (arr: ConceptoEntrada[]) =>
-  arr.reduce((s, e) => s + (parseFloat(e.valor) || 0), 0);
+  arr.reduce((s, e) => s + parseMiles(e.valor), 0);
 
 function calcTrabajador(t: CierreTrabajador) {
-  const mo = t.moEntradas.reduce((s, v) => s + parseMO(v), 0);
+  const mo = t.moEntradas.reduce((s, v) => s + parseMiles(v), 0);
   const descuento = mo > 0 ? roundUp1000(mo * 0.3) : 0;
-  const seguro = parseFloat(t.seguro) || 0;
+  const seguro = parseMiles(t.seguro);
   const leDamos = sumaConceptos(t.leDamos);
   const nosDebe = sumaConceptos(t.nosDebe);
   const total = mo - descuento - seguro + leDamos - nosDebe;
@@ -64,6 +58,36 @@ function calcTrabajador(t: CierreTrabajador) {
 }
 
 // ---------- sub-components ----------
+function MilesInput({
+  value,
+  onChange,
+  placeholder,
+  className = "",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        inputMode="decimal"
+        placeholder={placeholder ?? "0"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`w-full px-2.5 py-1.5 bg-background border border-border rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-foreground placeholder:text-muted-foreground/50 text-right pr-6 ${className}`}
+      />
+      {value && parseMiles(value) > 0 && (
+        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground pointer-events-none">
+          k
+        </span>
+      )}
+    </div>
+  );
+}
+
 function ConceptoRows({
   label,
   entries,
@@ -86,14 +110,13 @@ function ConceptoRows({
               placeholder="Concepto..."
               value={e.descripcion}
               onChange={(ev) => onChange(idx, "descripcion", ev.target.value)}
-              className="flex-1 px-2.5 py-1.5 bg-background border border-border rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-foreground placeholder:text-muted-foreground"
+              className="flex-1 px-2.5 py-1.5 bg-background border border-border rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-foreground placeholder:text-muted-foreground/50"
             />
-            <input
-              type="number"
-              placeholder="$ 0"
+            <MilesInput
               value={e.valor}
-              onChange={(ev) => onChange(idx, "valor", ev.target.value)}
-              className="w-28 px-2.5 py-1.5 bg-background border border-border rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-foreground text-right"
+              onChange={(v) => onChange(idx, "valor", v)}
+              placeholder="0"
+              className="w-24"
             />
           </div>
         ))}
@@ -102,24 +125,39 @@ function ConceptoRows({
   );
 }
 
+// ---------- API helpers ----------
+const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
+
+async function guardarCierre(fecha: string, datos: unknown, totalPagar: number) {
+  const res = await fetch(`${API}/cierre-diario`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fecha, datos, totalPagar }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 // ---------- main ----------
 export default function CierreDiario() {
   const { data: trabajadores } = useGetTrabajadores();
 
-  const hoy = new Date().toLocaleDateString("es-CO", {
+  const fechaHoy = new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD
+  const hoyLabel = new Date().toLocaleDateString("es-CO", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
-  const hoyLabel = hoy.charAt(0).toUpperCase() + hoy.slice(1);
+  const hoyStr = hoyLabel.charAt(0).toUpperCase() + hoyLabel.slice(1);
 
   const [items, setItems] = useState<CierreTrabajador[]>([]);
   const [showSelect, setShowSelect] = useState(false);
   const [nombreLibre, setNombreLibre] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [guardadoOk, setGuardadoOk] = useState(false);
 
   const agregarDesdeLista = (nombre: string) => {
     setItems((prev) => [...prev, newTrabajador(nombre)]);
     setShowSelect(false);
   };
-
   const agregarLibre = () => {
     const n = nombreLibre.trim();
     if (!n) return;
@@ -130,11 +168,10 @@ export default function CierreDiario() {
 
   const updateItem = (id: string, patch: Partial<CierreTrabajador>) =>
     setItems((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
-
   const removeItem = (id: string) =>
     setItems((prev) => prev.filter((t) => t.id !== id));
 
-  const updateMO = (id: string, idx: number, val: string) => {
+  const updateMO = (id: string, idx: number, val: string) =>
     setItems((prev) =>
       prev.map((t) => {
         if (t.id !== id) return t;
@@ -143,7 +180,6 @@ export default function CierreDiario() {
         return { ...t, moEntradas: arr };
       })
     );
-  };
 
   const updateConcepto = (
     id: string,
@@ -151,7 +187,7 @@ export default function CierreDiario() {
     idx: number,
     field: "descripcion" | "valor",
     val: string
-  ) => {
+  ) =>
     setItems((prev) =>
       prev.map((t) => {
         if (t.id !== id) return t;
@@ -160,12 +196,31 @@ export default function CierreDiario() {
         return { ...t, [tipo]: arr };
       })
     );
-  };
 
   const grandTotal = useMemo(
     () => items.reduce((s, t) => s + calcTrabajador(t).total, 0),
     [items]
   );
+
+  const handleGuardar = async () => {
+    if (items.length === 0) return;
+    setGuardando(true);
+    setGuardadoOk(false);
+    try {
+      // Serialize items with computed values for history
+      const datos = items.map((t) => {
+        const calc = calcTrabajador(t);
+        return { ...t, calc };
+      });
+      await guardarCierre(fechaHoy, datos, grandTotal);
+      setGuardadoOk(true);
+      setTimeout(() => setGuardadoOk(false), 3000);
+    } catch (e) {
+      alert("Error al guardar: " + e);
+    } finally {
+      setGuardando(false);
+    }
+  };
 
   return (
     <Layout>
@@ -176,14 +231,36 @@ export default function CierreDiario() {
             <h1 className="text-2xl font-display font-bold text-foreground flex items-center gap-2">
               <Calculator className="w-6 h-6 text-primary" /> Cierre Diario
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">{hoyLabel}</p>
+            <p className="text-sm text-muted-foreground mt-1">{hoyStr}</p>
+            <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+              Todos los campos de precio se escriben en miles: 55 = $55.000 · 45.5 = $45.500
+            </p>
           </div>
-          <button
-            onClick={() => setShowSelect((v) => !v)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg text-sm"
-          >
-            <Plus className="w-4 h-4" /> Agregar trabajador
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            {items.length > 0 && (
+              <button
+                onClick={handleGuardar}
+                disabled={guardando}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all shadow-lg ${
+                  guardadoOk
+                    ? "bg-green-600 text-white"
+                    : "bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-border"
+                }`}
+              >
+                {guardadoOk ? (
+                  <><CheckCircle className="w-4 h-4" /> Guardado</>
+                ) : (
+                  <><Save className="w-4 h-4" /> {guardando ? "Guardando..." : "Guardar Cierre"}</>
+                )}
+              </button>
+            )}
+            <button
+              onClick={() => setShowSelect((v) => !v)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg text-sm"
+            >
+              <Plus className="w-4 h-4" /> Agregar trabajador
+            </button>
+          </div>
         </div>
 
         {/* Worker selector */}
@@ -228,11 +305,11 @@ export default function CierreDiario() {
           </div>
         )}
 
-        {/* ===== 2-column grid of worker cards ===== */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* ===== 3-column grid of worker cards ===== */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {items.map((t) => {
             const { mo, descuento, seguro, leDamos, nosDebe, total } = calcTrabajador(t);
-            const moSum = t.moEntradas.reduce((s, v) => s + parseMO(v), 0);
+            const moSum = t.moEntradas.reduce((s, v) => s + parseMiles(v), 0);
 
             return (
               <div key={t.id} className="bg-card border border-border rounded-2xl shadow-lg overflow-hidden flex flex-col">
@@ -242,13 +319,10 @@ export default function CierreDiario() {
                   onClick={() => updateItem(t.id, { expandido: !t.expandido })}
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    {t.expandido ? <ChevronUp className="w-4 h-4 text-muted-foreground flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
+                    {t.expandido
+                      ? <ChevronUp className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      : <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
                     <span className="font-semibold text-foreground truncate">{t.nombre || "Trabajador"}</span>
-                    {mo > 0 && (
-                      <span className="text-xs text-muted-foreground hidden sm:block whitespace-nowrap">
-                        MO: {formatCurrency(mo)}
-                      </span>
-                    )}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {mo > 0 && (
@@ -280,22 +354,23 @@ export default function CierreDiario() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-muted-foreground mb-1">Seguro (deducción)</label>
-                        <input
-                          type="number"
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">
+                          Seguro <span className="text-[10px] text-muted-foreground/60">(en miles)</span>
+                        </label>
+                        <MilesInput
                           value={t.seguro}
-                          onChange={(e) => updateItem(t.id, { seguro: e.target.value })}
-                          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-foreground"
+                          onChange={(v) => updateItem(t.id, { seguro: v })}
+                          className="!text-sm !px-3 !py-2 !pr-8"
                         />
                       </div>
                     </div>
 
-                    {/* MO entries — 10 rows in 2 columns */}
+                    {/* MO entries — 10 rows, single column */}
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
                         <label className="text-xs font-medium text-muted-foreground">
                           Manos de Obra{" "}
-                          <span className="text-[10px] text-muted-foreground/60">(escribe en miles: 55 = $55.000)</span>
+                          <span className="text-[10px] text-muted-foreground/60">(en miles)</span>
                         </label>
                         {moSum > 0 && (
                           <span className="text-xs font-bold text-primary">
@@ -303,75 +378,62 @@ export default function CierreDiario() {
                           </span>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 gap-1.5">
+                      <div className="space-y-1.5">
                         {t.moEntradas.map((v, idx) => (
-                          <div key={idx} className="relative">
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              placeholder={`MO ${idx + 1}`}
-                              value={v}
-                              onChange={(e) => updateMO(t.id, idx, e.target.value)}
-                              className="w-full px-2.5 py-1.5 bg-background border border-border rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-foreground placeholder:text-muted-foreground/50 text-right pr-8"
-                            />
-                            {v && parseMO(v) > 0 && (
-                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground pointer-events-none">
-                                k
-                              </span>
-                            )}
-                          </div>
+                          <MilesInput
+                            key={idx}
+                            value={v}
+                            onChange={(val) => updateMO(t.id, idx, val)}
+                            placeholder={`MO ${idx + 1}`}
+                          />
                         ))}
                       </div>
                     </div>
 
                     {/* Le damos / Nos debe */}
-                    <div className="grid grid-cols-1 gap-4">
-                      <ConceptoRows
-                        label="➕ Le damos"
-                        entries={t.leDamos}
-                        color="text-green-400"
-                        onChange={(idx, field, val) => updateConcepto(t.id, "leDamos", idx, field, val)}
-                      />
-                      <ConceptoRows
-                        label="➖ Nos debe"
-                        entries={t.nosDebe}
-                        color="text-destructive"
-                        onChange={(idx, field, val) => updateConcepto(t.id, "nosDebe", idx, field, val)}
-                      />
-                    </div>
+                    <ConceptoRows
+                      label="➕ Le damos"
+                      entries={t.leDamos}
+                      color="text-green-400"
+                      onChange={(idx, field, val) => updateConcepto(t.id, "leDamos", idx, field, val)}
+                    />
+                    <ConceptoRows
+                      label="➖ Nos debe"
+                      entries={t.nosDebe}
+                      color="text-destructive"
+                      onChange={(idx, field, val) => updateConcepto(t.id, "nosDebe", idx, field, val)}
+                    />
 
                     {/* Summary */}
                     <div className="bg-muted/50 border border-border rounded-xl p-3">
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <p className="text-muted-foreground">Total MO</p>
-                          <p className="font-semibold text-foreground">{formatCurrency(mo)}</p>
+                      <div className="space-y-1 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Total MO</span>
+                          <span className="font-semibold">{formatCurrency(mo)}</span>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
                             Desc. 30%
                             {mo > 0 && mo * 0.3 !== descuento && (
-                              <span className="ml-1 text-[10px] text-amber-400">
-                                (≈ {formatCurrency(descuento)})
-                              </span>
+                              <span className="ml-1 text-[10px] text-amber-400">≈</span>
                             )}
-                          </p>
-                          <p className="font-semibold text-destructive">− {formatCurrency(descuento)}</p>
+                          </span>
+                          <span className="font-semibold text-destructive">− {formatCurrency(descuento)}</span>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">Seguro</p>
-                          <p className="font-semibold text-destructive">− {formatCurrency(seguro)}</p>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Seguro</span>
+                          <span className="font-semibold text-destructive">− {formatCurrency(seguro)}</span>
                         </div>
                         {leDamos > 0 && (
-                          <div>
-                            <p className="text-muted-foreground">Le damos</p>
-                            <p className="font-semibold text-green-400">+ {formatCurrency(leDamos)}</p>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Le damos</span>
+                            <span className="font-semibold text-green-400">+ {formatCurrency(leDamos)}</span>
                           </div>
                         )}
                         {nosDebe > 0 && (
-                          <div>
-                            <p className="text-muted-foreground">Nos debe</p>
-                            <p className="font-semibold text-destructive">− {formatCurrency(nosDebe)}</p>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Nos debe</span>
+                            <span className="font-semibold text-destructive">− {formatCurrency(nosDebe)}</span>
                           </div>
                         )}
                       </div>
@@ -389,7 +451,7 @@ export default function CierreDiario() {
           })}
         </div>
 
-        {/* Grand total */}
+        {/* Grand total footer */}
         {items.length > 1 && (
           <div className="bg-card border border-primary/30 rounded-2xl px-6 py-4 flex justify-between items-center shadow-lg">
             <span className="text-sm font-medium text-muted-foreground">

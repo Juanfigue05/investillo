@@ -5,13 +5,13 @@ import {
   ShoppingCart, 
   CreditCard, 
   Truck, 
-  Wrench, 
   Receipt,
   BookOpen,
   LogOut,
   HandCoins,
   TrendingUp,
   Calculator,
+  History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,11 +19,11 @@ const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inventario", label: "Inventario", icon: Package },
   { href: "/cierre-diario", label: "Cierre Diario", icon: Calculator },
+  { href: "/historial-cierres", label: "Historial Cierres", icon: History },
   { href: "/ventas", label: "Ventas Diarias", icon: ShoppingCart },
   { href: "/creditos", label: "Créditos", icon: CreditCard },
   { href: "/nos-debe", label: "Nos Debe", icon: HandCoins },
   { href: "/compras", label: "Compras", icon: Truck },
-  { href: "/mano-obra", label: "Mano de Obra", icon: Wrench },
   { href: "/facturacion", label: "Facturación DIAN", icon: Receipt },
   { href: "/historial", label: "Historial de Ventas", icon: BookOpen },
   { href: "/historial-precios", label: "Historial de Precios", icon: TrendingUp },

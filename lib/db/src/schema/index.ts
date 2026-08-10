@@ -7,3 +7,4 @@ export * from "./trabajadores";
 export * from "./notas";
 export * from "./historial";
 export * from "./historial_precios";
+export * from "./cierre_diario";

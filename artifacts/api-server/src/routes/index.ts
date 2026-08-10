@@ -10,6 +10,7 @@ import notasRouter from "./notas";
 import historialRouter from "./historial";
 import dashboardRouter from "./dashboard";
 import historialPreciosRouter from "./historial-precios";
+import cierreDiarioRouter from "./cierre-diario";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use("/notas", notasRouter);
 router.use("/historial", historialRouter);
 router.use("/dashboard", dashboardRouter);
 router.use("/historial-precios", historialPreciosRouter);
+router.use("/cierre-diario", cierreDiarioRouter);
 
 export default router;
