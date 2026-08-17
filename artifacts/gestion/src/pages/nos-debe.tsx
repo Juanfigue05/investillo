@@ -215,6 +215,7 @@ export default function NosDebePage() {
       tipo: TIPO,
       fechaFactura: form.fechaFactura, nombreCliente: form.nombreCliente,
       telefonoCliente: form.telefonoCliente || undefined,
+      placaVehiculo: form.placaVehiculo || undefined,
       valorCredito: totalFinal,
       valorAbonado: editingId ? parseFloat(form.valorAbonado) || 0 : initialAbono,
       lineas: payloadLineas,
