@@ -1536,6 +1536,10 @@ components:
         proveedor:
           type: string
           nullable: true
+        actualizarPrecioInventario:
+          type: boolean
+          nullable: true
+          description: Si true, actualiza los precios del producto en inventario al marcar llegado
       required:
         - estado
 
@@ -1766,9 +1770,15 @@ components:
         noDeben:
           type: number
           description: Total pendiente en creditos (tipo=credito)
+        cantidadCreditos:
+          type: integer
+          description: Numero de creditos pendientes (saldo > 0)
         totalNosDebe:
           type: number
           description: Total pendiente en Nos Debe (tipo=nosdebe)
+        cantidadNosDebe:
+          type: integer
+          description: Numero de registros Nos Debe pendientes (saldo > 0)
         totalComprasRecibidas:
           type: number
           description: Suma total de compras recibidas (estado=llegado)
@@ -1783,7 +1793,9 @@ components:
       required:
         - totalVentasHoy
         - noDeben
+        - cantidadCreditos
         - totalNosDebe
+        - cantidadNosDebe
         - totalComprasRecibidas
         - productosAlerta
         - productosAgotados

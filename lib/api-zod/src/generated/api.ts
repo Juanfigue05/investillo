@@ -668,6 +668,12 @@ export const ActualizarCompraBody = zod.object({
   nuevoPrecioVentaSinIva: zod.number().nullish(),
   tieneIva: zod.boolean().nullish(),
   proveedor: zod.string().nullish(),
+  actualizarPrecioInventario: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Si true, actualiza los precios del producto en inventario al marcar llegado",
+    ),
 });
 
 export const ActualizarCompraResponse = zod.object({
@@ -1009,9 +1015,15 @@ export const EliminarHistorialResponse = zod.object({
 export const GetDashboardResponse = zod.object({
   totalVentasHoy: zod.number(),
   noDeben: zod.number().describe("Total pendiente en creditos (tipo=credito)"),
+  cantidadCreditos: zod
+    .number()
+    .describe("Numero de creditos pendientes (saldo > 0)"),
   totalNosDebe: zod
     .number()
     .describe("Total pendiente en Nos Debe (tipo=nosdebe)"),
+  cantidadNosDebe: zod
+    .number()
+    .describe("Numero de registros Nos Debe pendientes (saldo > 0)"),
   totalComprasRecibidas: zod
     .number()
     .describe("Suma total de compras recibidas (estado=llegado)"),

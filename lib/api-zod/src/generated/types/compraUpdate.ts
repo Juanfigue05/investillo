@@ -14,4 +14,6 @@ export interface CompraUpdate {
   nuevoPrecioVentaSinIva?: number | null;
   tieneIva?: boolean | null;
   proveedor?: string | null;
+  /** Si true, actualiza los precios del producto en inventario al marcar llegado */
+  actualizarPrecioInventario?: boolean | null;
 }

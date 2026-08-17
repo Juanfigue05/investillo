@@ -117,7 +117,7 @@ export default function Dashboard() {
     {
       title: "Créditos",
       value: formatCurrency(dashboard.noDeben),
-      subtitle: "Pendiente en créditos",
+      subtitle: `${dashboard.cantidadCreditos ?? 0} pendiente${(dashboard.cantidadCreditos ?? 0) === 1 ? "" : "s"}`,
       icon: CreditCard,
       color: "text-blue-500",
       bg: "bg-blue-500/10",
@@ -125,7 +125,7 @@ export default function Dashboard() {
     {
       title: "Nos Debe",
       value: formatCurrency(dashboard.totalNosDebe),
-      subtitle: "Pendiente en Nos Debe",
+      subtitle: `${dashboard.cantidadNosDebe ?? 0} pendiente${(dashboard.cantidadNosDebe ?? 0) === 1 ? "" : "s"}`,
       icon: HandCoins,
       color: "text-cyan-500",
       bg: "bg-cyan-500/10",

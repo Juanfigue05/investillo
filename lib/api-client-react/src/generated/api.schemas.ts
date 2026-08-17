@@ -300,6 +300,8 @@ export interface CompraUpdate {
   nuevoPrecioVentaSinIva?: number | null;
   tieneIva?: boolean | null;
   proveedor?: string | null;
+  /** Si true, actualiza los precios del producto en inventario al marcar llegado */
+  actualizarPrecioInventario?: boolean | null;
 }
 
 export interface DistribucionTrabajador {
@@ -395,8 +397,12 @@ export interface Dashboard {
   totalVentasHoy: number;
   /** Total pendiente en creditos (tipo=credito) */
   noDeben: number;
+  /** Numero de creditos pendientes (saldo > 0) */
+  cantidadCreditos: number;
   /** Total pendiente en Nos Debe (tipo=nosdebe) */
   totalNosDebe: number;
+  /** Numero de registros Nos Debe pendientes (saldo > 0) */
+  cantidadNosDebe: number;
   /** Suma total de compras recibidas (estado=llegado) */
   totalComprasRecibidas: number;
   /** Cantidad de productos con alerta de stock bajo */
