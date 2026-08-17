@@ -846,14 +846,71 @@ export default function Creditos() {
                     </div>
                   </div>
                   {c.abonos && c.abonos.length > 0 && (
-                    <div className="space-y-0.5">
-                      {c.abonos.slice(0, 3).map((a: any) => (
-                        <div key={a.id} className="flex justify-between text-xs text-muted-foreground">
-                          <span>{new Date(a.fecha + "T12:00:00").toLocaleDateString("es-CO")}</span>
-                          <span className="text-green-500">+{formatCurrency(a.valorTotal)}</span>
+                    <div className="mt-1">
+                      <button onClick={() => toggleExpandAbonos(c.id)} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors w-full">
+                        <Clock className="w-3 h-3" />
+                        Historial de pagos ({c.abonos.length})
+                        {expandedAbonos.has(c.id) ? <ChevronUp className="w-3 h-3 ml-auto" /> : <ChevronDown className="w-3 h-3 ml-auto" />}
+                      </button>
+                      {expandedAbonos.has(c.id) && (
+                        <div className="mt-1.5 space-y-1 animate-in fade-in">
+                          {c.abonos.map((a: any) => (
+                            <div key={a.id} className="flex justify-between items-center text-xs bg-muted/30 px-2 py-1.5 rounded-lg gap-2">
+                              <span className="text-muted-foreground shrink-0">{new Date(a.fecha + "T12:00:00").toLocaleDateString("es-CO")}</span>
+                              <span className="font-medium text-green-500 flex-1 text-right">+{formatCurrency(a.valorTotal)}</span>
+                              <div className="flex gap-0.5 shrink-0">
+                                <button
+                                  title="Editar pago"
+                                  onClick={() => { setShowPay(c.id); setEditingAbonoId(a.id); setAbono(String(a.valorTotal)); setLineasSeleccionadas([]); setExpandedAbonos((s) => { const n = new Set(s); n.delete(c.id); return n; }); }}
+                                  className="p-1 text-muted-foreground hover:text-primary rounded transition-colors">
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                                <button
+                                  title="Eliminar pago"
+                                  onClick={() => handleEliminarAbono(c.id, a.id)}
+                                  disabled={eliminarAbonoMutation.isPending}
+                                  className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors">
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                      {c.abonos.length > 3 && <p className="text-xs text-muted-foreground italic">+{c.abonos.length - 3} más</p>}
+                      )}
+                    </div>
+                  )}
+                  {/* Panel de abono/editar también disponible en pagados */}
+                  {showPay === c.id && (
+                    <div className="bg-background rounded-xl p-3 border border-border mt-2 animate-in fade-in">
+                      <h4 className="text-xs font-semibold mb-2 text-foreground">
+                        {editingAbonoId !== null ? "✏️ Editar Pago" : "Registrar Abono"}
+                      </h4>
+                      <input type="number"
+                        placeholder={editingAbonoId !== null ? "Nuevo valor" : "Valor"}
+                        value={abono}
+                        onChange={(e) => setAbono(e.target.value)}
+                        className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm mb-2 focus:ring-1 focus:ring-primary outline-none" />
+                      <p className="text-[10px] text-muted-foreground mb-2">Selecciona los productos:</p>
+                      {c.lineas.map((l: any) => {
+                        const tope = parseFloat(l.cantidad) * parseFloat(l.precioVenta);
+                        return (
+                          <label key={l.id} className="flex items-center justify-between gap-2 text-xs cursor-pointer py-1 border-b border-border/30 last:border-0">
+                            <span className="flex items-center gap-1.5">
+                              <input type="checkbox" checked={lineasSeleccionadas.includes(l.id)}
+                                onChange={() => setLineasSeleccionadas((prev) => prev.includes(l.id) ? prev.filter((id) => id !== l.id) : [...prev, l.id])}
+                                className="w-3.5 h-3.5 accent-primary" />
+                              <span className="truncate">{l.cantidad} × {l.productoNombre}</span>
+                            </span>
+                            <span className="shrink-0 text-muted-foreground">{formatCurrency(tope)}</span>
+                          </label>
+                        );
+                      })}
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={resetPay} className="flex-1 py-1.5 bg-muted text-foreground rounded-lg text-xs font-medium">Cancelar</button>
+                        <button onClick={() => handleAbono(c)} disabled={editarAbonoMutation.isPending} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium">
+                          {editarAbonoMutation.isPending ? "..." : "Guardar Cambios"}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

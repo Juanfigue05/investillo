@@ -470,10 +470,12 @@ router.post("/:id/abono", async (req, res) => {
     }).returning();
 
     // 4. Crear filas en ventas_diarias (con referencia al abono para poder revertirlas)
+    const IVA_NOMBRE = "IVA (19%)";
     for (const { linea, valor: appliedValue } of applied) {
       const lineaValorTotal = toNum(linea.cantidad) * toNum(linea.precioVenta);
       const lineaValorRestanteAntes = Math.max(0, lineaValorTotal - toNum(linea.valorAbonado));
       const pagaCompleto = Math.abs(appliedValue - lineaValorRestanteAntes) < 1;
+      const esIva = linea.productoNombre === IVA_NOMBRE;
 
       if (pagaCompleto) {
         const refCompleto = `${conceptoBase} ${nombreAbreviado}`;
@@ -481,11 +483,13 @@ router.post("/:id/abono", async (req, res) => {
         const pcUnidad = toNum(linea.precioCompra ?? "0");
         const cant = toNum(linea.cantidad);
         const totalVenta = pvUnidad * cant;
-        const beneficio = (pvUnidad - pcUnidad) * cant;
+        // IVA no genera beneficio para el negocio (es un impuesto)
+        const beneficio = esIva ? 0 : (pvUnidad - pcUnidad) * cant;
         await tx.insert(ventasDiariasTable).values({
           fecha: hoy,
           referencia: refCompleto,
-          tipoLinea: "venta",
+          // IVA usa su propio tipo para no inflar totalVentasHoy ni beneficio
+          tipoLinea: esIva ? "iva" : "venta",
           productoId: linea.productoId ?? null,
           productoNombre: linea.productoNombre,
           productoCodigo: linea.productoCodigo ?? null,
