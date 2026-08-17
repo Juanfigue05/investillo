@@ -440,6 +440,22 @@ export const CrearCreditoBody = zod.object({
       valorAbonado: zod.number().optional(),
     }),
   ),
+  manoObra: zod
+    .object({
+      valor: zod.number(),
+      trabajadores: zod
+        .array(
+          zod.object({
+            id: zod.number(),
+            nombre: zod.string(),
+          }),
+        )
+        .optional(),
+    })
+    .optional()
+    .describe(
+      "Mano de obra asociada al crédito. Omitir = sin cambios (en PUT); valor 0 elimina la mano de obra existente.",
+    ),
 });
 
 /**
@@ -534,6 +550,22 @@ export const ActualizarCreditoBody = zod.object({
       }),
     )
     .optional(),
+  manoObra: zod
+    .object({
+      valor: zod.number(),
+      trabajadores: zod
+        .array(
+          zod.object({
+            id: zod.number(),
+            nombre: zod.string(),
+          }),
+        )
+        .optional(),
+    })
+    .optional()
+    .describe(
+      "Mano de obra asociada al crédito. Omitir = sin cambios (en PUT); valor 0 elimina la mano de obra existente.",
+    ),
 });
 
 export const ActualizarCreditoResponse = zod.object({

@@ -231,7 +231,7 @@ export default function VentasDiarias() {
       nombre: p.nombre,
       marca: p.marca || undefined,
       precioCompra: p.precioCompra,
-      precioVenta: p.precioVentaConIva,
+      precioVenta: p.precioVentaSinIva,
     })),
   ];
 
@@ -247,7 +247,7 @@ export default function VentasDiarias() {
     } else {
       const prod = productos?.find((p) => String(p.id) === id);
       if (prod) {
-        setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: prod.marca || "", precioCompra: prod.precioCompra, precioVenta: prod.precioVentaConIva, trabajadoresSeleccionados: [] }));
+        setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: prod.marca || "", precioCompra: prod.precioCompra, precioVenta: prod.precioVentaSinIva, trabajadoresSeleccionados: [] }));
       }
     }
   };

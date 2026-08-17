@@ -7,6 +7,7 @@ import {
   useEliminarCredito,
   useAbonarCredito,
   useGetInventario,
+  useGetTrabajadores,
   useGetClientes,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
@@ -14,6 +15,19 @@ import { Plus, Trash2, X, Pencil, Search, ChevronDown, ChevronUp, Clock, Printer
 import { useQueryClient } from "@tanstack/react-query";
 
 const TIPO = "credito";
+const MO_NOMBRE = "Mano de Obra";
+const IVA_NOMBRE = "IVA (19%)";
+
+interface ManoObraState {
+  activo: boolean;
+  valor: string;
+  trabajadores: number[];
+  marca: string; // nombres de trabajadores (preservado al editar)
+  lineaId?: number;
+  valorAbonado?: number;
+}
+
+const emptyManoObra: ManoObraState = { activo: false, valor: "", trabajadores: [], marca: "" };
 
 interface LineaInput {
   id: number;
@@ -39,6 +53,7 @@ const emptyForm = {
 export default function Creditos() {
   const { data: creditos, isLoading } = useGetCreditos({ tipo: TIPO });
   const { data: productos } = useGetInventario();
+  const { data: trabajadores } = useGetTrabajadores();
   const { data: clientes } = useGetClientes({});
   const queryClient = useQueryClient();
 
@@ -71,6 +86,9 @@ export default function Creditos() {
   const [filtroHasta, setFiltroHasta] = useState("");
   const [filtroPlaca, setFiltroPlaca] = useState("");
   const [expandedAbonos, setExpandedAbonos] = useState<Set<number>>(new Set());
+  const [manoObra, setManoObra] = useState<ManoObraState>({ ...emptyManoObra });
+  const [aplicaIva, setAplicaIva] = useState(false);
+  const [ivaLinea, setIvaLinea] = useState<{ id?: number; valorAbonado?: number }>({});
 
   const crearMutation = useCrearCredito();
   const actualizarMutation = useActualizarCredito();
@@ -83,6 +101,19 @@ export default function Creditos() {
   const updateLinea = (id: number, field: keyof LineaInput, value: string) =>
     setLineas((prev) => prev.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
 
+  const handleProductoSelect = (lineaId: number, prodNombre: string) => {
+    const prod = productos?.find((p) => p.nombre === prodNombre);
+    if (prod) {
+      setLineas((prev) => prev.map((l) => l.id === lineaId ? {
+        ...l, productoId: prod.id, productoCodigo: prod.codigo,
+        productoNombre: prod.nombre, marca: prod.marca || "",
+        precioVenta: String(prod.precioVentaSinIva),
+        precioCompra: String(prod.precioCompra),
+      } : l));
+    }
+  };
+
+  const totalLineas = lineas.reduce((sum, l) => sum + (parseFloat(l.cantidad) || 0) * (parseFloat(l.precioVenta) || 0), 0);
   const handleClienteSelect = (nombre: string) => {
     const cliente = clientes?.find((c) => c.nombre === nombre);
     if (cliente) {
@@ -96,32 +127,39 @@ export default function Creditos() {
     }
   };
 
-  const handleProductoSelect = (lineaId: number, prodNombre: string) => {
-    const prod = productos?.find((p) => p.nombre === prodNombre);
-    if (prod) {
-      setLineas((prev) => prev.map((l) => l.id === lineaId ? {
-        ...l, productoId: prod.id, productoCodigo: prod.codigo,
-        productoNombre: prod.nombre, marca: prod.marca || "",
-        precioVenta: String(prod.precioVentaConIva),
-        precioCompra: String(prod.precioCompra),
-      } : l));
-    }
-  };
+  const manoObraValor = manoObra.activo ? parseFloat(manoObra.valor) || 0 : 0;
+  const baseTotal = totalLineas + manoObraValor;
+  const ivaValor = aplicaIva ? Math.round(baseTotal * 0.19) : 0;
+  const totalFinal = baseTotal + ivaValor;
 
-  const totalLineas = lineas.reduce((sum, l) => sum + (parseFloat(l.cantidad) || 0) * (parseFloat(l.precioVenta) || 0), 0);
+  const toggleTrabajadorMO = (id: number) =>
+    setManoObra((prev) => ({
+      ...prev,
+      trabajadores: prev.trabajadores.includes(id) ? prev.trabajadores.filter((t) => t !== id) : [...prev.trabajadores, id],
+    }));
 
   const openNew = () => {
     setEditingId(null); setShowForm(true);
     setForm({ ...emptyForm });
     setLineas([{ id: -Date.now(), cantidad: "1", productoNombre: "", marca: "", precioVenta: "", precioCompra: "0" }]);
+    setManoObra({ ...emptyManoObra });
+    setAplicaIva(false); setIvaLinea({});
     setFormErrors([]);
   };
 
   const openEdit = (c: any) => {
     setEditingId(c.id); setShowForm(true);
     setForm({ fechaFactura: c.fechaFactura, concepto: c.concepto || "", placaVehiculo: c.placaVehiculo || "", nombreCliente: c.nombreCliente, telefonoCliente: c.telefonoCliente || "", valorAbonado: String(c.valorAbonado || 0) });
-    setLineas(c.lineas.length
-      ? c.lineas.map((l: any) => ({ id: l.id, productoId: l.productoId, productoCodigo: l.productoCodigo, cantidad: String(l.cantidad), productoNombre: l.productoNombre, marca: l.productoMarca || "", precioVenta: String(l.precioVenta), precioCompra: String(l.precioCompra || 0), valorAbonado: l.valorAbonado }))
+    const moLine = c.lineas.find((l: any) => l.productoNombre === MO_NOMBRE);
+    const ivaLine = c.lineas.find((l: any) => l.productoNombre === IVA_NOMBRE);
+    const prodLines = c.lineas.filter((l: any) => l !== moLine && l !== ivaLine);
+    setManoObra(moLine
+      ? { activo: true, valor: String(moLine.precioVenta), trabajadores: [], marca: moLine.productoMarca || "", lineaId: moLine.id, valorAbonado: moLine.valorAbonado }
+      : { ...emptyManoObra });
+    setAplicaIva(!!ivaLine);
+    setIvaLinea(ivaLine ? { id: ivaLine.id, valorAbonado: ivaLine.valorAbonado } : {});
+    setLineas(prodLines.length
+      ? prodLines.map((l: any) => ({ id: l.id, productoId: l.productoId, productoCodigo: l.productoCodigo, cantidad: String(l.cantidad), productoNombre: l.productoNombre, marca: l.productoMarca || "", precioVenta: String(l.precioVenta), precioCompra: String(l.precioCompra || 0), valorAbonado: l.valorAbonado }))
       : [{ id: -Date.now(), cantidad: "1", productoNombre: "", marca: "", precioVenta: "", precioCompra: "0" }]);
     setFormErrors([]);
   };
@@ -131,44 +169,86 @@ export default function Creditos() {
     if (!form.concepto.trim()) errors.push("El concepto / No. Remisión es obligatorio");
     if (!form.nombreCliente.trim()) errors.push("El nombre del cliente es obligatorio");
     if (!form.fechaFactura) errors.push("La fecha es obligatoria");
-    if (totalLineas <= 0) errors.push("Agrega al menos un producto con precio");
+    if (baseTotal <= 0) errors.push("Agrega al menos un producto con precio");
+    if (manoObra.activo && manoObraValor > 0 && manoObra.trabajadores.length === 0 && !manoObra.lineaId)
+      errors.push("Selecciona los trabajadores para la mano de obra");
     if (errors.length) { setFormErrors(errors); return; }
     setFormErrors([]);
 
-    const initialAbono = Math.min(totalLineas, parseFloat(form.valorAbonado) || 0);
-    let remaining = initialAbono;
-    const payloadLineas = lineas
+    const nombresTrabajadores = manoObra.trabajadores
+      .map((tid) => trabajadores?.find((w) => w.id === tid)?.nombre || `T${tid}`)
+      .join(", ");
+
+    type PendingLinea = {
+      id?: number; productoId?: number | null; productoCodigo?: string | null;
+      cantidad: number; productoNombre: string; productoMarca?: string;
+      precioVenta: number; precioCompra: number; total: number; prevAbonado: number;
+    };
+    const allLineas: PendingLinea[] = lineas
       .filter((l) => l.productoNombre.trim() && parseFloat(l.precioVenta) > 0)
-      .map((l) => {
-        const total = (parseFloat(l.cantidad) || 0) * (parseFloat(l.precioVenta) || 0);
-        const applied = editingId ? (l.valorAbonado || 0) : Math.min(total, remaining);
-        if (!editingId) remaining -= applied;
-        return {
-          id: l.id > 0 ? l.id : undefined,
-          productoId: l.productoId, productoCodigo: l.productoCodigo,
-          cantidad: parseFloat(l.cantidad) || 0, productoNombre: l.productoNombre,
-          productoMarca: l.marca || undefined,
-          precioVenta: parseFloat(l.precioVenta) || 0,
-          precioCompra: parseFloat(l.precioCompra) || 0,
-          valorAbonado: applied,
-        };
+      .map((l) => ({
+        id: l.id > 0 ? l.id : undefined,
+        productoId: l.productoId, productoCodigo: l.productoCodigo,
+        cantidad: parseFloat(l.cantidad) || 0, productoNombre: l.productoNombre,
+        productoMarca: l.marca || undefined,
+        precioVenta: parseFloat(l.precioVenta) || 0,
+        precioCompra: parseFloat(l.precioCompra) || 0,
+        total: (parseFloat(l.cantidad) || 0) * (parseFloat(l.precioVenta) || 0),
+        prevAbonado: l.valorAbonado || 0,
+      }));
+    if (manoObra.activo && manoObraValor > 0) {
+      allLineas.push({
+        id: manoObra.lineaId, cantidad: 1, productoNombre: MO_NOMBRE,
+        productoMarca: nombresTrabajadores || manoObra.marca || undefined,
+        precioVenta: manoObraValor, precioCompra: 0, total: manoObraValor,
+        prevAbonado: manoObra.valorAbonado || 0,
       });
+    }
+    if (aplicaIva && ivaValor > 0) {
+      allLineas.push({
+        id: ivaLinea.id, cantidad: 1, productoNombre: IVA_NOMBRE,
+        precioVenta: ivaValor, precioCompra: 0, total: ivaValor,
+        prevAbonado: ivaLinea.valorAbonado || 0,
+      });
+    }
+
+    const initialAbono = Math.min(totalFinal, parseFloat(form.valorAbonado) || 0);
+    let remaining = initialAbono;
+    const payloadLineas = allLineas.map((l) => {
+      const applied = editingId ? l.prevAbonado : Math.min(l.total, remaining);
+      if (!editingId) remaining -= applied;
+      const { total: _t, prevAbonado: _p, ...rest } = l;
+      return { ...rest, valorAbonado: applied };
+    });
 
     const data = {
       tipo: TIPO, concepto: form.concepto.trim(),
       fechaFactura: form.fechaFactura, placaVehiculo: form.placaVehiculo || undefined,
       nombreCliente: form.nombreCliente, telefonoCliente: form.telefonoCliente || undefined,
-      valorCredito: totalLineas,
+      valorCredito: totalFinal,
       valorAbonado: editingId ? parseFloat(form.valorAbonado) || 0 : initialAbono,
       lineas: payloadLineas,
+      // El servidor crea/actualiza/revierte la distribución de trabajadores de forma atómica
+      manoObra: manoObra.activo && manoObraValor > 0
+        ? {
+            valor: manoObraValor,
+            ...(manoObra.trabajadores.length > 0
+              ? { trabajadores: manoObra.trabajadores.map((tid) => ({ id: tid, nombre: trabajadores?.find((w) => w.id === tid)?.nombre || `Trabajador ${tid}` })) }
+              : {}),
+          }
+        : { valor: 0 },
     };
 
     const options = {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/manoobra"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/trabajadores"] });
         setShowForm(false); setEditingId(null);
         setForm({ ...emptyForm });
         setLineas([{ id: -Date.now(), cantidad: "1", productoNombre: "", marca: "", precioVenta: "", precioCompra: "0" }]);
+        setManoObra({ ...emptyManoObra });
+        setAplicaIva(false); setIvaLinea({});
       },
     };
     if (editingId) actualizarMutation.mutate({ id: editingId, data }, options);
@@ -488,18 +568,67 @@ export default function Creditos() {
                     </tfoot>
                   </table>
                 </div>
-                <button type="button" onClick={addLinea} className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"><Plus className="w-3.5 h-3.5" />Agregar producto</button>
+                <div className="mt-2 flex items-center gap-4">
+                  <button type="button" onClick={addLinea} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"><Plus className="w-3.5 h-3.5" />Agregar producto</button>
+                  {!manoObra.activo && (
+                    <button type="button" onClick={() => setManoObra((p) => ({ ...p, activo: true }))} className="flex items-center gap-1.5 text-xs text-yellow-500 hover:text-yellow-400 transition-colors"><Plus className="w-3.5 h-3.5" />Mano de Obra</button>
+                  )}
+                </div>
               </div>
+
+              {/* Mano de Obra */}
+              {manoObra.activo && (
+                <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4 space-y-3 animate-in fade-in">
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm font-medium text-yellow-500">🔧 Mano de Obra</p>
+                    <button type="button" onClick={() => setManoObra({ ...emptyManoObra })} className="p-1 text-muted-foreground hover:text-destructive"><X className="w-4 h-4" /></button>
+                  </div>
+                  <div className="flex flex-wrap gap-4 items-start">
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1">Valor ($)</label>
+                      <input type="number" min="0" placeholder="0" value={manoObra.valor} onChange={(e) => setManoObra((p) => ({ ...p, valor: e.target.value }))}
+                        className="w-36 bg-background border border-border px-3 py-2 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+                    </div>
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="block text-xs font-medium text-muted-foreground mb-1">Trabajadores</label>
+                      {editingId && manoObra.marca && manoObra.trabajadores.length === 0 && (
+                        <p className="text-xs text-muted-foreground mb-1">Asignada a: {manoObra.marca}</p>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {trabajadores?.filter((t) => t.activo).map((t) => (
+                          <label key={t.id} className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition-colors ${manoObra.trabajadores.includes(t.id) ? "bg-yellow-500/15 border-yellow-500/40 text-yellow-500" : "bg-background border-border text-muted-foreground"}`}>
+                            <input type="checkbox" className="w-3.5 h-3.5 accent-yellow-500" checked={manoObra.trabajadores.includes(t.id)} onChange={() => toggleTrabajadorMO(t.id)} />
+                            {t.nombre}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Abono Inicial ($)</label>
                 <input type="number" placeholder="0" value={form.valorAbonado} onChange={(e) => setForm({ ...form, valorAbonado: e.target.value })} className="w-40 bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
               </div>
 
+              {/* IVA */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 bg-muted/30 border border-border rounded-xl px-4 py-3">
+                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                  <input type="checkbox" checked={aplicaIva} onChange={(e) => setAplicaIva(e.target.checked)} className="w-4 h-4 accent-primary" />
+                  Aplicar IVA (19%)
+                </label>
+                {aplicaIva && (
+                  <p className="text-xs text-muted-foreground">
+                    Subtotal {formatCurrency(baseTotal)} + IVA {formatCurrency(ivaValor)} = <span className="font-bold text-primary">{formatCurrency(totalFinal)}</span>
+                  </p>
+                )}
+              </div>
+
               <div className="flex gap-3 justify-end border-t border-border pt-4">
                 <button onClick={() => setShowForm(false)} className="px-5 py-2.5 bg-muted text-foreground rounded-xl font-medium text-sm hover:bg-muted/80">Cancelar</button>
                 <button onClick={handleGuardar} disabled={crearMutation.isPending || actualizarMutation.isPending} className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:bg-primary/90 shadow-md">
-                  {crearMutation.isPending || actualizarMutation.isPending ? "Guardando..." : `${editingId ? "Actualizar" : "Guardar"} — ${formatCurrency(totalLineas)}`}
+                  {crearMutation.isPending || actualizarMutation.isPending ? "Guardando..." : `${editingId ? "Actualizar" : "Guardar"} — ${formatCurrency(totalFinal)}`}
                 </button>
               </div>
             </div>

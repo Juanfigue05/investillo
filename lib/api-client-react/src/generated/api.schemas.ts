@@ -177,6 +177,19 @@ export interface CreditoLineaInput {
   valorAbonado?: number;
 }
 
+export type CreditoManoObraInputTrabajadoresItem = {
+  id: number;
+  nombre: string;
+};
+
+/**
+ * Mano de obra asociada al crédito. Omitir = sin cambios (en PUT); valor 0 elimina la mano de obra existente.
+ */
+export interface CreditoManoObraInput {
+  valor: number;
+  trabajadores?: CreditoManoObraInputTrabajadoresItem[];
+}
+
 export interface CreditoInput {
   tipo?: string;
   concepto?: string | null;
@@ -188,6 +201,7 @@ export interface CreditoInput {
   valorCredito: number;
   valorAbonado: number;
   lineas: CreditoLineaInput[];
+  manoObra?: CreditoManoObraInput;
 }
 
 export interface CreditoUpdate {
@@ -201,6 +215,7 @@ export interface CreditoUpdate {
   fechaFactura?: string;
   valorCredito?: number;
   lineas?: CreditoLineaInput[];
+  manoObra?: CreditoManoObraInput;
 }
 
 export interface CreditoAbonoLineaInput {

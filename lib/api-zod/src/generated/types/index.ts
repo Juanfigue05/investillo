@@ -22,6 +22,8 @@ export * from "./creditoAbonoLineaInput";
 export * from "./creditoInput";
 export * from "./creditoLinea";
 export * from "./creditoLineaInput";
+export * from "./creditoManoObraInput";
+export * from "./creditoManoObraInputTrabajadoresItem";
 export * from "./creditoUpdate";
 export * from "./dashboard";
 export * from "./distribucionTrabajador";

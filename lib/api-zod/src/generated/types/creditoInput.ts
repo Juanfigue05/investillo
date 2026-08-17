@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CreditoLineaInput } from "./creditoLineaInput";
+import type { CreditoManoObraInput } from "./creditoManoObraInput";
 
 export interface CreditoInput {
   tipo?: string;
@@ -18,4 +19,5 @@ export interface CreditoInput {
   valorCredito: number;
   valorAbonado: number;
   lineas: CreditoLineaInput[];
+  manoObra?: CreditoManoObraInput;
 }

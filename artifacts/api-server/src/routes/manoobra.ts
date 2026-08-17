@@ -80,6 +80,11 @@ router.post("/", async (req, res) => {
 
 router.put("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
+  const [existente] = await db.select().from(manoObraTable).where(eq(manoObraTable.id, id));
+  if (existente?.creditoId) {
+    res.status(409).json({ error: "Esta mano de obra pertenece a un crédito/Nos Debe; edítala desde ese registro" });
+    return;
+  }
   const { fecha, descripcion, valorTotal, distribuciones } = req.body;
 
   await db.update(manoObraTable).set({
@@ -108,6 +113,11 @@ router.put("/:id", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
+  const [existente] = await db.select().from(manoObraTable).where(eq(manoObraTable.id, id));
+  if (existente?.creditoId) {
+    res.status(409).json({ error: "Esta mano de obra pertenece a un crédito/Nos Debe; elimínala desde ese registro" });
+    return;
+  }
   await db.delete(distribucionesTable).where(eq(distribucionesTable.manoObraId, id));
   await db.delete(manoObraTable).where(eq(manoObraTable.id, id));
   res.json({ mensaje: "Mano de obra eliminada" });

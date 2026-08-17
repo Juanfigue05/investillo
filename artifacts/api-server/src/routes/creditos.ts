@@ -4,6 +4,9 @@ import {
   abonosCreditosTable,
   creditoLineasTable,
   creditosTable,
+  distribucionesTable,
+  manoObraTable,
+  trabajadoresTable,
   ventasDiariasTable,
 } from "@workspace/db/schema";
 import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
@@ -22,6 +25,120 @@ function abreviarNombre(nombre: string): string {
     .map((p, i) => (i === 0 ? p : p.charAt(0) + "."))
     .join(" ")
     .toUpperCase();
+}
+
+type CreditoManoObraInput = {
+  valor: number;
+  trabajadores?: { id: number; nombre: string }[];
+};
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function ajustarTotalGanado(tx: Tx, trabajadorId: number, delta: number) {
+  const [trab] = await tx.select().from(trabajadoresTable).where(eq(trabajadoresTable.id, trabajadorId));
+  if (trab) {
+    await tx
+      .update(trabajadoresTable)
+      .set({ totalGanado: String(toNum(trab.totalGanado) + delta) })
+      .where(eq(trabajadoresTable.id, trabajadorId));
+  }
+}
+
+/**
+ * Sincroniza (crea/actualiza/elimina) el registro de mano de obra vinculado a un crédito,
+ * ajustando el totalGanado de los trabajadores de forma atómica.
+ */
+async function syncManoObraCredito(
+  tx: Tx,
+  credito: typeof creditosTable.$inferSelect,
+  input: CreditoManoObraInput | null | undefined,
+) {
+  const [existing] = await tx.select().from(manoObraTable).where(eq(manoObraTable.creditoId, credito.id));
+
+  // Revertir distribuciones existentes (resta totalGanado y borra las filas)
+  const revertir = async (moId: number) => {
+    const dists = await tx.select().from(distribucionesTable).where(eq(distribucionesTable.manoObraId, moId));
+    for (const d of dists) {
+      await ajustarTotalGanado(tx, d.trabajadorId, -toNum(d.valor));
+    }
+    await tx.delete(distribucionesTable).where(eq(distribucionesTable.manoObraId, moId));
+    return dists;
+  };
+
+  const valor = input ? toNum(input.valor) : 0;
+
+  if (!input || !Number.isFinite(valor) || valor <= 0) {
+    // Eliminar mano de obra existente
+    if (existing) {
+      await revertir(existing.id);
+      await tx.delete(manoObraTable).where(eq(manoObraTable.id, existing.id));
+    }
+    return;
+  }
+
+  // Construir nuevas distribuciones
+  let nuevas: { trabajadorId: number; trabajadorNombre: string; valor: number }[] = [];
+  if (input.trabajadores && input.trabajadores.length > 0) {
+    // Validar y deduplicar trabajadores; resolver nombres desde la BD (no confiar en el request)
+    const ids = [...new Set(input.trabajadores.map((t) => Number(t.id)))];
+    const registros = await tx.select().from(trabajadoresTable).where(inArray(trabajadoresTable.id, ids));
+    if (registros.length !== ids.length) {
+      throw new Error("Uno o más trabajadores seleccionados no existen");
+    }
+    const n = registros.length;
+    const base = Math.floor(valor / n);
+    const resto = valor - base * n;
+    nuevas = registros.map((t, i) => ({
+      trabajadorId: t.id,
+      trabajadorNombre: t.nombre,
+      valor: i === n - 1 ? base + resto : base,
+    }));
+    if (existing) await revertir(existing.id);
+  } else if (existing) {
+    // Sin trabajadores explícitos → reescalar las distribuciones existentes al nuevo valor
+    const prev = await revertir(existing.id);
+    const prevTotal = prev.reduce((s, d) => s + toNum(d.valor), 0);
+    if (prevTotal > 0) {
+      let asignado = 0;
+      nuevas = prev.map((d, i) => {
+        const v = i === prev.length - 1 ? valor - asignado : Math.floor((toNum(d.valor) / prevTotal) * valor);
+        asignado += v;
+        return { trabajadorId: d.trabajadorId, trabajadorNombre: d.trabajadorNombre, valor: v };
+      });
+    }
+  } else {
+    // Nueva mano de obra sin trabajadores → no se puede distribuir
+    throw new Error("Selecciona los trabajadores para la mano de obra");
+  }
+
+  const descripcion = `${credito.tipo === "nosdebe" ? "Nos Debe" : credito.concepto || "Crédito"} — ${credito.nombreCliente}`;
+
+  let moId: number;
+  if (existing) {
+    await tx
+      .update(manoObraTable)
+      .set({ fecha: credito.fechaFactura, descripcion, valorTotal: String(valor) })
+      .where(eq(manoObraTable.id, existing.id));
+    moId = existing.id;
+  } else {
+    const [mo] = await tx
+      .insert(manoObraTable)
+      .values({ fecha: credito.fechaFactura, descripcion, valorTotal: String(valor), creditoId: credito.id })
+      .returning();
+    moId = mo.id;
+  }
+
+  for (const d of nuevas) {
+    await tx.insert(distribucionesTable).values({
+      manoObraId: moId,
+      trabajadorId: d.trabajadorId,
+      trabajadorNombre: d.trabajadorNombre,
+      valor: String(d.valor),
+      descuentoSeguro: "0",
+      descuentoOtros: "0",
+    });
+    await ajustarTotalGanado(tx, d.trabajadorId, d.valor);
+  }
 }
 
 type CreditoLineaInput = {
@@ -113,6 +230,7 @@ router.post("/", async (req, res) => {
     valorCredito,
     valorAbonado,
     lineas = [],
+    manoObra,
   } = req.body as {
     tipo?: string;
     concepto?: string;
@@ -124,9 +242,12 @@ router.post("/", async (req, res) => {
     valorCredito: number;
     valorAbonado?: number;
     lineas: CreditoLineaInput[];
+    manoObra?: CreditoManoObraInput | null;
   };
 
-  const credito = await db.transaction(async (tx) => {
+  let credito;
+  try {
+    credito = await db.transaction(async (tx) => {
     const [created] = await tx
       .insert(creditosTable)
       .values({
@@ -157,8 +278,13 @@ router.post("/", async (req, res) => {
         })),
       );
     }
+    if (manoObra !== undefined) await syncManoObraCredito(tx, created, manoObra);
     return created;
-  });
+    });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Error al crear el crédito" });
+    return;
+  }
 
   res.status(201).json(await mapCredito(credito));
 });
@@ -177,6 +303,7 @@ router.put("/:id", async (req, res) => {
     fechaFactura,
     valorCredito,
     lineas,
+    manoObra,
   } = req.body as {
     tipo?: string;
     concepto?: string | null;
@@ -188,6 +315,7 @@ router.put("/:id", async (req, res) => {
     fechaFactura?: string;
     valorCredito?: number;
     lineas?: CreditoLineaInput[];
+    manoObra?: CreditoManoObraInput | null;
   };
 
   const [existing] = await db.select().from(creditosTable).where(eq(creditosTable.id, id));
@@ -210,45 +338,59 @@ router.put("/:id", async (req, res) => {
   if (fechaFactura !== undefined) updateData.fechaFactura = fechaFactura;
   if (valorCredito !== undefined) updateData.valorCredito = String(parseFloat(String(valorCredito)));
 
-  const [credito] = await db
-    .update(creditosTable)
-    .set(updateData)
-    .where(eq(creditosTable.id, id))
-    .returning();
+  let credito;
+  try {
+    credito = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(creditosTable)
+      .set(updateData)
+      .where(eq(creditosTable.id, id))
+      .returning();
 
-  if (Array.isArray(lineas)) {
-    const keepIds = lineas
-      .map((linea) => linea.id)
-      .filter((lineaId): lineaId is number => typeof lineaId === "number");
-    if (keepIds.length > 0) {
-      await db
-        .delete(creditoLineasTable)
-        .where(and(eq(creditoLineasTable.creditoId, id), notInArray(creditoLineasTable.id, keepIds)));
-    } else {
-      await db.delete(creditoLineasTable).where(eq(creditoLineasTable.creditoId, id));
-    }
-    for (const linea of lineas) {
-      const values = {
-        creditoId: id,
-        productoId: linea.productoId || null,
-        cantidad: String(parseFloat(String(linea.cantidad))),
-        productoNombre: linea.productoNombre,
-        productoCodigo: linea.productoCodigo || null,
-        productoMarca: linea.productoMarca || null,
-        precioVenta: String(parseFloat(String(linea.precioVenta))),
-        precioCompra: String(parseFloat(String(linea.precioCompra ?? 0))),
-        valorAbonado: String(parseFloat(String(linea.valorAbonado || 0))),
-      };
-      if (linea.id) {
-        await db
-          .update(creditoLineasTable)
-          .set(values)
-          .where(and(eq(creditoLineasTable.id, linea.id), eq(creditoLineasTable.creditoId, id)));
+    if (Array.isArray(lineas)) {
+      const keepIds = lineas
+        .map((linea) => linea.id)
+        .filter((lineaId): lineaId is number => typeof lineaId === "number");
+      if (keepIds.length > 0) {
+        await tx
+          .delete(creditoLineasTable)
+          .where(and(eq(creditoLineasTable.creditoId, id), notInArray(creditoLineasTable.id, keepIds)));
       } else {
-        await db.insert(creditoLineasTable).values(values);
+        await tx.delete(creditoLineasTable).where(eq(creditoLineasTable.creditoId, id));
+      }
+      for (const linea of lineas) {
+        const values = {
+          creditoId: id,
+          productoId: linea.productoId || null,
+          cantidad: String(parseFloat(String(linea.cantidad))),
+          productoNombre: linea.productoNombre,
+          productoCodigo: linea.productoCodigo || null,
+          productoMarca: linea.productoMarca || null,
+          precioVenta: String(parseFloat(String(linea.precioVenta))),
+          precioCompra: String(parseFloat(String(linea.precioCompra ?? 0))),
+          valorAbonado: String(parseFloat(String(linea.valorAbonado || 0))),
+        };
+        if (linea.id) {
+          await tx
+            .update(creditoLineasTable)
+            .set(values)
+            .where(and(eq(creditoLineasTable.id, linea.id), eq(creditoLineasTable.creditoId, id)));
+        } else {
+          await tx.insert(creditoLineasTable).values(values);
+        }
       }
     }
+
+    // Sincronizar mano de obra solo si el campo viene en el body (undefined = sin cambios)
+    if (manoObra !== undefined) await syncManoObraCredito(tx, updated, manoObra);
+
+    return updated;
+    });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Error al actualizar el crédito" });
+    return;
   }
+
   res.json(await mapCredito(credito));
 });
 
@@ -382,9 +524,14 @@ router.post("/:id/abono", async (req, res) => {
 // DELETE /creditos/:id
 router.delete("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
-  await db.delete(creditoLineasTable).where(eq(creditoLineasTable.creditoId, id));
-  await db.delete(abonosCreditosTable).where(eq(abonosCreditosTable.creditoId, id));
-  await db.delete(creditosTable).where(eq(creditosTable.id, id));
+  await db.transaction(async (tx) => {
+    // Revertir y eliminar la mano de obra vinculada (resta totalGanado de los trabajadores)
+    const [existing] = await tx.select().from(creditosTable).where(eq(creditosTable.id, id));
+    if (existing) await syncManoObraCredito(tx, existing, null);
+    await tx.delete(creditoLineasTable).where(eq(creditoLineasTable.creditoId, id));
+    await tx.delete(abonosCreditosTable).where(eq(abonosCreditosTable.creditoId, id));
+    await tx.delete(creditosTable).where(eq(creditosTable.id, id));
+  });
   res.json({ mensaje: "Credito eliminado" });
 });
 

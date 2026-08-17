@@ -1233,12 +1233,35 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CreditoLineaInput"
+        manoObra:
+          $ref: "#/components/schemas/CreditoManoObraInput"
       required:
         - fechaFactura
         - nombreCliente
         - valorCredito
         - valorAbonado
         - lineas
+
+    CreditoManoObraInput:
+      type: object
+      description: Mano de obra asociada al crédito. Omitir = sin cambios (en PUT); valor 0 elimina la mano de obra existente.
+      properties:
+        valor:
+          type: number
+        trabajadores:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              nombre:
+                type: string
+            required:
+              - id
+              - nombre
+      required:
+        - valor
 
     CreditoUpdate:
       type: object
@@ -1270,6 +1293,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CreditoLineaInput"
+        manoObra:
+          $ref: "#/components/schemas/CreditoManoObraInput"
 
     CreditoLinea:
       type: object
