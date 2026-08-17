@@ -141,6 +141,7 @@ async function syncManoObraCredito(
   }
 }
 
+const MO_NOMBRE = "Mano de Obra";
 type CreditoLineaInput = {
   id?: number | null;
   productoId?: number | null;
@@ -318,7 +319,7 @@ router.put("/:id", async (req, res) => {
     manoObra?: CreditoManoObraInput | null;
   };
 
-  const [existing] = await db.select().from(creditosTable).where(eq(creditosTable.id, id));
+    const [existing] = await tx.select().from(creditosTable).where(eq(creditosTable.id, id));
   if (!existing) {
     res.status(404).json({ error: "Credito no encontrado" });
     return;
@@ -405,7 +406,7 @@ router.post("/:id/abono", async (req, res) => {
     return;
   }
 
-  const [credito] = await db.select().from(creditosTable).where(eq(creditosTable.id, id));
+  const [credito] = await db.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
   if (!credito) {
     res.status(404).json({ error: "Credito no encontrado" });
     return;
@@ -439,87 +440,58 @@ router.post("/:id/abono", async (req, res) => {
   }
 
   const hoy = new Date().toISOString().split("T")[0];
-  const nombreAbreviado = abreviarNombre(credito.nombreCliente);
-  const conceptoBase = credito.concepto ?? hoy;
-
   const updated = await db.transaction(async (tx) => {
-    // 1. Actualizar valorAbonado de cada línea
-    for (const { linea, valor: appliedValue } of applied) {
+    // Revertir el abono anterior
+    await revertirAbono(tx, abono);
+
+    // Releer líneas del crédito después de la reversión
+    const lineIds = lineas.map((l) => l.lineaId);
+    const creditLines = await tx
+      .select()
+      .from(creditoLineasTable)
+      .where(and(eq(creditoLineasTable.creditoId, creditoId), inArray(creditoLineasTable.id, lineIds)));
+    const byId = new Map(creditLines.map((l) => [l.id, l]));
+
+    let appliedTotal = 0;
+    const applied: Array<{ linea: typeof creditoLineasTable.$inferSelect; valor: number }> = [];
+    for (const requested of lineas) {
+      const linea = byId.get(requested.lineaId);
+      if (!linea) continue;
+      const requestedValue = parseFloat(String(requested.valor));
+      const remaining = Math.max(0, toNum(linea.cantidad) * toNum(linea.precioVenta) - toNum(linea.valorAbonado));
+      const appliedValue = Math.min(requestedValue, remaining);
+      if (appliedValue > 0) { appliedTotal += appliedValue; applied.push({ linea, valor: appliedValue }); }
+    }
+    if (applied.length === 0) throw new Error("Sin líneas válidas para el nuevo valor");
+
+    // Aplicar nuevo abono a líneas
+    for (const { linea, valor: av } of applied) {
       await tx
         .update(creditoLineasTable)
-        .set({ valorAbonado: String(toNum(linea.valorAbonado) + appliedValue) })
+        .set({ valorAbonado: String(toNum(linea.valorAbonado) + av) })
         .where(eq(creditoLineasTable.id, linea.id));
     }
 
-    // 2. Actualizar valorAbonado del crédito
-    const newAbonado = toNum(credito.valorAbonado) + appliedTotal;
+    // Releer crédito (ya actualizado por revertirAbono)
+    const [creditoRevertido] = await tx.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
+    const newAbonado = toNum(creditoRevertido.valorAbonado) + appliedTotal;
     const [updatedCredito] = await tx
       .update(creditosTable)
       .set({ valorAbonado: String(newAbonado), actualizadoEn: new Date() })
-      .where(eq(creditosTable.id, id))
+      .where(eq(creditosTable.id, creditoId))
       .returning();
 
-    // 3. Registrar en historial de abonos (guardamos el detalle por línea para poder revertir)
+    // Actualizar el registro del abono con el nuevo valor y detalle
+    const hoy = new Date().toISOString().split("T")[0];
     const lineaDetalle = JSON.stringify(applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })));
-    const [newAbono] = await tx.insert(abonosCreditosTable).values({
-      creditoId: id,
-      fecha: hoy,
-      valorTotal: String(appliedTotal),
-      notas: null,
-      lineaDetalle,
-    }).returning();
+    await tx
+      .update(abonosCreditosTable)
+      .set({ valorTotal: String(appliedTotal), fecha: hoy, lineaDetalle })
+      .where(eq(abonosCreditosTable.id, abonoId));
 
-    // 4. Crear filas en ventas_diarias (con referencia al abono para poder revertirlas)
-    const IVA_NOMBRE = "IVA (19%)";
-    for (const { linea, valor: appliedValue } of applied) {
-      const lineaValorTotal = toNum(linea.cantidad) * toNum(linea.precioVenta);
-      const lineaValorRestanteAntes = Math.max(0, lineaValorTotal - toNum(linea.valorAbonado));
-      const pagaCompleto = Math.abs(appliedValue - lineaValorRestanteAntes) < 1;
-      const esIva = linea.productoNombre === IVA_NOMBRE;
-
-      if (pagaCompleto) {
-        const refCompleto = `${conceptoBase} ${nombreAbreviado}`;
-        const pvUnidad = toNum(linea.precioVenta);
-        const pcUnidad = toNum(linea.precioCompra ?? "0");
-        const cant = toNum(linea.cantidad);
-        const totalVenta = pvUnidad * cant;
-        // IVA no genera beneficio para el negocio (es un impuesto)
-        const beneficio = esIva ? 0 : (pvUnidad - pcUnidad) * cant;
-        await tx.insert(ventasDiariasTable).values({
-          fecha: hoy,
-          referencia: refCompleto,
-          // IVA usa su propio tipo para no inflar totalVentasHoy ni beneficio
-          tipoLinea: esIva ? "iva" : "venta",
-          productoId: linea.productoId ?? null,
-          productoNombre: linea.productoNombre,
-          productoCodigo: linea.productoCodigo ?? null,
-          productoMarca: linea.productoMarca ?? null,
-          cantidad: String(cant),
-          precioCompraUnidad: String(pcUnidad),
-          precioVentaUnidad: String(pvUnidad),
-          precioVentaTotal: String(totalVenta),
-          beneficio: String(beneficio),
-          descripcion: `Pago crédito${credito.concepto ? ` ${credito.concepto}` : ""}`,
-          creditoAbonoId: newAbono.id,
-        });
-      } else {
-        const refAbono = conceptoBase;
-        await tx.insert(ventasDiariasTable).values({
-          fecha: hoy,
-          referencia: refAbono,
-          tipoLinea: "credito",
-          productoNombre: `Abono A: ${linea.productoNombre}`,
-          productoMarca: credito.nombreCliente,
-          cantidad: "1",
-          precioCompraUnidad: "0",
-          precioVentaUnidad: String(appliedValue),
-          precioVentaTotal: String(appliedValue),
-          beneficio: "0",
-          descripcion: `Abono a crédito - ${credito.nombreCliente}`,
-          creditoAbonoId: newAbono.id,
-        });
-      }
-    }
+    // Reconstruir TODAS las filas de Ventas de los pagos de este crédito en orden
+    // cronológico (el estado completo/parcial de otros pagos puede haber cambiado)
+    await rebuildVentasCredito(tx, updatedCredito);
 
     return updatedCredito;
   });
@@ -577,15 +549,8 @@ router.delete("/:id/abono/:abonoId", async (req, res) => {
     .from(abonosCreditosTable)
     .where(and(eq(abonosCreditosTable.id, abonoId), eq(abonosCreditosTable.creditoId, creditoId)));
 
-  if (!abono) {
-    res.status(404).json({ error: "Abono no encontrado" });
-    return;
-  }
-
-  await db.transaction(async (tx) => {
-    await revertirAbono(tx, abono);
-    await tx.delete(abonosCreditosTable).where(eq(abonosCreditosTable.id, abonoId));
-  });
+    const [cred] = await tx.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
+  if (!abono) { res.status(404).json({ error: "Abono no encontrado" }); return; }
 
   const [credito] = await db.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
   if (!credito) { res.json({ ok: true }); return; }
@@ -608,6 +573,8 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
     .select()
     .from(abonosCreditosTable)
     .where(and(eq(abonosCreditosTable.id, abonoId), eq(abonosCreditosTable.creditoId, creditoId)));
+
+    const [cred] = await tx.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
   if (!abono) { res.status(404).json({ error: "Abono no encontrado" }); return; }
 
   const [credito] = await db.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
@@ -662,36 +629,9 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
       .set({ valorTotal: String(appliedTotal), fecha: hoy, lineaDetalle })
       .where(eq(abonosCreditosTable.id, abonoId));
 
-    // Recrear filas de ventas_diarias
-    const nombreAbreviado = abreviarNombre(credito.nombreCliente);
-    const conceptoBase = credito.concepto ?? hoy;
-    for (const { linea, valor: appliedValue } of applied) {
-      const lineaValorTotal = toNum(linea.cantidad) * toNum(linea.precioVenta);
-      const lineaValorRestanteAntes = lineaValorTotal; // recién revertido → todo es restante
-      const pagaCompleto = Math.abs(appliedValue - lineaValorRestanteAntes) < 1;
-      if (pagaCompleto) {
-        const pvUnidad = toNum(linea.precioVenta);
-        const pcUnidad = toNum(linea.precioCompra ?? "0");
-        const cant = toNum(linea.cantidad);
-        await tx.insert(ventasDiariasTable).values({
-          fecha: hoy, referencia: `${conceptoBase} ${nombreAbreviado}`, tipoLinea: "venta",
-          productoId: linea.productoId ?? null, productoNombre: linea.productoNombre,
-          productoCodigo: linea.productoCodigo ?? null, productoMarca: linea.productoMarca ?? null,
-          cantidad: String(cant), precioCompraUnidad: String(pcUnidad), precioVentaUnidad: String(pvUnidad),
-          precioVentaTotal: String(pvUnidad * cant), beneficio: String((pvUnidad - pcUnidad) * cant),
-          descripcion: `Pago crédito${credito.concepto ? ` ${credito.concepto}` : ""}`,
-          creditoAbonoId: abonoId,
-        });
-      } else {
-        await tx.insert(ventasDiariasTable).values({
-          fecha: hoy, referencia: conceptoBase, tipoLinea: "credito",
-          productoNombre: `Abono A: ${linea.productoNombre}`, productoMarca: credito.nombreCliente,
-          cantidad: "1", precioCompraUnidad: "0", precioVentaUnidad: String(appliedValue),
-          precioVentaTotal: String(appliedValue), beneficio: "0",
-          descripcion: `Abono a crédito - ${credito.nombreCliente}`, creditoAbonoId: abonoId,
-        });
-      }
-    }
+    // Reconstruir TODAS las filas de Ventas de los pagos de este crédito en orden
+    // cronológico (el estado completo/parcial de otros pagos puede haber cambiado)
+    await rebuildVentasCredito(tx, updatedCredito);
 
     return updatedCredito;
   });
@@ -714,3 +654,147 @@ router.delete("/:id", async (req, res) => {
 });
 
 export default router;
+
+/** Referencia (No.Remisión/Ref) para filas de ventas_diarias generadas desde un crédito/nos debe. */
+function refCredito(credito: typeof creditosTable.$inferSelect): string {
+  const nombre = abreviarNombre(credito.nombreCliente);
+  return credito.concepto ? `${credito.concepto} ${nombre}` : nombre;
+}
+
+/**
+ * Crea la fila de ventas_diarias correspondiente al pago (total o parcial) de una línea.
+ * - Pago completo de producto → fila "venta" (suma al total).
+ * - Pago completo de mano de obra → fila "manoobra" con trabajadores (no suma al total).
+ * - Pago parcial → fila "credito" tipo Abono (no suma al total).
+ * En todos los casos la referencia lleva el concepto/nombre del crédito.
+ */
+async function crearFilaVentaPago(
+  tx: Tx,
+  credito: typeof creditosTable.$inferSelect,
+  linea: typeof creditoLineasTable.$inferSelect,
+  appliedValue: number,
+  pagaCompleto: boolean,
+  abonoId: number,
+  fecha: string,
+) {
+  const referencia = refCredito(credito);
+  const etiqueta = credito.tipo === "nosdebe" ? "Nos Debe" : "crédito";
+
+  if (pagaCompleto && linea.productoNombre === MO_NOMBRE) {
+    const { nombres, detalle } = await trabajadoresManoObra(tx, credito.id);
+    const valor = toNum(linea.cantidad) * toNum(linea.precioVenta);
+    await tx.insert(ventasDiariasTable).values({
+      fecha,
+      referencia,
+      tipoLinea: "manoobra",
+      productoNombre: MO_NOMBRE,
+      productoMarca: nombres || linea.productoMarca || null,
+      cantidad: "1",
+      precioCompraUnidad: "0",
+      precioVentaUnidad: String(valor),
+      precioVentaTotal: String(valor),
+      beneficio: String(valor),
+      descripcion: detalle || `Pago ${etiqueta}${credito.concepto ? ` ${credito.concepto}` : ""}`,
+      creditoAbonoId: abonoId,
+    });
+    return;
+  }
+
+  if (pagaCompleto) {
+    const pvUnidad = toNum(linea.precioVenta);
+    const pcUnidad = toNum(linea.precioCompra ?? "0");
+    const cant = toNum(linea.cantidad);
+    await tx.insert(ventasDiariasTable).values({
+      fecha,
+      referencia,
+      tipoLinea: "venta",
+      productoId: linea.productoId ?? null,
+      productoNombre: linea.productoNombre,
+      productoCodigo: linea.productoCodigo ?? null,
+      productoMarca: linea.productoMarca ?? null,
+      cantidad: String(cant),
+      precioCompraUnidad: String(pcUnidad),
+      precioVentaUnidad: String(pvUnidad),
+      precioVentaTotal: String(pvUnidad * cant),
+      beneficio: String((pvUnidad - pcUnidad) * cant),
+      descripcion: `Pago ${etiqueta}${credito.concepto ? ` ${credito.concepto}` : ""}`,
+      creditoAbonoId: abonoId,
+    });
+    return;
+  }
+
+  await tx.insert(ventasDiariasTable).values({
+    fecha,
+    referencia,
+    tipoLinea: "credito",
+    productoNombre: `Abono A: ${linea.productoNombre}`,
+    productoMarca: credito.nombreCliente,
+    cantidad: "1",
+    precioCompraUnidad: "0",
+    precioVentaUnidad: String(appliedValue),
+    precioVentaTotal: String(appliedValue),
+    beneficio: "0",
+    descripcion: `Abono a ${etiqueta} - ${credito.nombreCliente}`,
+    creditoAbonoId: abonoId,
+  });
+}
+
+/**
+ * Reconstruye TODAS las filas de ventas_diarias asociadas a los pagos de un crédito,
+ * reproduciendo los abonos en orden cronológico. Garantiza que tras editar o eliminar
+ * un pago exista a lo sumo una fila venta/manoobra por línea totalmente saldada y
+ * filas "Abono A" para los pagos parciales.
+ */
+async function rebuildVentasCredito(tx: Tx, credito: typeof creditosTable.$inferSelect) {
+  const abonos = await tx
+    .select()
+    .from(abonosCreditosTable)
+    .where(eq(abonosCreditosTable.creditoId, credito.id))
+    .orderBy(abonosCreditosTable.creadoEn, abonosCreditosTable.id);
+  // Solo se pueden reconstruir los abonos con detalle por línea
+  const conDetalle = abonos.filter((a) => a.lineaDetalle);
+  if (conDetalle.length > 0) {
+    await tx.delete(ventasDiariasTable).where(
+      inArray(ventasDiariasTable.creditoAbonoId, conDetalle.map((a) => a.id)),
+    );
+  }
+
+  const lineas = await tx.select().from(creditoLineasTable).where(eq(creditoLineasTable.creditoId, credito.id));
+  const byId = new Map(lineas.map((l) => [l.id, l]));
+
+  // Punto de partida por línea: lo abonado que NO proviene de estos abonos (p.ej. abono inicial)
+  const running = new Map<number, number>();
+  for (const l of lineas) {
+    let sumAbonos = 0;
+    for (const a of conDetalle) {
+      const det: { lineaId: number; valor: number }[] = JSON.parse(a.lineaDetalle!);
+      sumAbonos += det.filter((d) => d.lineaId === l.id).reduce((s, d) => s + d.valor, 0);
+    }
+    running.set(l.id, Math.max(0, toNum(l.valorAbonado) - sumAbonos));
+  }
+
+  for (const abono of conDetalle) {
+    const det: { lineaId: number; valor: number }[] = JSON.parse(abono.lineaDetalle!);
+    for (const { lineaId, valor } of det) {
+      const linea = byId.get(lineaId);
+      if (!linea || valor <= 0) continue;
+      const total = toNum(linea.cantidad) * toNum(linea.precioVenta);
+      const antes = running.get(lineaId) ?? 0;
+      const restante = Math.max(0, total - antes);
+      const pagaCompleto = Math.abs(valor - restante) < 1;
+      await crearFilaVentaPago(tx, credito, linea, valor, pagaCompleto, abono.id, abono.fecha);
+      running.set(lineaId, antes + valor);
+    }
+  }
+}
+
+/** Obtiene los trabajadores de la mano de obra vinculada a un crédito. */
+async function trabajadoresManoObra(tx: Tx, creditoId: number) {
+  const [mo] = await tx.select().from(manoObraTable).where(eq(manoObraTable.creditoId, creditoId));
+  if (!mo) return { nombres: "", detalle: "" };
+  const dists = await tx.select().from(distribucionesTable).where(eq(distribucionesTable.manoObraId, mo.id));
+  return {
+    nombres: dists.map((d) => d.trabajadorNombre).join(", "),
+    detalle: dists.map((d) => `${d.trabajadorNombre}: $${toNum(d.valor).toLocaleString("es-CO")}`).join(" | "),
+  };
+}

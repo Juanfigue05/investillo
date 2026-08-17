@@ -266,6 +266,7 @@ export default function NosDebePage() {
 
     const onSuccess = () => {
       queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
       resetPay();
     };
 
@@ -281,6 +282,7 @@ export default function NosDebePage() {
     eliminarAbonoMutation.mutate({ id: creditoId, abonoId }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
       },
     });
   };
