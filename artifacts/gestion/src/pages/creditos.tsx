@@ -110,12 +110,22 @@ export default function Creditos() {
   const handleProductoSelect = (lineaId: number, prodNombre: string) => {
     const prod = productos?.find((p) => p.nombre === prodNombre);
     if (prod) {
-      setLineas((prev) => prev.map((l) => l.id === lineaId ? {
-        ...l, productoId: prod.id, productoCodigo: prod.codigo,
-        productoNombre: prod.nombre, marca: prod.marca || "",
-        precioVenta: String(prod.precioVentaSinIva),
-        precioCompra: String(prod.precioCompra),
-      } : l));
+      setLineas((prev) => prev.map((l) => {
+        if (l.id !== lineaId) return l;
+        const esLinueva = l.id < 0; // id negativo = línea nueva, no guardada en BD
+        return {
+          ...l,
+          productoId: prod.id,
+          productoCodigo: prod.codigo,
+          productoNombre: prod.nombre,
+          marca: prod.marca || "",
+          // Solo auto-llenar precios en líneas nuevas; las guardadas mantienen su precio
+          ...(esLinueva ? {
+            precioVenta: String(prod.precioVentaSinIva),
+            precioCompra: String(prod.precioCompra),
+          } : {}),
+        };
+      }));
     }
   };
 
