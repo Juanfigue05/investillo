@@ -570,7 +570,7 @@ export default function VentasDiarias() {
                   </td>
                   <td className="p-2">
                     {modoActual === "normal" && (
-                      <input type="text" placeholder="1" value={newRow.cantidad} onChange={(e) => setNewRow({ ...newRow, cantidad: e.target.value })} className="w-14 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" />
+                      <input type="number" min="0" step="0.25" placeholder="1" value={newRow.cantidad} onChange={(e) => setNewRow({ ...newRow, cantidad: e.target.value })} className="w-20 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" />
                     )}
                     {modoActual === "manoobra" && <span className="text-xs text-muted-foreground">{newRow.trabajadoresSeleccionados.length} trab.</span>}
                     {modoActual === "abono" && <span className="text-xs text-muted-foreground">—</span>}
@@ -622,7 +622,7 @@ export default function VentasDiarias() {
                           <td className="p-2"><input value={editValues.referencia} onChange={(e) => setEditValues((v) => ({ ...v, referencia: e.target.value }))} className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
                           <td className="p-2"><input value={editValues.productoNombre} onChange={(e) => setEditValues((v) => ({ ...v, productoNombre: e.target.value }))} className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
                           <td className="p-2"><input value={editValues.productoMarca} onChange={(e) => setEditValues((v) => ({ ...v, productoMarca: e.target.value }))} className="w-20 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-                          <td className="p-2"><input type="number" value={editValues.cantidad} onChange={(e) => setEditValues((v) => ({ ...v, cantidad: e.target.value }))} className="w-14 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
+                          <td className="p-2"><input type="number" min="0" step="0.25" value={editValues.cantidad} onChange={(e) => setEditValues((v) => ({ ...v, cantidad: e.target.value }))} className="w-20 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
                           <td className="p-2"><input type="number" value={editValues.precioCompraUnidad} onChange={(e) => setEditValues((v) => ({ ...v, precioCompraUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
                           <td className="p-2"><input type="number" value={editValues.precioVentaUnidad} onChange={(e) => setEditValues((v) => ({ ...v, precioVentaUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
                           <td className="p-2 font-bold text-primary whitespace-nowrap">{formatCurrency(editTotal)}</td>

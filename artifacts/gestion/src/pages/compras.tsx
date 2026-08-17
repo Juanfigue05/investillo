@@ -460,7 +460,7 @@ export default function Compras() {
                           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                             <div>
                               <label className="block text-xs text-muted-foreground mb-1">Cantidad <span className="text-destructive">*</span></label>
-                              <input type="number" placeholder="0" value={llegadaForm.cantidad} onChange={(e) => setLlegadaForm({ ...llegadaForm, cantidad: e.target.value })} className="w-full bg-card border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                              <input type="number" min="0" step="0.25" placeholder="0" value={llegadaForm.cantidad} onChange={(e) => setLlegadaForm({ ...llegadaForm, cantidad: e.target.value })} className="w-full bg-card border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
                             </div>
                             <div>
                               <label className="block text-xs text-muted-foreground mb-1">P. Compra nuevo</label>

@@ -11,6 +11,7 @@ import {
   type Cliente,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { formatTelefono, soloDigitos } from "@/lib/utils";
 import { Plus, Search, X, Pencil, Trash2, Car, User, Phone, Mail, ChevronDown, ChevronUp, Check } from "lucide-react";
 
 interface VehiculoForm {
@@ -143,7 +144,7 @@ export default function Clientes() {
     return clientes.filter(
       (c) =>
         c.nombre.toLowerCase().includes(q) ||
-        (c.telefono ?? "").toLowerCase().includes(q) ||
+        (soloDigitos(q).length > 0 && soloDigitos(c.telefono).includes(soloDigitos(q))) ||
         (c.correo ?? "").toLowerCase().includes(q) ||
         c.vehiculos.some((v) => v.placa.toLowerCase().includes(q) || (v.descripcion ?? "").toLowerCase().includes(q)),
     );
@@ -221,7 +222,7 @@ export default function Clientes() {
                   <input
                     type="text"
                     value={form.telefono}
-                    onChange={(e) => setForm({ ...form, telefono: e.target.value })}
+                    onChange={(e) => setForm({ ...form, telefono: formatTelefono(e.target.value) })}
                     placeholder="(310) 420 1761"
                     className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
                   />
@@ -342,7 +343,7 @@ export default function Clientes() {
                     <div className="flex flex-col gap-0.5 mt-0.5">
                       {c.telefono && (
                         <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Phone className="w-3 h-3" /> {c.telefono}
+                          <Phone className="w-3 h-3" /> {formatTelefono(c.telefono)}
                         </p>
                       )}
                       {c.correo && (

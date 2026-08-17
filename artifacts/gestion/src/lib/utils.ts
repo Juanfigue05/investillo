@@ -27,6 +27,21 @@ export function formatNumberCO(value: number): string {
   }).format(value);
 }
 
+// Formats a phone number with spaces for readability: (310) 420 1761
+export function formatTelefono(value: string | null | undefined): string {
+  if (!value) return "";
+  const digits = value.replace(/\D/g, "").slice(0, 10);
+  if (digits.length === 0) return "";
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} ${digits.slice(6)}`;
+}
+
+// Digits-only version, for phone search comparisons
+export function soloDigitos(value: string | null | undefined): string {
+  return (value || "").replace(/\D/g, "");
+}
+
 // Logic for calculating IVA rounding
 export function calcularPrecioConIva(precioSinIva: number): number {
   const conIva = precioSinIva * 1.19;

@@ -12,7 +12,7 @@ import {
   useGetTrabajadores,
   useGetClientes,
 } from "@workspace/api-client-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatTelefono, soloDigitos } from "@/lib/utils";
 import { Plus, Trash2, X, Pencil, Search, ChevronDown, ChevronUp, Clock, Printer } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -127,7 +127,7 @@ export default function Creditos() {
       setForm((prev) => ({
         ...prev,
         nombreCliente: cliente.nombre,
-        telefonoCliente: cliente.telefono ?? prev.telefonoCliente,
+        telefonoCliente: formatTelefono(cliente.telefono) || prev.telefonoCliente,
         placaVehiculo: vehiculos.length === 1 ? vehiculos[0].placa : prev.placaVehiculo,
       }));
     } else {
@@ -319,7 +319,7 @@ export default function Creditos() {
   const allCreditos = useMemo(() => {
     if (!creditos) return [];
     return creditos.filter((c) => {
-      if (q && !c.nombreCliente.toLowerCase().includes(q) && !(c.concepto || "").toLowerCase().includes(q) && !(c.telefonoCliente || "").includes(q)) return false;
+      if (q && !c.nombreCliente.toLowerCase().includes(q) && !(c.concepto || "").toLowerCase().includes(q) && !(soloDigitos(q) && soloDigitos(c.telefonoCliente).includes(soloDigitos(q)))) return false;
       if (filtroDesde && c.fechaFactura < filtroDesde) return false;
       if (filtroHasta && c.fechaFactura > filtroHasta) return false;
       if (filtroPlaca && !(c.placaVehiculo || "").toLowerCase().includes(filtroPlaca.toLowerCase())) return false;
@@ -396,7 +396,7 @@ export default function Creditos() {
                     <td>{new Date(c.fechaFactura + "T12:00:00").toLocaleDateString("es-CO")}</td>
                     <td>{c.placaVehiculo || "—"}</td>
                     <td>{c.nombreCliente}</td>
-                    <td>{c.telefonoCliente || "—"}</td>
+                    <td>{formatTelefono(c.telefonoCliente) || "—"}</td>
                     <td>{c.concepto || "—"}</td>
                     <td style={{ textAlign: "right" }}>$ {c.valorCredito.toLocaleString("es-CO")}</td>
                     <td style={{ textAlign: "right" }}>
@@ -482,9 +482,9 @@ export default function Creditos() {
                 className="bg-card border border-border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none" />
             </div>
             <div className="relative">
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Placa</label>
-              <input type="text" placeholder="Ej: ABC123" value={filtroPlaca} onChange={(e) => setFiltroPlaca(e.target.value.toUpperCase())}
-                className="bg-card border border-border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none w-32 font-mono uppercase" />
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Placa / Vehículo</label>
+              <input type="text" placeholder="Placa, buseta, empresa..." value={filtroPlaca} onChange={(e) => setFiltroPlaca(e.target.value)}
+                className="bg-card border border-border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none w-52" />
               {filtroPlaca && (
                 <button onClick={() => setFiltroPlaca("")} className="absolute right-2.5 top-[2.1rem] text-muted-foreground hover:text-foreground">
                   <X className="w-3.5 h-3.5" />
@@ -542,7 +542,7 @@ export default function Creditos() {
                     className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Placa Vehículo</label>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Placa / Vehículo</label>
                   {(() => {
                     const clienteActivo = clientes?.find((c) => c.nombre === form.nombreCliente);
                     const vehiculosActivo = (clienteActivo as any)?.vehiculos ?? [];
@@ -551,7 +551,7 @@ export default function Creditos() {
                         <input type="text" value={form.placaVehiculo}
                           list="vehiculos-cr-list"
                           onChange={(e) => setForm({ ...form, placaVehiculo: e.target.value })}
-                          placeholder={vehiculosActivo.length > 0 ? "Selecciona o escribe placa" : "Placa del vehículo"}
+                          placeholder={vehiculosActivo.length > 0 ? "Selecciona o escribe placa" : "Ej: ABC123 o MICRO 143 VIACOLTUR"}
                           className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
                         <datalist id="vehiculos-cr-list">
                           {vehiculosActivo.map((v: any) => (
@@ -564,7 +564,7 @@ export default function Creditos() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Teléfono</label>
-                  <input type="text" value={form.telefonoCliente} onChange={(e) => setForm({ ...form, telefonoCliente: e.target.value })}
+                  <input type="text" placeholder="(310) 420 1761" value={form.telefonoCliente} onChange={(e) => setForm({ ...form, telefonoCliente: formatTelefono(e.target.value) })}
                     className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
                 </div>
               </div>
@@ -576,7 +576,7 @@ export default function Creditos() {
                   <table className="w-full text-sm min-w-[560px]">
                     <thead><tr className="bg-muted text-muted-foreground border-b border-border text-xs">
                       <th className="px-3 py-2 font-medium">Producto</th>
-                      <th className="px-3 py-2 font-medium w-16">Cant</th>
+                      <th className="px-3 py-2 font-medium w-24">Cant</th>
                       <th className="px-3 py-2 font-medium w-28">P. Compra</th>
                       <th className="px-3 py-2 font-medium w-28">P. Venta</th>
                       <th className="px-3 py-2 font-medium w-24">Total</th>
@@ -595,7 +595,7 @@ export default function Creditos() {
                               {productos?.map((p) => <option key={p.id} value={p.nombre} />)}
                             </datalist>
                           </td>
-                          <td className="px-3 py-2"><input type="number" min="1" step="0.01" value={linea.cantidad} onChange={(e) => updateLinea(linea.id, "cantidad", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-center" /></td>
+                          <td className="px-3 py-2"><input type="number" min="0" step="0.25" value={linea.cantidad} onChange={(e) => updateLinea(linea.id, "cantidad", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-center" /></td>
                           <td className="px-3 py-2">
                             <input type="number" min="0" value={linea.precioCompra} onChange={(e) => updateLinea(linea.id, "precioCompra", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" placeholder="P.Compra" />
                           </td>

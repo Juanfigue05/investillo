@@ -12,7 +12,7 @@ import {
   useGetTrabajadores,
   useGetClientes,
 } from "@workspace/api-client-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatTelefono, soloDigitos } from "@/lib/utils";
 import { Plus, Trash2, X, Pencil, Search, ChevronDown, ChevronUp, Clock } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -108,7 +108,7 @@ export default function NosDebePage() {
       setForm((prev) => ({
         ...prev,
         nombreCliente: cliente.nombre,
-        telefonoCliente: cliente.telefono ?? prev.telefonoCliente,
+        telefonoCliente: formatTelefono(cliente.telefono) || prev.telefonoCliente,
         placaVehiculo: vehiculos.length === 1 ? vehiculos[0].placa : prev.placaVehiculo,
       }));
     } else {
@@ -302,7 +302,7 @@ export default function NosDebePage() {
   const q = busqueda.toLowerCase();
   const allCreditos = useMemo(() => {
     if (!creditos) return [];
-    return creditos.filter((c) => !q || c.nombreCliente.toLowerCase().includes(q) || (c.telefonoCliente || "").includes(q));
+    return creditos.filter((c) => !q || c.nombreCliente.toLowerCase().includes(q) || (soloDigitos(q).length > 0 && soloDigitos(c.telefonoCliente).includes(soloDigitos(q))));
   }, [creditos, q]);
 
   const pendientes = allCreditos.filter((c) => c.valorRestante > 0);
@@ -387,7 +387,7 @@ export default function NosDebePage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Teléfono</label>
-                  <input type="text" value={form.telefonoCliente} onChange={(e) => setForm({ ...form, telefonoCliente: e.target.value })} className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+                  <input type="text" placeholder="(310) 420 1761" value={form.telefonoCliente} onChange={(e) => setForm({ ...form, telefonoCliente: formatTelefono(e.target.value) })} className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Placa Vehículo</label>
@@ -419,7 +419,7 @@ export default function NosDebePage() {
                   <table className="w-full text-sm min-w-[500px]">
                     <thead><tr className="bg-muted text-muted-foreground border-b border-border text-xs">
                       <th className="px-3 py-2 font-medium">Producto / Servicio</th>
-                      <th className="px-3 py-2 font-medium w-16">Cant</th>
+                      <th className="px-3 py-2 font-medium w-24">Cant</th>
                       <th className="px-3 py-2 font-medium w-28">P. Compra</th>
                       <th className="px-3 py-2 font-medium w-28">P. Venta</th>
                       <th className="px-3 py-2 font-medium w-20">Total</th>
@@ -437,7 +437,7 @@ export default function NosDebePage() {
                               {productos?.map((p) => <option key={p.id} value={p.nombre} />)}
                             </datalist>
                           </td>
-                          <td className="px-3 py-2"><input type="number" min="1" value={linea.cantidad} onChange={(e) => updateLinea(linea.id, "cantidad", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-center" /></td>
+                          <td className="px-3 py-2"><input type="number" min="0" step="0.25" value={linea.cantidad} onChange={(e) => updateLinea(linea.id, "cantidad", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-center" /></td>
                           <td className="px-3 py-2"><input type="number" min="0" value={linea.precioCompra} onChange={(e) => updateLinea(linea.id, "precioCompra", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" /></td>
                           <td className="px-3 py-2"><input type="number" min="0" value={linea.precioVenta} onChange={(e) => updateLinea(linea.id, "precioVenta", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" /></td>
                           <td className="px-3 py-2 text-xs font-bold text-primary">{formatCurrency((parseFloat(linea.cantidad) || 0) * (parseFloat(linea.precioVenta) || 0))}</td>
@@ -548,7 +548,7 @@ export default function NosDebePage() {
                       </div>
 
                       <div className="text-sm space-y-1 flex-1">
-                        {c.telefonoCliente && <p className="text-xs text-muted-foreground">Tel: {c.telefonoCliente}</p>}
+                        {c.telefonoCliente && <p className="text-xs text-muted-foreground">Tel: {formatTelefono(c.telefonoCliente)}</p>}
                         <div className="flex justify-between border-t border-border/50 pt-1.5 mt-2">
                           <span className="text-xs text-muted-foreground">Total:</span>
                           <span className="text-xs font-medium">{formatCurrency(c.valorCredito)}</span>
