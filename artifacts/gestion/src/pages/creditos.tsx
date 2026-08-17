@@ -196,6 +196,22 @@ export default function Creditos() {
     if (errors.length) { setFormErrors(errors); return; }
     setFormErrors([]);
 
+    // Advertir si alguna línea tiene precioVenta < precioCompra
+    const lineasConPerdida = lineas.filter((l) => {
+      const pv = parseFloat(l.precioVenta) || 0;
+      const pc = parseFloat(l.precioCompra) || 0;
+      return l.productoNombre.trim() && pv > 0 && pc > 0 && pv < pc;
+    });
+    if (lineasConPerdida.length > 0) {
+      const detalle = lineasConPerdida
+        .map((l) => `• ${l.productoNombre} (venta: $${l.precioVenta}, compra: $${l.precioCompra})`)
+        .join("\n");
+      const ok = window.confirm(
+        `⚠️ Las siguientes líneas tienen precio de venta menor al de compra:\n\n${detalle}\n\n¿Deseas continuar de todas formas?`
+      );
+      if (!ok) return;
+    }
+
     const nombresTrabajadores = manoObra.trabajadores
       .map((tid) => trabajadores?.find((w) => w.id === tid)?.nombre || `T${tid}`)
       .join(", ");
