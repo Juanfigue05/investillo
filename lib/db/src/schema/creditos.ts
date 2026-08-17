@@ -41,6 +41,8 @@ export const abonosCreditosTable = pgTable("abonos_creditos", {
   fecha: date("fecha").notNull(),
   valorTotal: numeric("valor_total", { precision: 15, scale: 2 }).notNull(),
   notas: text("notas"),
+  /** JSON: [{lineaId, valor}] — detalle por línea para poder revertir exactamente */
+  lineaDetalle: text("linea_detalle"),
   creadoEn: timestamp("creado_en").defaultNow(),
 });
 

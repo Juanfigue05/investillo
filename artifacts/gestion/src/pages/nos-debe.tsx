@@ -6,6 +6,8 @@ import {
   useActualizarCredito,
   useEliminarCredito,
   useAbonarCredito,
+  useEliminarAbonoCredito,
+  useEditarAbonoCredito,
   useGetInventario,
   useGetTrabajadores,
   useGetClientes,
@@ -45,6 +47,7 @@ const emptyForm = {
   fechaFactura: new Date().toISOString().split("T")[0],
   nombreCliente: "",
   telefonoCliente: "",
+  placaVehiculo: "",
   valorAbonado: "0",
 };
 
@@ -70,11 +73,14 @@ export default function NosDebePage() {
   const [manoObra, setManoObra] = useState<ManoObraState>({ ...emptyManoObra });
   const [aplicaIva, setAplicaIva] = useState(false);
   const [ivaLinea, setIvaLinea] = useState<{ id?: number; valorAbonado?: number }>({});
+  const [editingAbonoId, setEditingAbonoId] = useState<number | null>(null);
 
   const crearMutation = useCrearCredito();
   const actualizarMutation = useActualizarCredito();
   const eliminarMutation = useEliminarCredito();
   const abonarMutation = useAbonarCredito();
+  const eliminarAbonoMutation = useEliminarAbonoCredito();
+  const editarAbonoMutation = useEditarAbonoCredito();
 
   const addLinea = () =>
     setLineas((prev) => [...prev, { id: -Date.now(), cantidad: "1", productoNombre: "", marca: "", precioVenta: "", precioCompra: "0" }]);
@@ -98,10 +104,12 @@ export default function NosDebePage() {
   const handleClienteSelect = (nombre: string) => {
     const cliente = clientes?.find((c) => c.nombre === nombre);
     if (cliente) {
+      const vehiculos = (cliente as any).vehiculos ?? [];
       setForm((prev) => ({
         ...prev,
         nombreCliente: cliente.nombre,
         telefonoCliente: cliente.telefono ?? prev.telefonoCliente,
+        placaVehiculo: vehiculos.length === 1 ? vehiculos[0].placa : prev.placaVehiculo,
       }));
     } else {
       setForm((prev) => ({ ...prev, nombreCliente: nombre }));
@@ -132,7 +140,7 @@ export default function NosDebePage() {
   const openEdit = (c: any) => {
     setEditingId(c.id);
     setShowForm(true);
-    setForm({ fechaFactura: c.fechaFactura, nombreCliente: c.nombreCliente, telefonoCliente: c.telefonoCliente || "", valorAbonado: String(c.valorAbonado || 0) });
+    setForm({ fechaFactura: c.fechaFactura, nombreCliente: c.nombreCliente, telefonoCliente: c.telefonoCliente || "", placaVehiculo: c.placaVehiculo || "", valorAbonado: String(c.valorAbonado || 0) });
     const moLine = c.lineas.find((l: any) => l.productoNombre === MO_NOMBRE);
     const ivaLine = c.lineas.find((l: any) => l.productoNombre === IVA_NOMBRE);
     const prodLines = c.lineas.filter((l: any) => l !== moLine && l !== ivaLine);
@@ -237,23 +245,41 @@ export default function NosDebePage() {
     else crearMutation.mutate({ data }, options);
   };
 
+  const resetPay = () => { setShowPay(null); setAbono(""); setLineasSeleccionadas([]); setEditingAbonoId(null); };
+
   const handleAbono = (c: any) => {
     const abonoNum = parseFloat(abono);
     if (!abonoNum || abonoNum <= 0) { alert("Valor inválido"); return; }
-    if (abonoNum > c.valorRestante) { alert(`El abono no puede superar ${formatCurrency(c.valorRestante)}`); return; }
     if (!lineasSeleccionadas.length) { alert("Selecciona al menos un producto"); return; }
-    const selected = c.lineas.filter((l: any) => lineasSeleccionadas.includes(l.id) && l.valorRestante > 0);
+    const maxDisponible = editingAbonoId !== null ? c.valorCredito : c.valorRestante;
+    if (abonoNum > maxDisponible + 1) { alert(`El abono no puede superar ${formatCurrency(maxDisponible)}`); return; }
+    const lineasUsadas = editingAbonoId !== null ? c.lineas : c.lineas.filter((l: any) => l.valorRestante > 0);
+    const selected = lineasUsadas.filter((l: any) => lineasSeleccionadas.includes(l.id));
     let rem = abonoNum;
     const lineasAbono = selected.map((l: any) => {
-      const v = Math.min(l.valorRestante, rem);
+      const tope = editingAbonoId !== null ? (parseFloat(l.cantidad) * parseFloat(l.precioVenta)) : l.valorRestante;
+      const v = Math.min(tope, rem);
       rem -= v;
       return { lineaId: l.id, valor: v };
     }).filter((la: any) => la.valor > 0);
 
-    abonarMutation.mutate({ id: c.id, data: { valor: abonoNum, lineas: lineasAbono } }, {
+    const onSuccess = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
+      resetPay();
+    };
+
+    if (editingAbonoId !== null) {
+      editarAbonoMutation.mutate({ id: c.id, abonoId: editingAbonoId, data: { valor: abonoNum, lineas: lineasAbono } }, { onSuccess });
+    } else {
+      abonarMutation.mutate({ id: c.id, data: { valor: abonoNum, lineas: lineasAbono } }, { onSuccess });
+    }
+  };
+
+  const handleEliminarAbono = (creditoId: number, abonoId: number) => {
+    if (!confirm("¿Eliminar este pago? Se revertirá en Ventas Diarias.")) return;
+    eliminarAbonoMutation.mutate({ id: creditoId, abonoId }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
-        setShowPay(null); setAbono(""); setLineasSeleccionadas([]);
       },
     });
   };
@@ -361,6 +387,27 @@ export default function NosDebePage() {
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Teléfono</label>
                   <input type="text" value={form.telefonoCliente} onChange={(e) => setForm({ ...form, telefonoCliente: e.target.value })} className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Placa Vehículo</label>
+                  {(() => {
+                    const clienteActivo = clientes?.find((c) => c.nombre === form.nombreCliente);
+                    const vehiculosActivo = (clienteActivo as any)?.vehiculos ?? [];
+                    return (
+                      <>
+                        <input type="text" value={form.placaVehiculo}
+                          list="vehiculos-nd-list"
+                          onChange={(e) => setForm({ ...form, placaVehiculo: e.target.value })}
+                          placeholder={vehiculosActivo.length > 0 ? "Selecciona o escribe placa" : "Placa del vehículo (opcional)"}
+                          className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+                        <datalist id="vehiculos-nd-list">
+                          {vehiculosActivo.map((v: any) => (
+                            <option key={v.placa} value={v.placa}>{v.placa}{v.marca ? ` — ${v.marca}` : ""}{v.modelo ? ` ${v.modelo}` : ""}</option>
+                          ))}
+                        </datalist>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -525,10 +572,25 @@ export default function NosDebePage() {
                           </button>
                           {expandedAbonos.has(c.id) && (
                             <div className="mt-2 space-y-1 animate-in fade-in">
-                              {c.abonos.map((a) => (
-                                <div key={a.id} className="flex justify-between items-center text-xs bg-muted/30 px-2 py-1 rounded-lg">
-                                  <span className="text-muted-foreground">{new Date(a.fecha + "T12:00:00").toLocaleDateString("es-CO")}</span>
-                                  <span className="font-medium text-green-500">+{formatCurrency(a.valorTotal)}</span>
+                              {c.abonos.map((a: any) => (
+                                <div key={a.id} className="flex justify-between items-center text-xs bg-muted/30 px-2 py-1.5 rounded-lg gap-2">
+                                  <span className="text-muted-foreground shrink-0">{new Date(a.fecha + "T12:00:00").toLocaleDateString("es-CO")}</span>
+                                  <span className="font-medium text-green-500 flex-1 text-right">+{formatCurrency(a.valorTotal)}</span>
+                                  <div className="flex gap-0.5 shrink-0">
+                                    <button
+                                      title="Editar pago"
+                                      onClick={() => { setShowPay(c.id); setEditingAbonoId(a.id); setAbono(String(a.valorTotal)); setLineasSeleccionadas([]); setExpandedAbonos((s) => { const n = new Set(s); n.delete(c.id); return n; }); }}
+                                      className="p-1 text-muted-foreground hover:text-primary rounded transition-colors">
+                                      <Pencil className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      title="Eliminar pago"
+                                      onClick={() => handleEliminarAbono(c.id, a.id)}
+                                      disabled={eliminarAbonoMutation.isPending}
+                                      className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors">
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -538,32 +600,45 @@ export default function NosDebePage() {
 
                       {showPay === c.id ? (
                         <div className="bg-background rounded-xl p-3 border border-border mt-3 animate-in fade-in">
-                          <h4 className="text-xs font-semibold mb-2 text-foreground">Registrar Abono</h4>
-                          <input type="number" placeholder={`Máx ${formatCurrency(c.valorRestante)}`} value={abono}
+                          <h4 className="text-xs font-semibold mb-2 text-foreground">
+                            {editingAbonoId !== null ? "✏️ Editar Pago" : "Registrar Abono"}
+                          </h4>
+                          <input type="number"
+                            placeholder={editingAbonoId !== null ? "Nuevo valor" : `Máx ${formatCurrency(c.valorRestante)}`}
+                            value={abono}
                             onChange={(e) => setAbono(e.target.value)}
                             className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm mb-2 focus:ring-1 focus:ring-primary outline-none" />
                           {c.lineas.length > 0 && (
                             <div className="space-y-1 mb-2">
-                              {c.lineas.map((l: any) => (
-                                <label key={l.id} className="flex items-center justify-between gap-2 text-xs cursor-pointer">
-                                  <span className="flex items-center gap-1.5">
-                                    <input type="checkbox" checked={lineasSeleccionadas.includes(l.id)} disabled={l.valorRestante <= 0}
-                                      onChange={() => setLineasSeleccionadas((prev) => prev.includes(l.id) ? prev.filter((id) => id !== l.id) : [...prev, l.id])}
-                                      className="w-3.5 h-3.5 accent-primary" />
-                                    <span className="truncate">{l.productoNombre}</span>
-                                  </span>
-                                  <span className="text-muted-foreground shrink-0">{formatCurrency(l.valorRestante)}</span>
-                                </label>
-                              ))}
+                              {c.lineas.map((l: any) => {
+                                const disponible = editingAbonoId !== null
+                                  ? parseFloat(l.cantidad) * parseFloat(l.precioVenta)
+                                  : l.valorRestante;
+                                return (
+                                  <label key={l.id} className="flex items-center justify-between gap-2 text-xs cursor-pointer">
+                                    <span className="flex items-center gap-1.5">
+                                      <input type="checkbox" checked={lineasSeleccionadas.includes(l.id)} disabled={disponible <= 0}
+                                        onChange={() => setLineasSeleccionadas((prev) => prev.includes(l.id) ? prev.filter((id) => id !== l.id) : [...prev, l.id])}
+                                        className="w-3.5 h-3.5 accent-primary" />
+                                      <span className="truncate">{l.productoNombre}</span>
+                                    </span>
+                                    <span className={`text-muted-foreground shrink-0 ${disponible <= 0 ? "text-green-500" : ""}`}>
+                                      {disponible <= 0 ? "Pagado" : formatCurrency(disponible)}
+                                    </span>
+                                  </label>
+                                );
+                              })}
                             </div>
                           )}
                           <div className="flex gap-2">
-                            <button onClick={() => setShowPay(null)} className="flex-1 py-1.5 bg-muted text-foreground rounded-lg text-xs font-medium">Cancelar</button>
-                            <button onClick={() => handleAbono(c)} disabled={abonarMutation.isPending} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium">Confirmar</button>
+                            <button onClick={resetPay} className="flex-1 py-1.5 bg-muted text-foreground rounded-lg text-xs font-medium">Cancelar</button>
+                            <button onClick={() => handleAbono(c)} disabled={abonarMutation.isPending || editarAbonoMutation.isPending} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium">
+                              {(abonarMutation.isPending || editarAbonoMutation.isPending) ? "..." : editingAbonoId !== null ? "Guardar Cambios" : "Confirmar"}
+                            </button>
                           </div>
                         </div>
                       ) : (
-                        <button onClick={() => { setShowPay(c.id); setAbono(""); setLineasSeleccionadas([]); }}
+                        <button onClick={() => { setShowPay(c.id); setAbono(""); setLineasSeleccionadas([]); setEditingAbonoId(null); }}
                           className="w-full mt-3 py-2 bg-secondary text-secondary-foreground rounded-xl font-medium border border-border text-sm hover:bg-secondary/80 transition-colors">
                           Abonar / Pagar
                         </button>

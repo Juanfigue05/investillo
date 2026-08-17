@@ -519,6 +519,118 @@ export const AbonarCreditoResponse = zod.object({
 });
 
 /**
+ * @summary Eliminar un abono y revertir sus efectos en Ventas Diarias
+ */
+export const EliminarAbonoCreditoParams = zod.object({
+  id: zod.coerce.number(),
+  abonoId: zod.coerce.number(),
+});
+
+export const EliminarAbonoCreditoResponse = zod.object({
+  id: zod.number(),
+  tipo: zod.string().describe("'credito' | 'nosdebe'"),
+  concepto: zod
+    .string()
+    .nullish()
+    .describe("No. Remision \/ referencia del credito"),
+  fechaFactura: zod.coerce.date(),
+  placaVehiculo: zod.string().nullish(),
+  nombreCliente: zod.string(),
+  telefonoCliente: zod.string().nullish(),
+  descripcion: zod.string().nullish(),
+  valorCredito: zod.number(),
+  valorAbonado: zod.number(),
+  valorRestante: zod.number(),
+  creadoEn: zod.coerce.date().optional(),
+  actualizadoEn: zod.coerce.date().optional(),
+  lineas: zod.array(
+    zod.object({
+      id: zod.number(),
+      productoId: zod.number().nullish(),
+      cantidad: zod.number(),
+      productoNombre: zod.string(),
+      productoCodigo: zod.string().nullish(),
+      productoMarca: zod.string().nullish(),
+      precioVenta: zod.number(),
+      precioCompra: zod.number(),
+      valorAbonado: zod.number(),
+      valorRestante: zod.number(),
+    }),
+  ),
+  abonos: zod.array(
+    zod.object({
+      id: zod.number(),
+      creditoId: zod.number(),
+      fecha: zod.coerce.date(),
+      valorTotal: zod.number(),
+      notas: zod.string().nullish(),
+      creadoEn: zod.coerce.date().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Editar un abono (revierte el anterior y aplica el nuevo)
+ */
+export const EditarAbonoCreditoParams = zod.object({
+  id: zod.coerce.number(),
+  abonoId: zod.coerce.number(),
+});
+
+export const EditarAbonoCreditoBody = zod.object({
+  valor: zod.number(),
+  lineas: zod.array(
+    zod.object({
+      lineaId: zod.number(),
+      valor: zod.number(),
+    }),
+  ),
+});
+
+export const EditarAbonoCreditoResponse = zod.object({
+  id: zod.number(),
+  tipo: zod.string().describe("'credito' | 'nosdebe'"),
+  concepto: zod
+    .string()
+    .nullish()
+    .describe("No. Remision \/ referencia del credito"),
+  fechaFactura: zod.coerce.date(),
+  placaVehiculo: zod.string().nullish(),
+  nombreCliente: zod.string(),
+  telefonoCliente: zod.string().nullish(),
+  descripcion: zod.string().nullish(),
+  valorCredito: zod.number(),
+  valorAbonado: zod.number(),
+  valorRestante: zod.number(),
+  creadoEn: zod.coerce.date().optional(),
+  actualizadoEn: zod.coerce.date().optional(),
+  lineas: zod.array(
+    zod.object({
+      id: zod.number(),
+      productoId: zod.number().nullish(),
+      cantidad: zod.number(),
+      productoNombre: zod.string(),
+      productoCodigo: zod.string().nullish(),
+      productoMarca: zod.string().nullish(),
+      precioVenta: zod.number(),
+      precioCompra: zod.number(),
+      valorAbonado: zod.number(),
+      valorRestante: zod.number(),
+    }),
+  ),
+  abonos: zod.array(
+    zod.object({
+      id: zod.number(),
+      creditoId: zod.number(),
+      fecha: zod.coerce.date(),
+      valorTotal: zod.number(),
+      notas: zod.string().nullish(),
+      creadoEn: zod.coerce.date().optional(),
+    }),
+  ),
+});
+
+/**
  * @summary Actualizar credito (abonar)
  */
 export const ActualizarCreditoParams = zod.object({

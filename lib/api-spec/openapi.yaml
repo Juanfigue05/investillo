@@ -342,6 +342,58 @@ paths:
               schema:
                 $ref: "#/components/schemas/Credito"
 
+  /creditos/{id}/abono/{abonoId}:
+    delete:
+      operationId: eliminarAbonoCredito
+      tags: [creditos]
+      summary: Eliminar un abono y revertir sus efectos en Ventas Diarias
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: abonoId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Abono eliminado y efectos revertidos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credito"
+    put:
+      operationId: editarAbonoCredito
+      tags: [creditos]
+      summary: Editar un abono (revierte el anterior y aplica el nuevo)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: abonoId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreditoAbonoInput"
+      responses:
+        "200":
+          description: Abono actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credito"
+
   /creditos/{id}:
     put:
       operationId: actualizarCredito

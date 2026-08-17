@@ -1437,6 +1437,179 @@ export const useAbonarCredito = <
 };
 
 /**
+ * @summary Eliminar un abono y revertir sus efectos en Ventas Diarias
+ */
+export const getEliminarAbonoCreditoUrl = (id: number, abonoId: number) => {
+  return `/api/creditos/${id}/abono/${abonoId}`;
+};
+
+export const eliminarAbonoCredito = async (
+  id: number,
+  abonoId: number,
+  options?: RequestInit,
+): Promise<Credito> => {
+  return customFetch<Credito>(getEliminarAbonoCreditoUrl(id, abonoId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getEliminarAbonoCreditoMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof eliminarAbonoCredito>>,
+    TError,
+    { id: number; abonoId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof eliminarAbonoCredito>>,
+  TError,
+  { id: number; abonoId: number },
+  TContext
+> => {
+  const mutationKey = ["eliminarAbonoCredito"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof eliminarAbonoCredito>>,
+    { id: number; abonoId: number }
+  > = (props) => {
+    const { id, abonoId } = props ?? {};
+
+    return eliminarAbonoCredito(id, abonoId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type EliminarAbonoCreditoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof eliminarAbonoCredito>>
+>;
+
+export type EliminarAbonoCreditoMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Eliminar un abono y revertir sus efectos en Ventas Diarias
+ */
+export const useEliminarAbonoCredito = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof eliminarAbonoCredito>>,
+    TError,
+    { id: number; abonoId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof eliminarAbonoCredito>>,
+  TError,
+  { id: number; abonoId: number },
+  TContext
+> => {
+  return useMutation(getEliminarAbonoCreditoMutationOptions(options));
+};
+
+/**
+ * @summary Editar un abono (revierte el anterior y aplica el nuevo)
+ */
+export const getEditarAbonoCreditoUrl = (id: number, abonoId: number) => {
+  return `/api/creditos/${id}/abono/${abonoId}`;
+};
+
+export const editarAbonoCredito = async (
+  id: number,
+  abonoId: number,
+  creditoAbonoInput: CreditoAbonoInput,
+  options?: RequestInit,
+): Promise<Credito> => {
+  return customFetch<Credito>(getEditarAbonoCreditoUrl(id, abonoId), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(creditoAbonoInput),
+  });
+};
+
+export const getEditarAbonoCreditoMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof editarAbonoCredito>>,
+    TError,
+    { id: number; abonoId: number; data: BodyType<CreditoAbonoInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof editarAbonoCredito>>,
+  TError,
+  { id: number; abonoId: number; data: BodyType<CreditoAbonoInput> },
+  TContext
+> => {
+  const mutationKey = ["editarAbonoCredito"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof editarAbonoCredito>>,
+    { id: number; abonoId: number; data: BodyType<CreditoAbonoInput> }
+  > = (props) => {
+    const { id, abonoId, data } = props ?? {};
+
+    return editarAbonoCredito(id, abonoId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type EditarAbonoCreditoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof editarAbonoCredito>>
+>;
+export type EditarAbonoCreditoMutationBody = BodyType<CreditoAbonoInput>;
+export type EditarAbonoCreditoMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Editar un abono (revierte el anterior y aplica el nuevo)
+ */
+export const useEditarAbonoCredito = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof editarAbonoCredito>>,
+    TError,
+    { id: number; abonoId: number; data: BodyType<CreditoAbonoInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof editarAbonoCredito>>,
+  TError,
+  { id: number; abonoId: number; data: BodyType<CreditoAbonoInput> },
+  TContext
+> => {
+  return useMutation(getEditarAbonoCreditoMutationOptions(options));
+};
+
+/**
  * @summary Actualizar credito (abonar)
  */
 export const getActualizarCreditoUrl = (id: number) => {

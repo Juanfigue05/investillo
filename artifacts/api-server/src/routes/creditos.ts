@@ -459,24 +459,25 @@ router.post("/:id/abono", async (req, res) => {
       .where(eq(creditosTable.id, id))
       .returning();
 
-    // 3. Registrar en historial de abonos
-    await tx.insert(abonosCreditosTable).values({
+    // 3. Registrar en historial de abonos (guardamos el detalle por línea para poder revertir)
+    const lineaDetalle = JSON.stringify(applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })));
+    const [newAbono] = await tx.insert(abonosCreditosTable).values({
       creditoId: id,
       fecha: hoy,
       valorTotal: String(appliedTotal),
       notas: null,
-    });
+      lineaDetalle,
+    }).returning();
 
-    // 4. Crear filas en ventas_diarias
+    // 4. Crear filas en ventas_diarias (con referencia al abono para poder revertirlas)
     for (const { linea, valor: appliedValue } of applied) {
       const lineaValorTotal = toNum(linea.cantidad) * toNum(linea.precioVenta);
       const lineaValorRestanteAntes = Math.max(0, lineaValorTotal - toNum(linea.valorAbonado));
       const pagaCompleto = Math.abs(appliedValue - lineaValorRestanteAntes) < 1;
 
       if (pagaCompleto) {
-        // Pago completo del producto → fila tipo 'venta' con precios originales del crédito
         const refCompleto = `${conceptoBase} ${nombreAbreviado}`;
-        const pvUnidad = toNum(linea.precioVenta); // precio unitario
+        const pvUnidad = toNum(linea.precioVenta);
         const pcUnidad = toNum(linea.precioCompra ?? "0");
         const cant = toNum(linea.cantidad);
         const totalVenta = pvUnidad * cant;
@@ -495,9 +496,9 @@ router.post("/:id/abono", async (req, res) => {
           precioVentaTotal: String(totalVenta),
           beneficio: String(beneficio),
           descripcion: `Pago crédito${credito.concepto ? ` ${credito.concepto}` : ""}`,
+          creditoAbonoId: newAbono.id,
         });
       } else {
-        // Abono parcial → fila tipo 'credito' "Abono A"
         const refAbono = conceptoBase;
         await tx.insert(ventasDiariasTable).values({
           fecha: hoy,
@@ -511,6 +512,179 @@ router.post("/:id/abono", async (req, res) => {
           precioVentaTotal: String(appliedValue),
           beneficio: "0",
           descripcion: `Abono a crédito - ${credito.nombreCliente}`,
+          creditoAbonoId: newAbono.id,
+        });
+      }
+    }
+
+    return updatedCredito;
+  });
+
+  res.json(await mapCredito(updated));
+});
+
+// ── Helpers para revertir un abono ─────────────────────────────────────────
+async function revertirAbono(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  abono: typeof abonosCreditosTable.$inferSelect,
+) {
+  // 1. Revertir valorAbonado en cada línea de crédito
+  const lineas: { lineaId: number; valor: number }[] = abono.lineaDetalle
+    ? JSON.parse(abono.lineaDetalle)
+    : [];
+  for (const { lineaId, valor } of lineas) {
+    const [linea] = await tx
+      .select()
+      .from(creditoLineasTable)
+      .where(eq(creditoLineasTable.id, lineaId));
+    if (linea) {
+      const nuevo = Math.max(0, toNum(linea.valorAbonado) - valor);
+      await tx
+        .update(creditoLineasTable)
+        .set({ valorAbonado: String(nuevo) })
+        .where(eq(creditoLineasTable.id, lineaId));
+    }
+  }
+  // 2. Revertir valorAbonado del crédito
+  const [credito] = await tx
+    .select()
+    .from(creditosTable)
+    .where(eq(creditosTable.id, abono.creditoId));
+  if (credito) {
+    const nuevoAbonado = Math.max(0, toNum(credito.valorAbonado) - toNum(abono.valorTotal));
+    await tx
+      .update(creditosTable)
+      .set({ valorAbonado: String(nuevoAbonado), actualizadoEn: new Date() })
+      .where(eq(creditosTable.id, abono.creditoId));
+  }
+  // 3. Eliminar filas de ventas_diarias vinculadas
+  await tx
+    .delete(ventasDiariasTable)
+    .where(eq(ventasDiariasTable.creditoAbonoId, abono.id));
+}
+
+// DELETE /creditos/:id/abono/:abonoId — elimina un pago y revierte ventas
+router.delete("/:id/abono/:abonoId", async (req, res) => {
+  const creditoId = parseInt(req.params.id);
+  const abonoId = parseInt(req.params.abonoId);
+
+  const [abono] = await db
+    .select()
+    .from(abonosCreditosTable)
+    .where(and(eq(abonosCreditosTable.id, abonoId), eq(abonosCreditosTable.creditoId, creditoId)));
+
+  if (!abono) {
+    res.status(404).json({ error: "Abono no encontrado" });
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    await revertirAbono(tx, abono);
+    await tx.delete(abonosCreditosTable).where(eq(abonosCreditosTable.id, abonoId));
+  });
+
+  const [credito] = await db.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
+  if (!credito) { res.json({ ok: true }); return; }
+  res.json(await mapCredito(credito));
+});
+
+// PUT /creditos/:id/abono/:abonoId — edita un pago (revierte el anterior y aplica el nuevo)
+router.put("/:id/abono/:abonoId", async (req, res) => {
+  const creditoId = parseInt(req.params.id);
+  const abonoId = parseInt(req.params.abonoId);
+  const { valor, lineas } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[] };
+  const abonoTotal = parseFloat(String(valor));
+
+  if (!Number.isFinite(abonoTotal) || abonoTotal <= 0 || !Array.isArray(lineas) || lineas.length === 0) {
+    res.status(400).json({ error: "Selecciona al menos un producto y un valor válido" });
+    return;
+  }
+
+  const [abono] = await db
+    .select()
+    .from(abonosCreditosTable)
+    .where(and(eq(abonosCreditosTable.id, abonoId), eq(abonosCreditosTable.creditoId, creditoId)));
+  if (!abono) { res.status(404).json({ error: "Abono no encontrado" }); return; }
+
+  const [credito] = await db.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
+  if (!credito) { res.status(404).json({ error: "Crédito no encontrado" }); return; }
+
+  const updated = await db.transaction(async (tx) => {
+    // Revertir el abono anterior
+    await revertirAbono(tx, abono);
+
+    // Releer líneas del crédito después de la reversión
+    const lineIds = lineas.map((l) => l.lineaId);
+    const creditLines = await tx
+      .select()
+      .from(creditoLineasTable)
+      .where(and(eq(creditoLineasTable.creditoId, creditoId), inArray(creditoLineasTable.id, lineIds)));
+    const byId = new Map(creditLines.map((l) => [l.id, l]));
+
+    let appliedTotal = 0;
+    const applied: Array<{ linea: typeof creditoLineasTable.$inferSelect; valor: number }> = [];
+    for (const requested of lineas) {
+      const linea = byId.get(requested.lineaId);
+      if (!linea) continue;
+      const requestedValue = parseFloat(String(requested.valor));
+      const remaining = Math.max(0, toNum(linea.cantidad) * toNum(linea.precioVenta) - toNum(linea.valorAbonado));
+      const appliedValue = Math.min(requestedValue, remaining);
+      if (appliedValue > 0) { appliedTotal += appliedValue; applied.push({ linea, valor: appliedValue }); }
+    }
+    if (applied.length === 0) throw new Error("Sin líneas válidas para el nuevo valor");
+
+    // Aplicar nuevo abono a líneas
+    for (const { linea, valor: av } of applied) {
+      await tx
+        .update(creditoLineasTable)
+        .set({ valorAbonado: String(toNum(linea.valorAbonado) + av) })
+        .where(eq(creditoLineasTable.id, linea.id));
+    }
+
+    // Releer crédito (ya actualizado por revertirAbono)
+    const [creditoRevertido] = await tx.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
+    const newAbonado = toNum(creditoRevertido.valorAbonado) + appliedTotal;
+    const [updatedCredito] = await tx
+      .update(creditosTable)
+      .set({ valorAbonado: String(newAbonado), actualizadoEn: new Date() })
+      .where(eq(creditosTable.id, creditoId))
+      .returning();
+
+    // Actualizar el registro del abono con el nuevo valor y detalle
+    const hoy = new Date().toISOString().split("T")[0];
+    const lineaDetalle = JSON.stringify(applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })));
+    await tx
+      .update(abonosCreditosTable)
+      .set({ valorTotal: String(appliedTotal), fecha: hoy, lineaDetalle })
+      .where(eq(abonosCreditosTable.id, abonoId));
+
+    // Recrear filas de ventas_diarias
+    const nombreAbreviado = abreviarNombre(credito.nombreCliente);
+    const conceptoBase = credito.concepto ?? hoy;
+    for (const { linea, valor: appliedValue } of applied) {
+      const lineaValorTotal = toNum(linea.cantidad) * toNum(linea.precioVenta);
+      const lineaValorRestanteAntes = lineaValorTotal; // recién revertido → todo es restante
+      const pagaCompleto = Math.abs(appliedValue - lineaValorRestanteAntes) < 1;
+      if (pagaCompleto) {
+        const pvUnidad = toNum(linea.precioVenta);
+        const pcUnidad = toNum(linea.precioCompra ?? "0");
+        const cant = toNum(linea.cantidad);
+        await tx.insert(ventasDiariasTable).values({
+          fecha: hoy, referencia: `${conceptoBase} ${nombreAbreviado}`, tipoLinea: "venta",
+          productoId: linea.productoId ?? null, productoNombre: linea.productoNombre,
+          productoCodigo: linea.productoCodigo ?? null, productoMarca: linea.productoMarca ?? null,
+          cantidad: String(cant), precioCompraUnidad: String(pcUnidad), precioVentaUnidad: String(pvUnidad),
+          precioVentaTotal: String(pvUnidad * cant), beneficio: String((pvUnidad - pcUnidad) * cant),
+          descripcion: `Pago crédito${credito.concepto ? ` ${credito.concepto}` : ""}`,
+          creditoAbonoId: abonoId,
+        });
+      } else {
+        await tx.insert(ventasDiariasTable).values({
+          fecha: hoy, referencia: conceptoBase, tipoLinea: "credito",
+          productoNombre: `Abono A: ${linea.productoNombre}`, productoMarca: credito.nombreCliente,
+          cantidad: "1", precioCompraUnidad: "0", precioVentaUnidad: String(appliedValue),
+          precioVentaTotal: String(appliedValue), beneficio: "0",
+          descripcion: `Abono a crédito - ${credito.nombreCliente}`, creditoAbonoId: abonoId,
         });
       }
     }
