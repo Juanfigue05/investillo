@@ -865,7 +865,10 @@ export default function Inventario() {
                       Margen: {margen.toFixed(1)}%
                     </span>
                   </label>
-                  <input required type="number" value={formData.precioVentaSinIva} onChange={e => setFormData({ ...formData, precioVentaSinIva: parseFloat(e.target.value) || 0 })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
+                  <input required type="number" value={formData.precioVentaSinIva} onChange={e => setFormData({ ...formData, precioVentaSinIva: parseFloat(e.target.value) || 0 })} className={`w-full px-4 py-2 bg-background border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground ${formData.precioCompra > 0 && formData.precioVentaSinIva < formData.precioCompra ? "border-destructive" : "border-border"}`} />
+                  {formData.precioCompra > 0 && formData.precioVentaSinIva < formData.precioCompra && (
+                    <p className="text-destructive text-xs mt-1">⚠ Menor al costo</p>
+                  )}
                 </div>
               </div>
 
