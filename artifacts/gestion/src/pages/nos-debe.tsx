@@ -7,6 +7,7 @@ import {
   useEliminarCredito,
   useAbonarCredito,
   useGetInventario,
+  useGetClientes,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
 import { Plus, Trash2, X, Pencil, Search, ChevronDown, ChevronUp, Clock } from "lucide-react";
@@ -36,6 +37,7 @@ const emptyForm = {
 export default function NosDebePage() {
   const { data: creditos, isLoading } = useGetCreditos({ tipo: TIPO });
   const { data: productos } = useGetInventario();
+  const { data: clientes } = useGetClientes({});
   const queryClient = useQueryClient();
 
   const [showForm, setShowForm] = useState(false);
@@ -61,6 +63,19 @@ export default function NosDebePage() {
   const removeLinea = (id: number) => { if (lineas.length > 1) setLineas((prev) => prev.filter((l) => l.id !== id)); };
   const updateLinea = (id: number, field: keyof LineaInput, value: string) =>
     setLineas((prev) => prev.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
+
+  const handleClienteSelect = (nombre: string) => {
+    const cliente = clientes?.find((c) => c.nombre === nombre);
+    if (cliente) {
+      setForm((prev) => ({
+        ...prev,
+        nombreCliente: cliente.nombre,
+        telefonoCliente: cliente.telefono ?? prev.telefonoCliente,
+      }));
+    } else {
+      setForm((prev) => ({ ...prev, nombreCliente: nombre }));
+    }
+  };
 
   const totalLineas = lineas.reduce((sum, l) => sum + (parseFloat(l.cantidad) || 0) * (parseFloat(l.precioVenta) || 0), 0);
 
@@ -232,7 +247,20 @@ export default function NosDebePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Nombre <span className="text-destructive">*</span></label>
-                  <input type="text" value={form.nombreCliente} onChange={(e) => setForm({ ...form, nombreCliente: e.target.value })} className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
+                  <input
+                    type="text"
+                    value={form.nombreCliente}
+                    onChange={(e) => handleClienteSelect(e.target.value)}
+                    list="clientes-list-nd"
+                    placeholder="Nombre del cliente (selecciona o escribe)"
+                    className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
+                  />
+                  <datalist id="clientes-list-nd">
+                    {clientes?.map((c) => <option key={c.id} value={c.nombre} />)}
+                  </datalist>
+                  {clientes && clientes.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">Escribe para buscar clientes guardados o ingresa uno nuevo.</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Fecha <span className="text-destructive">*</span></label>

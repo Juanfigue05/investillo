@@ -734,6 +734,180 @@ paths:
               schema:
                 $ref: "#/components/schemas/Dashboard"
 
+  /clientes:
+    get:
+      operationId: getClientes
+      tags: [clientes]
+      summary: Lista de clientes
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Búsqueda por nombre, teléfono o correo
+      responses:
+        "200":
+          description: Lista de clientes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Cliente"
+    post:
+      operationId: crearCliente
+      tags: [clientes]
+      summary: Crear un cliente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClienteInput"
+      responses:
+        "201":
+          description: Cliente creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cliente"
+
+  /clientes/{id}:
+    get:
+      operationId: getCliente
+      tags: [clientes]
+      summary: Obtener cliente por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cliente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cliente"
+    put:
+      operationId: actualizarCliente
+      tags: [clientes]
+      summary: Actualizar cliente
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClienteUpdateInput"
+      responses:
+        "200":
+          description: Cliente actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cliente"
+    delete:
+      operationId: eliminarCliente
+      tags: [clientes]
+      summary: Eliminar cliente
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cliente eliminado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MensajeRespuesta"
+
+  /clientes/{id}/vehiculos:
+    post:
+      operationId: agregarVehiculo
+      tags: [clientes]
+      summary: Agregar vehículo a un cliente
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VehiculoInput"
+      responses:
+        "201":
+          description: Vehículo agregado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Vehiculo"
+
+  /clientes/{id}/vehiculos/{vid}:
+    put:
+      operationId: actualizarVehiculo
+      tags: [clientes]
+      summary: Actualizar vehículo
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: vid
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VehiculoInput"
+      responses:
+        "200":
+          description: Vehículo actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Vehiculo"
+    delete:
+      operationId: eliminarVehiculo
+      tags: [clientes]
+      summary: Eliminar vehículo
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: vid
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Vehículo eliminado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MensajeRespuesta"
+
 components:
   schemas:
     HealthStatus:
@@ -1589,3 +1763,104 @@ components:
         - productosAlerta
         - productosAgotados
         - ventasHoy
+
+    Vehiculo:
+      type: object
+      properties:
+        id:
+          type: integer
+        clienteId:
+          type: integer
+        placa:
+          type: string
+        descripcion:
+          type: string
+          nullable: true
+        creadoEn:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - clienteId
+        - placa
+
+    VehiculoInput:
+      type: object
+      properties:
+        placa:
+          type: string
+        descripcion:
+          type: string
+          nullable: true
+      required:
+        - placa
+
+    Cliente:
+      type: object
+      properties:
+        id:
+          type: integer
+        nombre:
+          type: string
+        telefono:
+          type: string
+          nullable: true
+        correo:
+          type: string
+          nullable: true
+        notas:
+          type: string
+          nullable: true
+        creadoEn:
+          type: string
+          format: date-time
+          nullable: true
+        actualizadoEn:
+          type: string
+          format: date-time
+          nullable: true
+        vehiculos:
+          type: array
+          items:
+            $ref: "#/components/schemas/Vehiculo"
+      required:
+        - id
+        - nombre
+        - vehiculos
+
+    ClienteInput:
+      type: object
+      properties:
+        nombre:
+          type: string
+        telefono:
+          type: string
+          nullable: true
+        correo:
+          type: string
+          nullable: true
+        notas:
+          type: string
+          nullable: true
+        vehiculos:
+          type: array
+          items:
+            $ref: "#/components/schemas/VehiculoInput"
+      required:
+        - nombre
+
+    ClienteUpdateInput:
+      type: object
+      properties:
+        nombre:
+          type: string
+        telefono:
+          type: string
+          nullable: true
+        correo:
+          type: string
+          nullable: true
+        notas:
+          type: string
+          nullable: true

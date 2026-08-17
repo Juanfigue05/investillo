@@ -17,6 +17,9 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  Cliente,
+  ClienteInput,
+  ClienteUpdateInput,
   Compra,
   CompraInput,
   CompraUpdate,
@@ -25,6 +28,7 @@ import type {
   CreditoInput,
   CreditoUpdate,
   Dashboard,
+  GetClientesParams,
   GetCreditosParams,
   GetHistorialPreciosParams,
   GetManoObraParams,
@@ -45,6 +49,8 @@ import type {
   StockUpdate,
   Trabajador,
   TrabajadorInput,
+  Vehiculo,
+  VehiculoInput,
   VentaDiaria,
   VentaDiariaInput,
   VentaResumenDia,
@@ -3187,3 +3193,701 @@ export function useGetDashboard<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Lista de clientes
+ */
+export const getGetClientesUrl = (params?: GetClientesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clientes?${stringifiedParams}`
+    : `/api/clientes`;
+};
+
+export const getClientes = async (
+  params?: GetClientesParams,
+  options?: RequestInit,
+): Promise<Cliente[]> => {
+  return customFetch<Cliente[]>(getGetClientesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetClientesQueryKey = (params?: GetClientesParams) => {
+  return [`/api/clientes`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetClientesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getClientes>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetClientesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClientes>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetClientesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getClientes>>> = ({
+    signal,
+  }) => getClientes(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getClientes>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetClientesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getClientes>>
+>;
+export type GetClientesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Lista de clientes
+ */
+
+export function useGetClientes<
+  TData = Awaited<ReturnType<typeof getClientes>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetClientesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClientes>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetClientesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Crear un cliente
+ */
+export const getCrearClienteUrl = () => {
+  return `/api/clientes`;
+};
+
+export const crearCliente = async (
+  clienteInput: ClienteInput,
+  options?: RequestInit,
+): Promise<Cliente> => {
+  return customFetch<Cliente>(getCrearClienteUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(clienteInput),
+  });
+};
+
+export const getCrearClienteMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof crearCliente>>,
+    TError,
+    { data: BodyType<ClienteInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof crearCliente>>,
+  TError,
+  { data: BodyType<ClienteInput> },
+  TContext
+> => {
+  const mutationKey = ["crearCliente"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof crearCliente>>,
+    { data: BodyType<ClienteInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return crearCliente(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CrearClienteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof crearCliente>>
+>;
+export type CrearClienteMutationBody = BodyType<ClienteInput>;
+export type CrearClienteMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Crear un cliente
+ */
+export const useCrearCliente = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof crearCliente>>,
+    TError,
+    { data: BodyType<ClienteInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof crearCliente>>,
+  TError,
+  { data: BodyType<ClienteInput> },
+  TContext
+> => {
+  return useMutation(getCrearClienteMutationOptions(options));
+};
+
+/**
+ * @summary Obtener cliente por ID
+ */
+export const getGetClienteUrl = (id: number) => {
+  return `/api/clientes/${id}`;
+};
+
+export const getCliente = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Cliente> => {
+  return customFetch<Cliente>(getGetClienteUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetClienteQueryKey = (id: number) => {
+  return [`/api/clientes/${id}`] as const;
+};
+
+export const getGetClienteQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCliente>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCliente>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetClienteQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCliente>>> = ({
+    signal,
+  }) => getCliente(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCliente>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetClienteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCliente>>
+>;
+export type GetClienteQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Obtener cliente por ID
+ */
+
+export function useGetCliente<
+  TData = Awaited<ReturnType<typeof getCliente>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCliente>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetClienteQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Actualizar cliente
+ */
+export const getActualizarClienteUrl = (id: number) => {
+  return `/api/clientes/${id}`;
+};
+
+export const actualizarCliente = async (
+  id: number,
+  clienteUpdateInput: ClienteUpdateInput,
+  options?: RequestInit,
+): Promise<Cliente> => {
+  return customFetch<Cliente>(getActualizarClienteUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(clienteUpdateInput),
+  });
+};
+
+export const getActualizarClienteMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof actualizarCliente>>,
+    TError,
+    { id: number; data: BodyType<ClienteUpdateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof actualizarCliente>>,
+  TError,
+  { id: number; data: BodyType<ClienteUpdateInput> },
+  TContext
+> => {
+  const mutationKey = ["actualizarCliente"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof actualizarCliente>>,
+    { id: number; data: BodyType<ClienteUpdateInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return actualizarCliente(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ActualizarClienteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof actualizarCliente>>
+>;
+export type ActualizarClienteMutationBody = BodyType<ClienteUpdateInput>;
+export type ActualizarClienteMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Actualizar cliente
+ */
+export const useActualizarCliente = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof actualizarCliente>>,
+    TError,
+    { id: number; data: BodyType<ClienteUpdateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof actualizarCliente>>,
+  TError,
+  { id: number; data: BodyType<ClienteUpdateInput> },
+  TContext
+> => {
+  return useMutation(getActualizarClienteMutationOptions(options));
+};
+
+/**
+ * @summary Eliminar cliente
+ */
+export const getEliminarClienteUrl = (id: number) => {
+  return `/api/clientes/${id}`;
+};
+
+export const eliminarCliente = async (
+  id: number,
+  options?: RequestInit,
+): Promise<MensajeRespuesta> => {
+  return customFetch<MensajeRespuesta>(getEliminarClienteUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getEliminarClienteMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof eliminarCliente>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof eliminarCliente>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["eliminarCliente"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof eliminarCliente>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return eliminarCliente(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type EliminarClienteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof eliminarCliente>>
+>;
+
+export type EliminarClienteMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Eliminar cliente
+ */
+export const useEliminarCliente = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof eliminarCliente>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof eliminarCliente>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getEliminarClienteMutationOptions(options));
+};
+
+/**
+ * @summary Agregar vehículo a un cliente
+ */
+export const getAgregarVehiculoUrl = (id: number) => {
+  return `/api/clientes/${id}/vehiculos`;
+};
+
+export const agregarVehiculo = async (
+  id: number,
+  vehiculoInput: VehiculoInput,
+  options?: RequestInit,
+): Promise<Vehiculo> => {
+  return customFetch<Vehiculo>(getAgregarVehiculoUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(vehiculoInput),
+  });
+};
+
+export const getAgregarVehiculoMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof agregarVehiculo>>,
+    TError,
+    { id: number; data: BodyType<VehiculoInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof agregarVehiculo>>,
+  TError,
+  { id: number; data: BodyType<VehiculoInput> },
+  TContext
+> => {
+  const mutationKey = ["agregarVehiculo"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof agregarVehiculo>>,
+    { id: number; data: BodyType<VehiculoInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return agregarVehiculo(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AgregarVehiculoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof agregarVehiculo>>
+>;
+export type AgregarVehiculoMutationBody = BodyType<VehiculoInput>;
+export type AgregarVehiculoMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Agregar vehículo a un cliente
+ */
+export const useAgregarVehiculo = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof agregarVehiculo>>,
+    TError,
+    { id: number; data: BodyType<VehiculoInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof agregarVehiculo>>,
+  TError,
+  { id: number; data: BodyType<VehiculoInput> },
+  TContext
+> => {
+  return useMutation(getAgregarVehiculoMutationOptions(options));
+};
+
+/**
+ * @summary Actualizar vehículo
+ */
+export const getActualizarVehiculoUrl = (id: number, vid: number) => {
+  return `/api/clientes/${id}/vehiculos/${vid}`;
+};
+
+export const actualizarVehiculo = async (
+  id: number,
+  vid: number,
+  vehiculoInput: VehiculoInput,
+  options?: RequestInit,
+): Promise<Vehiculo> => {
+  return customFetch<Vehiculo>(getActualizarVehiculoUrl(id, vid), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(vehiculoInput),
+  });
+};
+
+export const getActualizarVehiculoMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof actualizarVehiculo>>,
+    TError,
+    { id: number; vid: number; data: BodyType<VehiculoInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof actualizarVehiculo>>,
+  TError,
+  { id: number; vid: number; data: BodyType<VehiculoInput> },
+  TContext
+> => {
+  const mutationKey = ["actualizarVehiculo"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof actualizarVehiculo>>,
+    { id: number; vid: number; data: BodyType<VehiculoInput> }
+  > = (props) => {
+    const { id, vid, data } = props ?? {};
+
+    return actualizarVehiculo(id, vid, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ActualizarVehiculoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof actualizarVehiculo>>
+>;
+export type ActualizarVehiculoMutationBody = BodyType<VehiculoInput>;
+export type ActualizarVehiculoMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Actualizar vehículo
+ */
+export const useActualizarVehiculo = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof actualizarVehiculo>>,
+    TError,
+    { id: number; vid: number; data: BodyType<VehiculoInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof actualizarVehiculo>>,
+  TError,
+  { id: number; vid: number; data: BodyType<VehiculoInput> },
+  TContext
+> => {
+  return useMutation(getActualizarVehiculoMutationOptions(options));
+};
+
+/**
+ * @summary Eliminar vehículo
+ */
+export const getEliminarVehiculoUrl = (id: number, vid: number) => {
+  return `/api/clientes/${id}/vehiculos/${vid}`;
+};
+
+export const eliminarVehiculo = async (
+  id: number,
+  vid: number,
+  options?: RequestInit,
+): Promise<MensajeRespuesta> => {
+  return customFetch<MensajeRespuesta>(getEliminarVehiculoUrl(id, vid), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getEliminarVehiculoMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof eliminarVehiculo>>,
+    TError,
+    { id: number; vid: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof eliminarVehiculo>>,
+  TError,
+  { id: number; vid: number },
+  TContext
+> => {
+  const mutationKey = ["eliminarVehiculo"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof eliminarVehiculo>>,
+    { id: number; vid: number }
+  > = (props) => {
+    const { id, vid } = props ?? {};
+
+    return eliminarVehiculo(id, vid, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type EliminarVehiculoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof eliminarVehiculo>>
+>;
+
+export type EliminarVehiculoMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Eliminar vehículo
+ */
+export const useEliminarVehiculo = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof eliminarVehiculo>>,
+    TError,
+    { id: number; vid: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof eliminarVehiculo>>,
+  TError,
+  { id: number; vid: number },
+  TContext
+> => {
+  return useMutation(getEliminarVehiculoMutationOptions(options));
+};

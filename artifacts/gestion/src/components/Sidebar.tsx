@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Calculator,
   History,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { href: "/facturacion", label: "Facturación DIAN", icon: Receipt },
   { href: "/historial", label: "Historial de Ventas", icon: BookOpen },
   { href: "/historial-precios", label: "Historial de Precios", icon: TrendingUp },
+  { href: "/clientes", label: "Clientes", icon: Users },
 ];
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {

@@ -7,6 +7,9 @@
  */
 
 export * from "./abonoCredito";
+export * from "./cliente";
+export * from "./clienteInput";
+export * from "./clienteUpdateInput";
 export * from "./compra";
 export * from "./compraEstado";
 export * from "./compraInput";
@@ -23,6 +26,7 @@ export * from "./creditoUpdate";
 export * from "./dashboard";
 export * from "./distribucionTrabajador";
 export * from "./distribucionTrabajadorInput";
+export * from "./getClientesParams";
 export * from "./getCreditosParams";
 export * from "./getCreditosTipo";
 export * from "./getHistorialPreciosParams";
@@ -44,6 +48,8 @@ export * from "./productoInput";
 export * from "./stockUpdate";
 export * from "./trabajador";
 export * from "./trabajadorInput";
+export * from "./vehiculo";
+export * from "./vehiculoInput";
 export * from "./ventaDiaria";
 export * from "./ventaDiariaInput";
 export * from "./ventaDiariaInputTipoLinea";

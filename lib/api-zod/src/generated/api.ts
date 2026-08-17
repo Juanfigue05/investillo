@@ -976,8 +976,10 @@ export const EliminarHistorialResponse = zod.object({
  */
 export const GetDashboardResponse = zod.object({
   totalVentasHoy: zod.number(),
-  noDeben: zod.number().describe("Total que nos deben en creditos pendientes"),
-  totalNosDebe: zod.number().describe("Total pendiente en Nos Debe (tipo=nosdebe)"),
+  noDeben: zod.number().describe("Total pendiente en creditos (tipo=credito)"),
+  totalNosDebe: zod
+    .number()
+    .describe("Total pendiente en Nos Debe (tipo=nosdebe)"),
   totalComprasRecibidas: zod
     .number()
     .describe("Suma total de compras recibidas (estado=llegado)"),
@@ -986,4 +988,167 @@ export const GetDashboardResponse = zod.object({
     .describe("Cantidad de productos con alerta de stock bajo"),
   productosAgotados: zod.number(),
   ventasHoy: zod.number().describe("Numero de ventas del dia"),
+});
+
+/**
+ * @summary Lista de clientes
+ */
+export const GetClientesQueryParams = zod.object({
+  q: zod.coerce
+    .string()
+    .optional()
+    .describe("Búsqueda por nombre, teléfono o correo"),
+});
+
+export const GetClientesResponseItem = zod.object({
+  id: zod.number(),
+  nombre: zod.string(),
+  telefono: zod.string().nullish(),
+  correo: zod.string().nullish(),
+  notas: zod.string().nullish(),
+  creadoEn: zod.coerce.date().nullish(),
+  actualizadoEn: zod.coerce.date().nullish(),
+  vehiculos: zod.array(
+    zod.object({
+      id: zod.number(),
+      clienteId: zod.number(),
+      placa: zod.string(),
+      descripcion: zod.string().nullish(),
+      creadoEn: zod.coerce.date().nullish(),
+    }),
+  ),
+});
+export const GetClientesResponse = zod.array(GetClientesResponseItem);
+
+/**
+ * @summary Crear un cliente
+ */
+export const CrearClienteBody = zod.object({
+  nombre: zod.string(),
+  telefono: zod.string().nullish(),
+  correo: zod.string().nullish(),
+  notas: zod.string().nullish(),
+  vehiculos: zod
+    .array(
+      zod.object({
+        placa: zod.string(),
+        descripcion: zod.string().nullish(),
+      }),
+    )
+    .optional(),
+});
+
+/**
+ * @summary Obtener cliente por ID
+ */
+export const GetClienteParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetClienteResponse = zod.object({
+  id: zod.number(),
+  nombre: zod.string(),
+  telefono: zod.string().nullish(),
+  correo: zod.string().nullish(),
+  notas: zod.string().nullish(),
+  creadoEn: zod.coerce.date().nullish(),
+  actualizadoEn: zod.coerce.date().nullish(),
+  vehiculos: zod.array(
+    zod.object({
+      id: zod.number(),
+      clienteId: zod.number(),
+      placa: zod.string(),
+      descripcion: zod.string().nullish(),
+      creadoEn: zod.coerce.date().nullish(),
+    }),
+  ),
+});
+
+/**
+ * @summary Actualizar cliente
+ */
+export const ActualizarClienteParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ActualizarClienteBody = zod.object({
+  nombre: zod.string().optional(),
+  telefono: zod.string().nullish(),
+  correo: zod.string().nullish(),
+  notas: zod.string().nullish(),
+});
+
+export const ActualizarClienteResponse = zod.object({
+  id: zod.number(),
+  nombre: zod.string(),
+  telefono: zod.string().nullish(),
+  correo: zod.string().nullish(),
+  notas: zod.string().nullish(),
+  creadoEn: zod.coerce.date().nullish(),
+  actualizadoEn: zod.coerce.date().nullish(),
+  vehiculos: zod.array(
+    zod.object({
+      id: zod.number(),
+      clienteId: zod.number(),
+      placa: zod.string(),
+      descripcion: zod.string().nullish(),
+      creadoEn: zod.coerce.date().nullish(),
+    }),
+  ),
+});
+
+/**
+ * @summary Eliminar cliente
+ */
+export const EliminarClienteParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const EliminarClienteResponse = zod.object({
+  mensaje: zod.string(),
+});
+
+/**
+ * @summary Agregar vehículo a un cliente
+ */
+export const AgregarVehiculoParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const AgregarVehiculoBody = zod.object({
+  placa: zod.string(),
+  descripcion: zod.string().nullish(),
+});
+
+/**
+ * @summary Actualizar vehículo
+ */
+export const ActualizarVehiculoParams = zod.object({
+  id: zod.coerce.number(),
+  vid: zod.coerce.number(),
+});
+
+export const ActualizarVehiculoBody = zod.object({
+  placa: zod.string(),
+  descripcion: zod.string().nullish(),
+});
+
+export const ActualizarVehiculoResponse = zod.object({
+  id: zod.number(),
+  clienteId: zod.number(),
+  placa: zod.string(),
+  descripcion: zod.string().nullish(),
+  creadoEn: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Eliminar vehículo
+ */
+export const EliminarVehiculoParams = zod.object({
+  id: zod.coerce.number(),
+  vid: zod.coerce.number(),
+});
+
+export const EliminarVehiculoResponse = zod.object({
+  mensaje: zod.string(),
 });

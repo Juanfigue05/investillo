@@ -8,7 +8,7 @@
 
 export interface Dashboard {
   totalVentasHoy: number;
-  /** Total que nos deben en creditos pendientes */
+  /** Total pendiente en creditos (tipo=credito) */
   noDeben: number;
   /** Total pendiente en Nos Debe (tipo=nosdebe) */
   totalNosDebe: number;

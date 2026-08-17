@@ -15,6 +15,7 @@ import NosDebePage from "@/pages/nos-debe";
 import HistorialPrecios from "@/pages/historial-precios";
 import CierreDiario from "@/pages/cierre-diario";
 import HistorialCierres from "@/pages/historial-cierres";
+import ClientesPage from "@/pages/clientes";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -33,6 +34,7 @@ function Router() {
       <Route path="/historial-precios" component={HistorialPrecios} />
       <Route path="/cierre-diario" component={CierreDiario} />
       <Route path="/historial-cierres" component={HistorialCierres} />
+      <Route path="/clientes" component={ClientesPage} />
       <Route component={NotFound} />
     </Switch>
   );

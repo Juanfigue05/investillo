@@ -391,6 +391,45 @@ export interface Dashboard {
   ventasHoy: number;
 }
 
+export interface Vehiculo {
+  id: number;
+  clienteId: number;
+  placa: string;
+  descripcion?: string | null;
+  creadoEn?: string | null;
+}
+
+export interface VehiculoInput {
+  placa: string;
+  descripcion?: string | null;
+}
+
+export interface Cliente {
+  id: number;
+  nombre: string;
+  telefono?: string | null;
+  correo?: string | null;
+  notas?: string | null;
+  creadoEn?: string | null;
+  actualizadoEn?: string | null;
+  vehiculos: Vehiculo[];
+}
+
+export interface ClienteInput {
+  nombre: string;
+  telefono?: string | null;
+  correo?: string | null;
+  notas?: string | null;
+  vehiculos?: VehiculoInput[];
+}
+
+export interface ClienteUpdateInput {
+  nombre?: string;
+  telefono?: string | null;
+  correo?: string | null;
+  notas?: string | null;
+}
+
 export type GetVentasParams = {
   fecha?: string;
 };
@@ -418,4 +457,11 @@ export type GetManoObraParams = {
 
 export type GetHistorialPreciosParams = {
   productoId?: number;
+};
+
+export type GetClientesParams = {
+  /**
+   * Búsqueda por nombre, teléfono o correo
+   */
+  q?: string;
 };

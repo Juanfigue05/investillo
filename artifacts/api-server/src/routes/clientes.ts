@@ -1,0 +1,162 @@
+import { Router, type IRouter } from "express";
+import { db } from "@workspace/db";
+import { clientesTable, vehiculosClienteTable } from "@workspace/db/schema";
+import { eq, desc, ilike, or, and } from "drizzle-orm";
+
+const router: IRouter = Router();
+
+async function mapCliente(c: typeof clientesTable.$inferSelect) {
+  const vehiculos = await db
+    .select()
+    .from(vehiculosClienteTable)
+    .where(eq(vehiculosClienteTable.clienteId, c.id))
+    .orderBy(vehiculosClienteTable.id);
+  return {
+    id: c.id,
+    nombre: c.nombre,
+    telefono: c.telefono ?? null,
+    correo: c.correo ?? null,
+    notas: c.notas ?? null,
+    creadoEn: c.creadoEn,
+    actualizadoEn: c.actualizadoEn,
+    vehiculos: vehiculos.map((v) => ({
+      id: v.id,
+      clienteId: v.clienteId,
+      placa: v.placa,
+      descripcion: v.descripcion ?? null,
+      creadoEn: v.creadoEn,
+    })),
+  };
+}
+
+// GET /clientes?q=texto
+router.get("/", async (req, res) => {
+  const q = (req.query.q as string | undefined)?.trim();
+  const rows = q
+    ? await db
+        .select()
+        .from(clientesTable)
+        .where(
+          or(
+            ilike(clientesTable.nombre, `%${q}%`),
+            ilike(clientesTable.telefono, `%${q}%`),
+            ilike(clientesTable.correo, `%${q}%`),
+          ),
+        )
+        .orderBy(desc(clientesTable.creadoEn))
+    : await db.select().from(clientesTable).orderBy(desc(clientesTable.creadoEn));
+  res.json(await Promise.all(rows.map(mapCliente)));
+});
+
+// GET /clientes/:id
+router.get("/:id", async (req, res) => {
+  const id = parseInt(req.params.id);
+  const [c] = await db.select().from(clientesTable).where(eq(clientesTable.id, id));
+  if (!c) { res.status(404).json({ error: "Cliente no encontrado" }); return; }
+  res.json(await mapCliente(c));
+});
+
+// POST /clientes
+router.post("/", async (req, res) => {
+  const { nombre, telefono, correo, notas, vehiculos = [] } = req.body as {
+    nombre: string;
+    telefono?: string;
+    correo?: string;
+    notas?: string;
+    vehiculos?: { placa: string; descripcion?: string }[];
+  };
+  if (!nombre?.trim()) { res.status(400).json({ error: "Nombre es obligatorio" }); return; }
+
+  const cliente = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(clientesTable)
+      .values({ nombre: nombre.trim(), telefono: telefono || null, correo: correo || null, notas: notas || null })
+      .returning();
+    if (Array.isArray(vehiculos) && vehiculos.length > 0) {
+      const validVehiculos = vehiculos.filter((v) => v.placa?.trim());
+      if (validVehiculos.length > 0) {
+        await tx.insert(vehiculosClienteTable).values(
+          validVehiculos.map((v) => ({ clienteId: created.id, placa: v.placa.trim(), descripcion: v.descripcion || null })),
+        );
+      }
+    }
+    return created;
+  });
+  res.status(201).json(await mapCliente(cliente));
+});
+
+// PUT /clientes/:id
+router.put("/:id", async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { nombre, telefono, correo, notas } = req.body as {
+    nombre?: string;
+    telefono?: string | null;
+    correo?: string | null;
+    notas?: string | null;
+  };
+  const [existing] = await db.select().from(clientesTable).where(eq(clientesTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Cliente no encontrado" }); return; }
+
+  const update: Partial<typeof clientesTable.$inferInsert> = { actualizadoEn: new Date() };
+  if (nombre !== undefined) update.nombre = nombre.trim();
+  if (telefono !== undefined) update.telefono = telefono || null;
+  if (correo !== undefined) update.correo = correo || null;
+  if (notas !== undefined) update.notas = notas || null;
+
+  const [updated] = await db.update(clientesTable).set(update).where(eq(clientesTable.id, id)).returning();
+  res.json(await mapCliente(updated));
+});
+
+// DELETE /clientes/:id
+router.delete("/:id", async (req, res) => {
+  const id = parseInt(req.params.id);
+  await db.delete(vehiculosClienteTable).where(eq(vehiculosClienteTable.clienteId, id));
+  await db.delete(clientesTable).where(eq(clientesTable.id, id));
+  res.json({ mensaje: "Cliente eliminado" });
+});
+
+// POST /clientes/:id/vehiculos
+router.post("/:id/vehiculos", async (req, res) => {
+  const clienteId = parseInt(req.params.id);
+  const { placa, descripcion } = req.body as { placa: string; descripcion?: string };
+  if (!placa?.trim()) { res.status(400).json({ error: "Placa es obligatoria" }); return; }
+  // Verify parent client exists
+  const [cliente] = await db.select({ id: clientesTable.id }).from(clientesTable).where(eq(clientesTable.id, clienteId));
+  if (!cliente) { res.status(404).json({ error: "Cliente no encontrado" }); return; }
+  const [v] = await db
+    .insert(vehiculosClienteTable)
+    .values({ clienteId, placa: placa.trim(), descripcion: descripcion || null })
+    .returning();
+  res.status(201).json({ id: v.id, clienteId: v.clienteId, placa: v.placa, descripcion: v.descripcion ?? null, creadoEn: v.creadoEn });
+});
+
+// PUT /clientes/:id/vehiculos/:vid
+router.put("/:id/vehiculos/:vid", async (req, res) => {
+  const clienteId = parseInt(req.params.id);
+  const vid = parseInt(req.params.vid);
+  const { placa, descripcion } = req.body as { placa?: string; descripcion?: string | null };
+  const update: Partial<typeof vehiculosClienteTable.$inferInsert> = {};
+  if (placa !== undefined) update.placa = placa.trim();
+  if (descripcion !== undefined) update.descripcion = descripcion || null;
+  const [updated] = await db
+    .update(vehiculosClienteTable)
+    .set(update)
+    .where(and(eq(vehiculosClienteTable.id, vid), eq(vehiculosClienteTable.clienteId, clienteId)))
+    .returning();
+  if (!updated) { res.status(404).json({ error: "Vehículo no encontrado" }); return; }
+  res.json({ id: updated.id, clienteId: updated.clienteId, placa: updated.placa, descripcion: updated.descripcion ?? null, creadoEn: updated.creadoEn });
+});
+
+// DELETE /clientes/:id/vehiculos/:vid
+router.delete("/:id/vehiculos/:vid", async (req, res) => {
+  const clienteId = parseInt(req.params.id);
+  const vid = parseInt(req.params.vid);
+  const deleted = await db
+    .delete(vehiculosClienteTable)
+    .where(and(eq(vehiculosClienteTable.id, vid), eq(vehiculosClienteTable.clienteId, clienteId)))
+    .returning();
+  if (deleted.length === 0) { res.status(404).json({ error: "Vehículo no encontrado" }); return; }
+  res.json({ mensaje: "Vehículo eliminado" });
+});
+
+export default router;
