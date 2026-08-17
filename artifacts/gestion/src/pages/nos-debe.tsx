@@ -49,6 +49,7 @@ const emptyForm = {
   telefonoCliente: "",
   placaVehiculo: "",
   valorAbonado: "0",
+  descripcion: "",
 };
 
 export default function NosDebePage() {
@@ -72,6 +73,7 @@ export default function NosDebePage() {
   const [expandedAbonos, setExpandedAbonos] = useState<Set<number>>(new Set());
   const [manoObra, setManoObra] = useState<ManoObraState>({ ...emptyManoObra });
   const [aplicaIva, setAplicaIva] = useState(false);
+  const [editingHasAbonos, setEditingHasAbonos] = useState(false);
   const [ivaLinea, setIvaLinea] = useState<{ id?: number; valorAbonado?: number }>({});
   const [editingAbonoId, setEditingAbonoId] = useState<number | null>(null);
 
@@ -150,7 +152,8 @@ export default function NosDebePage() {
   const openEdit = (c: any) => {
     setEditingId(c.id);
     setShowForm(true);
-    setForm({ fechaFactura: c.fechaFactura, nombreCliente: c.nombreCliente, telefonoCliente: c.telefonoCliente || "", placaVehiculo: c.placaVehiculo || "", valorAbonado: String(c.valorAbonado || 0) });
+    setEditingHasAbonos((c.abonos?.length ?? 0) > 0);
+    setForm({ fechaFactura: c.fechaFactura, nombreCliente: c.nombreCliente, telefonoCliente: c.telefonoCliente || "", placaVehiculo: c.placaVehiculo || "", valorAbonado: String(c.valorAbonado || 0), descripcion: c.descripcion || "" });
     const moLine = c.lineas.find((l: any) => l.productoNombre === MO_NOMBRE);
     const ivaLine = c.lineas.find((l: any) => l.productoNombre === IVA_NOMBRE);
     const prodLines = c.lineas.filter((l: any) => l !== moLine && l !== ivaLine);
@@ -226,6 +229,7 @@ export default function NosDebePage() {
       fechaFactura: form.fechaFactura, nombreCliente: form.nombreCliente,
       telefonoCliente: form.telefonoCliente || undefined,
       placaVehiculo: form.placaVehiculo || undefined,
+      descripcion: form.descripcion?.trim() || undefined,
       valorCredito: totalFinal,
       valorAbonado: editingId ? parseFloat(form.valorAbonado) || 0 : initialAbono,
       lineas: payloadLineas,
@@ -249,7 +253,7 @@ export default function NosDebePage() {
         setForm({ ...emptyForm });
         setLineas([{ id: -Date.now(), cantidad: "1", productoNombre: "", marca: "", precioVenta: "", precioCompra: "0" }]);
         setManoObra({ ...emptyManoObra });
-        setAplicaIva(false); setIvaLinea({});
+        setAplicaIva(false); setIvaLinea({}); setEditingHasAbonos(false);
       },
     };
     if (editingId) actualizarMutation.mutate({ id: editingId, data }, options);
@@ -509,15 +513,36 @@ export default function NosDebePage() {
 
               {/* IVA */}
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 bg-muted/30 border border-border rounded-xl px-4 py-3">
-                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-                  <input type="checkbox" checked={aplicaIva} onChange={(e) => setAplicaIva(e.target.checked)} className="w-4 h-4 accent-primary" />
+                <label className={`flex items-center gap-2 text-sm font-medium ${editingId && editingHasAbonos ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
+                  <input
+                    type="checkbox"
+                    checked={aplicaIva}
+                    onChange={(e) => setAplicaIva(e.target.checked)}
+                    disabled={!!(editingId && editingHasAbonos)}
+                    className="w-4 h-4 accent-primary disabled:cursor-not-allowed"
+                  />
                   Aplicar IVA (19%)
                 </label>
+                {editingId && editingHasAbonos && (
+                  <p className="text-xs text-amber-500">IVA no editable — el registro ya tiene pagos registrados</p>
+                )}
                 {aplicaIva && (
                   <p className="text-xs text-muted-foreground">
                     Subtotal {formatCurrency(baseTotal)} + IVA {formatCurrency(ivaValor)} = <span className="font-bold text-primary">{formatCurrency(totalFinal)}</span>
                   </p>
                 )}
+              </div>
+
+              {/* Observación general */}
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Observación general (opcional)</label>
+                <textarea
+                  rows={2}
+                  placeholder="Notas sobre el registro, condiciones especiales, etc."
+                  value={form.descripcion}
+                  onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
+                  className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm resize-none"
+                />
               </div>
 
               <div className="flex gap-3 justify-end border-t border-border pt-4">
