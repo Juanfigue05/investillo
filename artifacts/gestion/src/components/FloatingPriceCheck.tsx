@@ -35,7 +35,6 @@ export function FloatingPriceCheck() {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  // Close dropdown on scroll only when scroll happens outside the portal
   useEffect(() => {
     if (dropdownOpen === null) return;
     const close = (e: Event) => {
@@ -56,7 +55,7 @@ export function FloatingPriceCheck() {
   };
 
   const addLinea = () => {
-    if (lineas.length >= 5) return;
+    if (lineas.length >= 6) return;
     setLineas((prev) => [...prev, { productoId: "", cantidad: "1" }]);
     setBusquedas((prev) => [...prev, ""]);
   };
@@ -118,12 +117,14 @@ export function FloatingPriceCheck() {
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.9 }}
-            className="mb-4 w-[420px] sm:w-[520px] bg-card border border-border shadow-2xl rounded-2xl flex flex-col"
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="mb-4 w-[680px] bg-card border border-border shadow-2xl rounded-2xl flex flex-col"
+            style={{ maxHeight: "min(600px, calc(100vh - 120px))" }}
           >
-            <div className="bg-muted px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
+            {/* Header — always visible, never scrolls */}
+            <div className="bg-muted px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0 rounded-t-2xl">
               <div className="flex items-center gap-2 text-foreground font-medium text-sm">
                 <Calculator className="w-4 h-4 text-green-500" />
                 Consulta Rápida de Precios
@@ -137,15 +138,32 @@ export function FloatingPriceCheck() {
               </button>
             </div>
 
-            <div className="p-4 space-y-4 max-h-[580px] overflow-y-auto">
+            {/* Column headers */}
+            <div className="px-4 pt-3 pb-1.5 grid grid-cols-[1fr_52px_168px_20px] gap-x-3 flex-shrink-0">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Producto</span>
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-center">Cant.</span>
+              <div className="grid grid-cols-3 gap-x-1">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-right">P. Compra</span>
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-right">s/IVA</span>
+                <span className="text-[10px] font-semibold text-green-600 uppercase tracking-wider text-right">c/IVA</span>
+              </div>
+              <span />
+            </div>
+
+            {/* Scrollable product rows */}
+            <div className="px-4 pb-2 space-y-2 overflow-y-auto flex-1 min-h-0">
               {lineas.map((linea, i) => {
                 const calc = calcLine(linea);
                 const opts = filteredProductos(i);
                 const hasQ = busquedas[i]?.length > 0;
+                const cant = parseFloat(linea.cantidad) || 1;
+
                 return (
-                  <div key={i} className="space-y-2">
-                    <div className="flex gap-2 items-start">
-                      <div className="flex-1 relative">
+                  <div key={i} className="space-y-1">
+                    {/* Main row: product | qty | prices | remove */}
+                    <div className="grid grid-cols-[1fr_52px_168px_20px] gap-x-3 items-center">
+                      {/* Product search */}
+                      <div className="relative">
                         <input
                           ref={(el) => { inputRefs.current[i] = el; }}
                           type="text"
@@ -156,62 +174,71 @@ export function FloatingPriceCheck() {
                           className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-green-500 outline-none"
                         />
                       </div>
+
+                      {/* Quantity */}
                       <input
                         type="number"
-                        min="1"
-                        step="1"
+                        min="0.25"
+                        step="0.25"
                         value={linea.cantidad}
                         onChange={(e) => updateCantidad(i, e.target.value)}
-                        className="w-16 bg-background border border-border px-2 py-2 rounded-lg text-sm text-center focus:ring-1 focus:ring-green-500 outline-none"
+                        className="w-full bg-background border border-border px-2 py-2 rounded-lg text-sm text-center focus:ring-1 focus:ring-green-500 outline-none"
                         placeholder="1"
                       />
-                      {lineas.length > 1 && (
+
+                      {/* Prices — 3 columns: compra, s/IVA, c/IVA */}
+                      {calc ? (
+                        <div className="grid grid-cols-3 gap-x-1 text-xs">
+                          <span className="text-right text-muted-foreground font-medium tabular-nums">
+                            {formatCurrency(calc.prod.precioCompra)}
+                          </span>
+                          <span className="text-right text-muted-foreground font-medium tabular-nums">
+                            {formatCurrency(calc.prod.precioVentaSinIva)}
+                          </span>
+                          <span className="text-right text-green-500 font-bold tabular-nums">
+                            {formatCurrency(calc.prod.precioVentaConIva)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground/40 text-center col-span-1">—</div>
+                      )}
+
+                      {/* Remove */}
+                      {lineas.length > 1 ? (
                         <button
                           onClick={() => removeLinea(i)}
-                          className="p-2 text-muted-foreground hover:text-destructive rounded-lg transition-colors flex-shrink-0"
+                          className="p-0.5 text-muted-foreground hover:text-destructive rounded transition-colors"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
+                      ) : (
+                        <span />
                       )}
                     </div>
 
-                    {calc && (
-                      <div className="bg-background rounded-lg border border-border px-3 py-2 text-xs space-y-1">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">P. Compra unitario</span>
-                          <span className="font-medium">{formatCurrency(calc.prod.precioCompra)}</span>
+                    {/* Subtotals row — only when qty > 1 and product selected */}
+                    {calc && cant > 1 && (
+                      <div className="grid grid-cols-[1fr_52px_168px_20px] gap-x-3">
+                        <div className="text-[10px] text-muted-foreground pl-1">
+                          × {cant} unidades
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">P. Venta s/IVA unitario</span>
-                          <span className="font-medium">{formatCurrency(calc.prod.precioVentaSinIva)}</span>
+                        <span />
+                        <div className="grid grid-cols-3 gap-x-1 text-[10px]">
+                          <span className="text-right text-muted-foreground tabular-nums">
+                            {formatCurrency(calc.subtotalCompra)}
+                          </span>
+                          <span className="text-right text-muted-foreground tabular-nums">
+                            {formatCurrency(calc.subtotalSinIva)}
+                          </span>
+                          <span className="text-right text-green-500 font-semibold tabular-nums">
+                            {formatCurrency(calc.subtotalConIva)}
+                          </span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">P. Venta c/IVA unitario</span>
-                          <span className="text-green-500 font-bold">{formatCurrency(calc.prod.precioVentaConIva)}</span>
-                        </div>
-                        {calc.cant > 1 && (
-                          <>
-                            <div className="border-t border-border mt-1 pt-1 flex items-center gap-1 text-[10px] text-muted-foreground uppercase tracking-wider">
-                              × {calc.cant} unidades
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Subtotal Compra</span>
-                              <span>{formatCurrency(calc.subtotalCompra)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Subtotal s/IVA</span>
-                              <span>{formatCurrency(calc.subtotalSinIva)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Subtotal c/IVA</span>
-                              <span className="text-green-500 font-bold">{formatCurrency(calc.subtotalConIva)}</span>
-                            </div>
-                          </>
-                        )}
+                        <span />
                       </div>
                     )}
 
-                    {/* Portal dropdown — renders at body level, escapes overflow */}
+                    {/* Portal dropdown */}
                     {dropdownOpen === i && hasQ && opts.length > 0 && dropdownPos && createPortal(
                       <div
                         ref={(el) => { portalRef.current = el; }}
@@ -242,31 +269,30 @@ export function FloatingPriceCheck() {
                 );
               })}
 
-              {lineas.length < 5 && (
+              {/* Add product button */}
+              {lineas.length < 6 && (
                 <button
                   onClick={addLinea}
-                  className="w-full py-2.5 border border-dashed border-border rounded-lg text-xs text-muted-foreground hover:text-foreground hover:border-green-500 transition-colors flex items-center justify-center gap-1"
+                  className="w-full py-2 border border-dashed border-border rounded-lg text-xs text-muted-foreground hover:text-foreground hover:border-green-500 transition-colors flex items-center justify-center gap-1 mt-1"
                 >
                   <Plus className="w-3 h-3" />
-                  Agregar producto ({lineas.length}/5)
+                  Agregar producto ({lineas.length}/6)
                 </button>
               )}
             </div>
 
+            {/* Grand total — always visible at bottom */}
             {calcLines.length > 0 && (
-              <div className="border-t-2 border-border bg-muted/50 px-4 py-3 space-y-1.5 flex-shrink-0">
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Gran Total</p>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground text-xs">Total Compra</span>
-                  <span className="text-xs font-medium">{formatCurrency(grandTotalCompra)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground text-xs">Total Venta s/IVA</span>
-                  <span className="text-xs font-medium">{formatCurrency(grandTotalSinIva)}</span>
-                </div>
-                <div className="flex justify-between text-sm border-t border-border pt-1.5 mt-1">
-                  <span className="text-xs font-bold text-foreground">Total Venta c/IVA</span>
-                  <span className="font-bold text-green-500">{formatCurrency(grandTotalConIva)}</span>
+              <div className="border-t-2 border-border bg-muted/50 px-4 py-3 flex-shrink-0 rounded-b-2xl">
+                <div className="grid grid-cols-[1fr_52px_168px_20px] gap-x-3 items-center">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Gran Total</p>
+                  <span />
+                  <div className="grid grid-cols-3 gap-x-1">
+                    <span className="text-right text-xs font-medium tabular-nums">{formatCurrency(grandTotalCompra)}</span>
+                    <span className="text-right text-xs font-medium tabular-nums">{formatCurrency(grandTotalSinIva)}</span>
+                    <span className="text-right text-sm font-bold text-green-500 tabular-nums">{formatCurrency(grandTotalConIva)}</span>
+                  </div>
+                  <span />
                 </div>
               </div>
             )}
