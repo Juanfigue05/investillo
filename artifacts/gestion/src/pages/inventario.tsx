@@ -885,7 +885,7 @@ export default function Inventario() {
 
               <div className="flex justify-end gap-3 pt-4">
                 <button type="button" onClick={() => setShowForm(false)} className="px-6 py-2 rounded-xl text-foreground bg-muted hover:bg-muted/80 transition-colors">Cancelar</button>
-                <button type="submit" disabled={crearMutation.isPending || actualizarMutation.isPending} className="px-6 py-2 rounded-xl text-primary-foreground bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all">
+                <button type="submit" disabled={crearMutation.isPending || actualizarMutation.isPending || (formData.precioCompra > 0 && formData.precioVentaSinIva < formData.precioCompra)} className="px-6 py-2 rounded-xl text-primary-foreground bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                   Guardar Producto
                 </button>
               </div>
