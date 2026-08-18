@@ -636,6 +636,9 @@ router.delete("/:id", async (req, res) => {
 
 export default router;
 
+/** Nombre de la línea IVA — se usa para excluirla del cómputo de ventas y beneficio. */
+const IVA_NOMBRE = "IVA (19%)";
+
 /** Referencia (No.Remisión/Ref) para filas de ventas_diarias generadas desde un crédito/nos debe. */
 function refCredito(credito: typeof creditosTable.$inferSelect, customRef?: string): string {
   if (customRef) return customRef;
@@ -683,6 +686,26 @@ async function crearFilaVentaPago(
       precioVentaTotal: String(valor),
       beneficio: String(valor),
       descripcion: detalle || `Pago ${etiqueta}${credito.concepto ? ` ${credito.concepto}` : ""}`,
+      creditoAbonoId: abonoId,
+    });
+    return;
+  }
+
+  // Línea IVA: no inflaciona ventas ni beneficio — se registra como abono sin ganancia
+  if (pagaCompleto && linea.productoNombre === IVA_NOMBRE) {
+    const valor = toNum(linea.cantidad) * toNum(linea.precioVenta);
+    await tx.insert(ventasDiariasTable).values({
+      fecha,
+      referencia,
+      tipoLinea: "credito",
+      productoNombre: `IVA pagado: ${credito.nombreCliente}`,
+      productoMarca: credito.nombreCliente,
+      cantidad: "1",
+      precioCompraUnidad: "0",
+      precioVentaUnidad: String(valor),
+      precioVentaTotal: String(valor),
+      beneficio: "0",
+      descripcion: `IVA ${etiqueta} - ${credito.nombreCliente}`,
       creditoAbonoId: abonoId,
     });
     return;

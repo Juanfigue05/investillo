@@ -361,7 +361,7 @@ export default function Creditos() {
   const allCreditos = useMemo(() => {
     if (!creditos) return [];
     return creditos.filter((c) => {
-      if (q && !c.nombreCliente.toLowerCase().includes(q) && !(c.concepto || "").toLowerCase().includes(q) && !(soloDigitos(q) && soloDigitos(c.telefonoCliente).includes(soloDigitos(q)))) return false;
+      if (q && !c.nombreCliente.toLowerCase().includes(q) && !(c.concepto || "").toLowerCase().includes(q) && !(soloDigitos(q) && soloDigitos(c.telefonoCliente).includes(soloDigitos(q))) && !(c.placaVehiculo || "").toLowerCase().includes(q)) return false;
       if (filtroDesde && c.fechaFactura < filtroDesde) return false;
       if (filtroHasta && c.fechaFactura > filtroHasta) return false;
       if (filtroPlaca && !(c.placaVehiculo || "").toLowerCase().includes(filtroPlaca.toLowerCase())) return false;
@@ -508,7 +508,7 @@ export default function Creditos() {
         <div className="flex flex-col gap-3">
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input type="text" placeholder="Buscar por cliente, concepto o teléfono..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+            <input type="text" placeholder="Buscar por cliente, placa, concepto o teléfono..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
               className="w-full pl-9 pr-4 py-2.5 bg-card border border-border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
             {busqueda && <button onClick={() => setBusqueda("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>}
           </div>
