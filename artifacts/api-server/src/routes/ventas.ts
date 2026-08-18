@@ -111,32 +111,74 @@ router.post("/", async (req, res) => {
 
 router.put("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
-  const { fecha, referencia, tipoLinea, productoId, productoNombre, productoCodigo, productoMarca, cantidad, precioCompraUnidad, precioVentaUnidad, precioVentaTotal, beneficio, descripcion } = req.body;
+  const {
+    fecha, referencia, tipoLinea, productoId,
+    productoNombre, productoCodigo, productoMarca,
+    cantidad, precioCompraUnidad, precioVentaUnidad,
+    precioVentaTotal, beneficio, descripcion,
+  } = req.body;
 
-  const [venta] = await db
-    .update(ventasDiariasTable)
-    .set({
-      fecha,
-      referencia,
-      tipoLinea: tipoLinea || "venta",
-      productoId: productoId || null,
-      productoNombre: productoNombre || null,
-      productoCodigo: productoCodigo || null,
-      productoMarca: productoMarca || null,
-      cantidad: String(parseFloat(cantidad)),
-      precioCompraUnidad: String(parseFloat(precioCompraUnidad || 0)),
-      precioVentaUnidad: String(parseFloat(precioVentaUnidad)),
-      precioVentaTotal: String(parseFloat(precioVentaTotal)),
-      beneficio: String(parseFloat(beneficio || 0)),
-      descripcion: descripcion || null,
-    })
-    .where(eq(ventasDiariasTable.id, id))
-    .returning();
-
-  if (!venta) {
+  // Leer fila actual antes de modificar — necesario para el delta de stock y preservar descripción
+  const [existing] = await db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.id, id));
+  if (!existing) {
     res.status(404).json({ error: "Venta no encontrada" });
     return;
   }
+
+  const setData: Partial<typeof ventasDiariasTable.$inferInsert> = {
+    fecha,
+    referencia,
+    tipoLinea: tipoLinea || "venta",
+    productoId: productoId || null,
+    productoNombre: productoNombre || null,
+    productoCodigo: productoCodigo || null,
+    productoMarca: productoMarca || null,
+    cantidad: String(parseFloat(cantidad)),
+    precioCompraUnidad: String(parseFloat(precioCompraUnidad || 0)),
+    precioVentaUnidad: String(parseFloat(precioVentaUnidad)),
+    precioVentaTotal: String(parseFloat(precioVentaTotal)),
+    beneficio: String(parseFloat(beneficio || 0)),
+  };
+  // Solo sobreescribir descripción si viene explícitamente en el payload;
+  // si el frontend no la envía (undefined), se preserva la existente.
+  if (descripcion !== undefined) setData.descripcion = descripcion || null;
+
+  const [venta] = await db
+    .update(ventasDiariasTable)
+    .set(setData)
+    .where(eq(ventasDiariasTable.id, id))
+    .returning();
+
+  // Ajustar stock solo para ventas manuales (filas de crédito tienen creditoAbonoId)
+  if (!existing.creditoAbonoId) {
+    const oldEsVenta = existing.tipoLinea === "venta" || !existing.tipoLinea;
+    const newEsVenta = tipoLinea === "venta" || !tipoLinea;
+    const oldProdId = existing.productoId;
+    const newProdId = productoId ? parseInt(String(productoId)) : null;
+    const cantidadNueva = parseFloat(String(cantidad));
+
+    // 1. Restaurar stock del producto anterior (como si se "deshiciera" la venta vieja)
+    if (oldEsVenta && oldProdId) {
+      const [prod] = await db.select().from(productosTable).where(eq(productosTable.id, oldProdId));
+      if (prod) {
+        await db.update(productosTable)
+          .set({ stockActual: String(toNum(prod.stockActual) + toNum(existing.cantidad)), actualizadoEn: new Date() })
+          .where(eq(productosTable.id, oldProdId));
+      }
+    }
+
+    // 2. Descontar stock del producto nuevo (aplica la venta editada)
+    if (newEsVenta && newProdId) {
+      const [prod] = await db.select().from(productosTable).where(eq(productosTable.id, newProdId));
+      if (prod) {
+        const nuevoStock = Math.max(0, toNum(prod.stockActual) - cantidadNueva);
+        await db.update(productosTable)
+          .set({ stockActual: String(nuevoStock), actualizadoEn: new Date() })
+          .where(eq(productosTable.id, newProdId));
+      }
+    }
+  }
+
   res.json(mapVenta(venta));
 });
 
