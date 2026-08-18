@@ -197,6 +197,8 @@ export default function VentasDiarias() {
     trabajadoresSeleccionados: [] as number[],
   });
 
+  const [stockAlerta, setStockAlerta] = useState<{ stock: number; minimo: number } | null>(null);
+
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<EditValues>({
     referencia: "",
@@ -242,12 +244,19 @@ export default function VentasDiarias() {
   const handleProductoSelect = (id: string) => {
     if (id === SPECIAL_MANOOBRA) {
       setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0, precioManoObra: 0, valorAbono: 0, trabajadoresSeleccionados: [] }));
+      setStockAlerta(null);
     } else if (id === SPECIAL_ABONO) {
       setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0, precioManoObra: 0, valorAbono: 0, productoNombreManual: "" }));
+      setStockAlerta(null);
     } else {
       const prod = productos?.find((p) => String(p.id) === id);
       if (prod) {
         setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: prod.marca || "", precioCompra: prod.precioCompra, precioVenta: prod.precioVentaSinIva, trabajadoresSeleccionados: [] }));
+        const stock = parseFloat(String(prod.stockActual ?? 0)) || 0;
+        const minimo = parseFloat(String(prod.stockMinimo ?? 0)) || 0;
+        setStockAlerta({ stock, minimo });
+      } else {
+        setStockAlerta(null);
       }
     }
   };
@@ -393,7 +402,9 @@ export default function VentasDiarias() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
           setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0 }));
+          setStockAlerta(null);
         },
       }
     );
@@ -541,6 +552,13 @@ export default function VentasDiarias() {
                       onChange={handleProductoSelect}
                       placeholder="Seleccionar producto..."
                     />
+                    {modoActual === "normal" && stockAlerta !== null && (
+                      stockAlerta.stock === 0
+                        ? <p className="text-red-500 dark:text-red-400 text-[11px] mt-1 leading-tight font-medium">⚠ Sin existencias — stock en 0</p>
+                        : stockAlerta.stock <= stockAlerta.minimo
+                          ? <p className="text-yellow-500 dark:text-yellow-400 text-[11px] mt-1 leading-tight font-medium">⚠ Pocas existencias ({stockAlerta.stock} en stock)</p>
+                          : null
+                    )}
                     {modoActual === "abono" && (
                       <input
                         type="text"

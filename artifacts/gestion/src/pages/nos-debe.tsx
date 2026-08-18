@@ -41,6 +41,8 @@ interface LineaInput {
   precioVenta: string;
   precioCompra: string;
   valorAbonado?: number;
+  stockActual?: number | null;
+  stockMinimo?: number | null;
 }
 
 const emptyForm = {
@@ -96,6 +98,8 @@ export default function NosDebePage() {
   const handleProductoSelect = (lineaId: number, prodNombre: string) => {
     const prod = productos?.find((p) => p.nombre === prodNombre);
     if (prod) {
+      const stock = parseFloat(String(prod.stockActual ?? 0)) || 0;
+      const minimo = parseFloat(String(prod.stockMinimo ?? 0)) || 0;
       setLineas((prev) => prev.map((l) => {
         if (l.id !== lineaId) return l;
         const esLineaNueva = l.id < 0; // id negativo = línea nueva, no guardada en BD
@@ -105,6 +109,8 @@ export default function NosDebePage() {
           productoCodigo: prod.codigo,
           productoNombre: prod.nombre,
           marca: prod.marca || "",
+          stockActual: stock,
+          stockMinimo: minimo,
           // Solo auto-llenar precios en líneas nuevas; las guardadas mantienen su precio
           ...(esLineaNueva ? {
             precioVenta: String(prod.precioVentaSinIva),
@@ -112,6 +118,9 @@ export default function NosDebePage() {
           } : {}),
         };
       }));
+    } else {
+      // Clear stock alert if product name doesn't match any product
+      setLineas((prev) => prev.map((l) => l.id !== lineaId ? l : { ...l, stockActual: null, stockMinimo: null }));
     }
   };
 
@@ -485,6 +494,13 @@ export default function NosDebePage() {
                             <datalist id={`prod-list-nd-${linea.id}`}>
                               {productos?.map((p) => <option key={p.id} value={p.nombre} />)}
                             </datalist>
+                            {linea.stockActual !== null && linea.stockActual !== undefined && (
+                              linea.stockActual === 0
+                                ? <p className="text-red-500 dark:text-red-400 text-[10px] mt-0.5 leading-tight font-medium">⚠ Sin existencias — stock en 0</p>
+                                : linea.stockActual <= (linea.stockMinimo ?? 0)
+                                  ? <p className="text-yellow-500 dark:text-yellow-400 text-[10px] mt-0.5 leading-tight font-medium">⚠ Pocas existencias ({linea.stockActual} en stock)</p>
+                                  : null
+                            )}
                           </td>
                           <td className="px-3 py-2"><input type="number" min="0" step="0.25" value={linea.cantidad} onChange={(e) => updateLinea(linea.id, "cantidad", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none text-center" /></td>
                           <td className="px-3 py-2"><input type="number" min="0" value={linea.precioCompra} onChange={(e) => updateLinea(linea.id, "precioCompra", e.target.value)} className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" /></td>
