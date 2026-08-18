@@ -6,6 +6,7 @@ import {
   creditosTable,
   distribucionesTable,
   manoObraTable,
+  productosTable,
   trabajadoresTable,
   ventasDiariasTable,
 } from "@workspace/db/schema";
@@ -33,6 +34,21 @@ type CreditoManoObraInput = {
 };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Ajusta el stock de un producto dentro de una transacción.
+ * delta > 0: descuenta (productos que salen); delta < 0: restaura (productos que regresan).
+ */
+async function ajustarStock(tx: Tx, productoId: number, delta: number) {
+  if (delta === 0) return;
+  const [prod] = await tx.select().from(productosTable).where(eq(productosTable.id, productoId));
+  if (!prod) return;
+  const nuevoStock = toNum(prod.stockActual) - delta;
+  await tx
+    .update(productosTable)
+    .set({ stockActual: String(nuevoStock), actualizadoEn: new Date() })
+    .where(eq(productosTable.id, productoId));
+}
 
 async function ajustarTotalGanado(tx: Tx, trabajadorId: number, delta: number) {
   const [trab] = await tx.select().from(trabajadoresTable).where(eq(trabajadoresTable.id, trabajadorId));
@@ -278,6 +294,12 @@ router.post("/", async (req, res) => {
           valorAbonado: String(parseFloat(String(linea.valorAbonado || 0))),
         })),
       );
+      // Descontar stock por cada línea con producto vinculado
+      for (const linea of lineas) {
+        if (linea.productoId) {
+          await ajustarStock(tx, linea.productoId, parseFloat(String(linea.cantidad)));
+        }
+      }
     }
     if (manoObra !== undefined) await syncManoObraCredito(tx, created, manoObra);
     return created;
@@ -349,6 +371,20 @@ router.put("/:id", async (req, res) => {
       .returning();
 
     if (Array.isArray(lineas)) {
+      // Leer líneas actuales ANTES de modificar para calcular el delta de stock
+      const oldLineas = await tx
+        .select({ productoId: creditoLineasTable.productoId, cantidad: creditoLineasTable.cantidad })
+        .from(creditoLineasTable)
+        .where(eq(creditoLineasTable.creditoId, id));
+
+      // Mapa: productoId → cantidad total antigua
+      const oldStock = new Map<number, number>();
+      for (const ol of oldLineas) {
+        if (ol.productoId) {
+          oldStock.set(ol.productoId, (oldStock.get(ol.productoId) ?? 0) + toNum(ol.cantidad));
+        }
+      }
+
       const keepIds = lineas
         .map((linea) => linea.id)
         .filter((lineaId): lineaId is number => typeof lineaId === "number");
@@ -379,6 +415,24 @@ router.put("/:id", async (req, res) => {
         } else {
           await tx.insert(creditoLineasTable).values(values);
         }
+      }
+
+      // Mapa: productoId → cantidad total nueva
+      const newStock = new Map<number, number>();
+      for (const linea of lineas) {
+        if (linea.productoId) {
+          newStock.set(
+            linea.productoId,
+            (newStock.get(linea.productoId) ?? 0) + parseFloat(String(linea.cantidad)),
+          );
+        }
+      }
+
+      // Ajustar stock: delta = nueva - antigua; positivo→descontar más, negativo→restaurar
+      const allProductIds = new Set([...oldStock.keys(), ...newStock.keys()]);
+      for (const pid of allProductIds) {
+        const delta = (newStock.get(pid) ?? 0) - (oldStock.get(pid) ?? 0);
+        await ajustarStock(tx, pid, delta);
       }
     }
 
@@ -627,6 +681,16 @@ router.delete("/:id", async (req, res) => {
     // Revertir y eliminar la mano de obra vinculada (resta totalGanado de los trabajadores)
     const [existing] = await tx.select().from(creditosTable).where(eq(creditosTable.id, id));
     if (existing) await syncManoObraCredito(tx, existing, null);
+    // Restaurar stock de todas las líneas con producto vinculado
+    const lineasAEliminar = await tx
+      .select({ productoId: creditoLineasTable.productoId, cantidad: creditoLineasTable.cantidad })
+      .from(creditoLineasTable)
+      .where(eq(creditoLineasTable.creditoId, id));
+    for (const linea of lineasAEliminar) {
+      if (linea.productoId) {
+        await ajustarStock(tx, linea.productoId, -toNum(linea.cantidad)); // negativo = restaurar
+      }
+    }
     await tx.delete(creditoLineasTable).where(eq(creditoLineasTable.creditoId, id));
     await tx.delete(abonosCreditosTable).where(eq(abonosCreditosTable.creditoId, id));
     await tx.delete(creditosTable).where(eq(creditosTable.id, id));
