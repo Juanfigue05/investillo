@@ -3,7 +3,7 @@ import { StickyNote, Minus, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useGetNotas, useGuardarNotas } from "@workspace/api-client-react";
 
-export function FloatingNotepad() {
+export function FloatingNotepad({ topbar }: { topbar?: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
   const [content, setContent] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -12,9 +12,7 @@ export function FloatingNotepad() {
   const guardarMutation = useGuardarNotas();
 
   useEffect(() => {
-    if (notas?.contenido) {
-      setContent(notas.contenido);
-    }
+    if (notas?.contenido) setContent(notas.contenido);
   }, [notas]);
 
   const handleSave = () => {
@@ -26,52 +24,70 @@ export function FloatingNotepad() {
     guardarMutation.mutate({ data: { contenido: "" } });
   };
 
+  const panel = (
+    <motion.div
+      initial={{ opacity: 0, y: topbar ? -10 : 20, scale: 0.9 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: topbar ? -10 : 20, scale: 0.9 }}
+      className={
+        topbar
+          ? "absolute right-0 top-full mt-2 w-80 bg-card border border-border shadow-2xl rounded-2xl overflow-hidden flex flex-col z-50"
+          : "mb-4 w-80 bg-card border border-border shadow-2xl rounded-2xl overflow-hidden flex flex-col"
+      }
+      style={{ fontSize: "16.5px" }}
+    >
+      <div className="bg-muted px-4 py-3 border-b border-border flex items-center justify-between">
+        <div className="flex items-center gap-2 text-foreground font-medium">
+          <StickyNote className="w-4 h-4 text-primary" />
+          Notas Rápidas
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleClear}
+            className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+            title="Borrar Todo"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setIsOpen(false)}
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-background rounded-md transition-colors"
+            title="Minimizar"
+          >
+            <Minus className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+      <textarea
+        ref={textareaRef}
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        onBlur={handleSave}
+        placeholder="Anota cosas pendientes aquí..."
+        className="w-full h-72 p-4 bg-card text-foreground resize-none focus:outline-none placeholder:text-muted-foreground/40 text-base font-semibold leading-relaxed tracking-wide"
+        style={{ color: "hsl(var(--foreground))", caretColor: "hsl(var(--primary))" }}
+      />
+    </motion.div>
+  );
+
+  if (topbar) {
+    return (
+      <div className="relative">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          aria-label="Notas rápidas"
+          className="relative p-2 rounded-full hover:bg-muted transition-colors cursor-pointer block"
+        >
+          <StickyNote className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground hover:text-foreground transition-colors" />
+        </button>
+        <AnimatePresence>{isOpen && panel}</AnimatePresence>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-end">
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.9 }}
-            className="mb-4 w-80 bg-card border border-border shadow-2xl rounded-2xl overflow-hidden flex flex-col"
-            style={{ fontSize: "16.5px" }}
-          >
-            <div className="bg-muted px-4 py-3 border-b border-border flex items-center justify-between">
-              <div className="flex items-center gap-2 text-foreground font-medium">
-                <StickyNote className="w-4 h-4 text-primary" />
-                Notas Rápidas
-              </div>
-              <div className="flex items-center gap-1">
-                <button 
-                  onClick={handleClear}
-                  className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-                  title="Borrar Todo"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={() => setIsOpen(false)}
-                  className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-background rounded-md transition-colors"
-                  title="Minimizar"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              onBlur={handleSave}
-              placeholder="Anota cosas pendientes aquí..."
-              className="w-full h-72 p-4 bg-card text-foreground resize-none focus:outline-none placeholder:text-muted-foreground/40 text-base font-semibold leading-relaxed tracking-wide"
-              style={{ color: "hsl(var(--foreground))", caretColor: "hsl(var(--primary))" }}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
+      <AnimatePresence>{isOpen && panel}</AnimatePresence>
       <div className="relative group/note">
         <button
           onClick={() => setIsOpen(!isOpen)}

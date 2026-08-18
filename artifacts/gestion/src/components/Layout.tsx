@@ -102,6 +102,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <span className="text-base font-display font-bold text-primary sm:hidden">Investillo</span>
 
           <div className="flex items-center gap-3 ml-auto">
+            <FloatingPriceCheck topbar />
+            <FloatingNotepad topbar />
             <button
               type="button"
               aria-label="Ver alertas de inventario"
@@ -245,11 +247,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Floating action buttons */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
-        <FloatingPriceCheck />
-        <FloatingNotepad />
-      </div>
     </div>
   );
 }

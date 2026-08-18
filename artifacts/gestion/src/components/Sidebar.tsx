@@ -18,17 +18,17 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/inventario", label: "Inventario", icon: Package },
-  { href: "/cierre-diario", label: "Cierre Diario", icon: Calculator },
-  { href: "/historial-cierres", label: "Historial Cierres", icon: History },
+  { href: "/compras", label: "Compras", icon: Truck },
   { href: "/ventas", label: "Ventas Diarias", icon: ShoppingCart },
   { href: "/creditos", label: "Créditos", icon: CreditCard },
   { href: "/nos-debe", label: "Nos Debe", icon: HandCoins },
-  { href: "/compras", label: "Compras", icon: Truck },
-  { href: "/facturacion", label: "Facturación DIAN", icon: Receipt },
-  { href: "/historial", label: "Historial de Ventas", icon: BookOpen },
-  { href: "/historial-precios", label: "Historial de Precios", icon: TrendingUp },
+  { href: "/inventario", label: "Inventario", icon: Package },
+  { href: "/cierre-diario", label: "Cierre Diario", icon: Calculator },
   { href: "/clientes", label: "Clientes", icon: Users },
+  { href: "/facturacion", label: "Facturación DIAN", icon: Receipt, dian: true },
+  { href: "/historial", label: "Historial de Ventas", icon: BookOpen },
+  { href: "/historial-cierres", label: "Historial Cierres", icon: History },
+  { href: "/historial-precios", label: "Historial de Precios", icon: TrendingUp },
 ];
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
@@ -61,9 +61,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               onClick={onClose}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
-                isActive 
-                  ? "bg-primary/10 text-primary font-medium" 
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                (item as any).dian
+                  ? isActive
+                    ? "bg-destructive/10 text-destructive font-medium"
+                    : "text-destructive/70 hover:bg-destructive/10 hover:text-destructive"
+                  : isActive
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
               <Icon className={cn("w-5 h-5 transition-transform duration-200", isActive ? "scale-110" : "group-hover:scale-110")} />

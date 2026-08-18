@@ -76,6 +76,9 @@ export default function NosDebePage() {
   const [editingHasAbonos, setEditingHasAbonos] = useState(false);
   const [ivaLinea, setIvaLinea] = useState<{ id?: number; valorAbonado?: number }>({});
   const [editingAbonoId, setEditingAbonoId] = useState<number | null>(null);
+  const [showRefModal, setShowRefModal] = useState(false);
+  const [pendingAbonoCredit, setPendingAbonoCredit] = useState<any>(null);
+  const [refTexto, setRefTexto] = useState("");
 
   const crearMutation = useCrearCredito();
   const actualizarMutation = useActualizarCredito();
@@ -284,6 +287,15 @@ export default function NosDebePage() {
     if (!lineasSeleccionadas.length) { alert("Selecciona al menos un producto"); return; }
     const maxDisponible = editingAbonoId !== null ? c.valorCredito : c.valorRestante;
     if (abonoNum > maxDisponible + 1) { alert(`El abono no puede superar ${formatCurrency(maxDisponible)}`); return; }
+    setPendingAbonoCredit(c);
+    setRefTexto("");
+    setShowRefModal(true);
+  };
+
+  const confirmarAbono = () => {
+    const c = pendingAbonoCredit;
+    if (!c) return;
+    const abonoNum = parseFloat(abono);
     const lineasUsadas = editingAbonoId !== null ? c.lineas : c.lineas.filter((l: any) => l.valorRestante > 0);
     const selected = lineasUsadas.filter((l: any) => lineasSeleccionadas.includes(l.id));
     let rem = abonoNum;
@@ -297,13 +309,18 @@ export default function NosDebePage() {
     const onSuccess = () => {
       queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
       queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+      setShowRefModal(false);
+      setPendingAbonoCredit(null);
       resetPay();
     };
 
+    const data: any = { valor: abonoNum, lineas: lineasAbono };
+    if (refTexto.trim()) data.customRef = refTexto.trim();
+
     if (editingAbonoId !== null) {
-      editarAbonoMutation.mutate({ id: c.id, abonoId: editingAbonoId, data: { valor: abonoNum, lineas: lineasAbono } }, { onSuccess });
+      editarAbonoMutation.mutate({ id: c.id, abonoId: editingAbonoId, data }, { onSuccess });
     } else {
-      abonarMutation.mutate({ id: c.id, data: { valor: abonoNum, lineas: lineasAbono } }, { onSuccess });
+      abonarMutation.mutate({ id: c.id, data }, { onSuccess });
     }
   };
 
@@ -797,6 +814,36 @@ export default function NosDebePage() {
           </div>
         )}
       </div>
+      {/* Modal: No. Remisión antes de confirmar abono */}
+      {showRefModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4" onClick={() => setShowRefModal(false)}>
+          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-base font-bold text-foreground">No. Remisión / Referencia</h3>
+              <p className="text-xs text-muted-foreground mt-1">Opcional — aparecerá en Ventas Diarias como referencia del pago.</p>
+            </div>
+            <input
+              type="text"
+              placeholder="Ej: REM-001, Factura 123..."
+              value={refTexto}
+              onChange={(e) => setRefTexto(e.target.value.slice(0, 35))}
+              maxLength={35}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") confirmarAbono(); if (e.key === "Escape") setShowRefModal(false); }}
+              className="w-full bg-background border border-border px-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none"
+            />
+            <p className="text-[10px] text-muted-foreground text-right">{refTexto.length}/35</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowRefModal(false)} className="flex-1 py-2.5 rounded-xl bg-muted text-foreground text-sm font-medium hover:bg-muted/80 transition-colors">
+                Cancelar
+              </button>
+              <button onClick={confirmarAbono} disabled={abonarMutation.isPending || editarAbonoMutation.isPending} className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-60 hover:bg-primary/90 transition-colors">
+                {(abonarMutation.isPending || editarAbonoMutation.isPending) ? "Guardando..." : "Confirmar Pago"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

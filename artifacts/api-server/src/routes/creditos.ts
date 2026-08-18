@@ -319,7 +319,7 @@ router.put("/:id", async (req, res) => {
     manoObra?: CreditoManoObraInput | null;
   };
 
-    const [existing] = await tx.select().from(creditosTable).where(eq(creditosTable.id, id));
+  const [existing] = await db.select().from(creditosTable).where(eq(creditosTable.id, id));
   if (!existing) {
     res.status(404).json({ error: "Credito no encontrado" });
     return;
@@ -395,10 +395,10 @@ router.put("/:id", async (req, res) => {
   res.json(await mapCredito(credito));
 });
 
-// POST /creditos/:id/abono — registra el abono y crea filas en ventas_diarias
+// POST /creditos/:id/abono — registra un nuevo abono y crea filas en ventas_diarias
 router.post("/:id/abono", async (req, res) => {
-  const id = parseInt(req.params.id);
-  const { valor, lineas } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[] };
+  const creditoId = parseInt(req.params.id);
+  const { valor, lineas, customRef } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string };
   const abonoTotal = parseFloat(String(valor));
 
   if (!Number.isFinite(abonoTotal) || abonoTotal <= 0 || !Array.isArray(lineas) || lineas.length === 0) {
@@ -416,7 +416,7 @@ router.post("/:id/abono", async (req, res) => {
   const creditLines = await db
     .select()
     .from(creditoLineasTable)
-    .where(and(eq(creditoLineasTable.creditoId, id), inArray(creditoLineasTable.id, lineIds)));
+    .where(and(eq(creditoLineasTable.creditoId, creditoId), inArray(creditoLineasTable.id, lineIds)));
   const byId = new Map(creditLines.map((linea) => [linea.id, linea]));
 
   let appliedTotal = 0;
@@ -441,30 +441,7 @@ router.post("/:id/abono", async (req, res) => {
 
   const hoy = new Date().toISOString().split("T")[0];
   const updated = await db.transaction(async (tx) => {
-    // Revertir el abono anterior
-    await revertirAbono(tx, abono);
-
-    // Releer líneas del crédito después de la reversión
-    const lineIds = lineas.map((l) => l.lineaId);
-    const creditLines = await tx
-      .select()
-      .from(creditoLineasTable)
-      .where(and(eq(creditoLineasTable.creditoId, creditoId), inArray(creditoLineasTable.id, lineIds)));
-    const byId = new Map(creditLines.map((l) => [l.id, l]));
-
-    let appliedTotal = 0;
-    const applied: Array<{ linea: typeof creditoLineasTable.$inferSelect; valor: number }> = [];
-    for (const requested of lineas) {
-      const linea = byId.get(requested.lineaId);
-      if (!linea) continue;
-      const requestedValue = parseFloat(String(requested.valor));
-      const remaining = Math.max(0, toNum(linea.cantidad) * toNum(linea.precioVenta) - toNum(linea.valorAbonado));
-      const appliedValue = Math.min(requestedValue, remaining);
-      if (appliedValue > 0) { appliedTotal += appliedValue; applied.push({ linea, valor: appliedValue }); }
-    }
-    if (applied.length === 0) throw new Error("Sin líneas válidas para el nuevo valor");
-
-    // Aplicar nuevo abono a líneas
+    // Aplicar el abono a las líneas del crédito
     for (const { linea, valor: av } of applied) {
       await tx
         .update(creditoLineasTable)
@@ -472,26 +449,31 @@ router.post("/:id/abono", async (req, res) => {
         .where(eq(creditoLineasTable.id, linea.id));
     }
 
-    // Releer crédito (ya actualizado por revertirAbono)
-    const [creditoRevertido] = await tx.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
-    const newAbonado = toNum(creditoRevertido.valorAbonado) + appliedTotal;
+    // Actualizar valorAbonado del crédito
+    const newAbonado = toNum(credito.valorAbonado) + appliedTotal;
     const [updatedCredito] = await tx
       .update(creditosTable)
       .set({ valorAbonado: String(newAbonado), actualizadoEn: new Date() })
       .where(eq(creditosTable.id, creditoId))
       .returning();
 
-    // Actualizar el registro del abono con el nuevo valor y detalle
-    const hoy = new Date().toISOString().split("T")[0];
-    const lineaDetalle = JSON.stringify(applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })));
-    await tx
-      .update(abonosCreditosTable)
-      .set({ valorTotal: String(appliedTotal), fecha: hoy, lineaDetalle })
-      .where(eq(abonosCreditosTable.id, abonoId));
+    // Insertar el nuevo registro de abono con detalle por línea
+    const lineaDetalle = customRef
+      ? JSON.stringify({ ref: customRef, lineas: applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })) })
+      : JSON.stringify(applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })));
+    const [newAbono] = await tx
+      .insert(abonosCreditosTable)
+      .values({ creditoId, valorTotal: String(appliedTotal), fecha: hoy, lineaDetalle })
+      .returning();
 
-    // Reconstruir TODAS las filas de Ventas de los pagos de este crédito en orden
-    // cronológico (el estado completo/parcial de otros pagos puede haber cambiado)
-    await rebuildVentasCredito(tx, updatedCredito);
+    // Crear las filas de ventas_diarias para este abono
+    for (const { linea, valor: av } of applied) {
+      const total = toNum(linea.cantidad) * toNum(linea.precioVenta);
+      const antes = toNum(linea.valorAbonado); // valor antes de este abono
+      const restante = Math.max(0, total - antes);
+      const pagaCompleto = Math.abs(av - restante) < 1;
+      await crearFilaVentaPago(tx, updatedCredito, linea, av, pagaCompleto, newAbono.id, hoy, customRef);
+    }
 
     return updatedCredito;
   });
@@ -505,9 +487,8 @@ async function revertirAbono(
   abono: typeof abonosCreditosTable.$inferSelect,
 ) {
   // 1. Revertir valorAbonado en cada línea de crédito
-  const lineas: { lineaId: number; valor: number }[] = abono.lineaDetalle
-    ? JSON.parse(abono.lineaDetalle)
-    : [];
+  const _detRaw = abono.lineaDetalle ? JSON.parse(abono.lineaDetalle) : [];
+  const lineas: { lineaId: number; valor: number }[] = Array.isArray(_detRaw) ? _detRaw : (_detRaw.lineas ?? []);
   for (const { lineaId, valor } of lineas) {
     const [linea] = await tx
       .select()
@@ -549,7 +530,6 @@ router.delete("/:id/abono/:abonoId", async (req, res) => {
     .from(abonosCreditosTable)
     .where(and(eq(abonosCreditosTable.id, abonoId), eq(abonosCreditosTable.creditoId, creditoId)));
 
-    const [cred] = await tx.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
   if (!abono) { res.status(404).json({ error: "Abono no encontrado" }); return; }
 
   const [credito] = await db.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
@@ -561,7 +541,7 @@ router.delete("/:id/abono/:abonoId", async (req, res) => {
 router.put("/:id/abono/:abonoId", async (req, res) => {
   const creditoId = parseInt(req.params.id);
   const abonoId = parseInt(req.params.abonoId);
-  const { valor, lineas } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[] };
+  const { valor, lineas, customRef } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string };
   const abonoTotal = parseFloat(String(valor));
 
   if (!Number.isFinite(abonoTotal) || abonoTotal <= 0 || !Array.isArray(lineas) || lineas.length === 0) {
@@ -574,7 +554,6 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
     .from(abonosCreditosTable)
     .where(and(eq(abonosCreditosTable.id, abonoId), eq(abonosCreditosTable.creditoId, creditoId)));
 
-    const [cred] = await tx.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
   if (!abono) { res.status(404).json({ error: "Abono no encontrado" }); return; }
 
   const [credito] = await db.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
@@ -623,7 +602,9 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
 
     // Actualizar el registro del abono con el nuevo valor y detalle
     const hoy = new Date().toISOString().split("T")[0];
-    const lineaDetalle = JSON.stringify(applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })));
+    const lineaDetalle = customRef
+      ? JSON.stringify({ ref: customRef, lineas: applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })) })
+      : JSON.stringify(applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })));
     await tx
       .update(abonosCreditosTable)
       .set({ valorTotal: String(appliedTotal), fecha: hoy, lineaDetalle })
@@ -656,9 +637,15 @@ router.delete("/:id", async (req, res) => {
 export default router;
 
 /** Referencia (No.Remisión/Ref) para filas de ventas_diarias generadas desde un crédito/nos debe. */
-function refCredito(credito: typeof creditosTable.$inferSelect): string {
+function refCredito(credito: typeof creditosTable.$inferSelect, customRef?: string): string {
+  if (customRef) return customRef;
   const nombre = abreviarNombre(credito.nombreCliente);
-  return credito.concepto ? `${credito.concepto} ${nombre}` : nombre;
+  if (credito.tipo === "nosdebe") return nombre;
+  // Para créditos: incluir fecha corta (dd/mm/aa) para facilitar rastreo en impresión
+  const fecha = credito.fechaFactura
+    ? (() => { const [y, m, d] = credito.fechaFactura.split("-"); return `${d}/${m}/${y.slice(2)}`; })()
+    : "";
+  return [credito.concepto, nombre, fecha].filter(Boolean).join(" ");
 }
 
 /**
@@ -676,8 +663,9 @@ async function crearFilaVentaPago(
   pagaCompleto: boolean,
   abonoId: number,
   fecha: string,
+  customRef?: string,
 ) {
-  const referencia = refCredito(credito);
+  const referencia = refCredito(credito, customRef);
   const etiqueta = credito.tipo === "nosdebe" ? "Nos Debe" : "crédito";
 
   if (pagaCompleto && linea.productoNombre === MO_NOMBRE) {
@@ -767,14 +755,17 @@ async function rebuildVentasCredito(tx: Tx, credito: typeof creditosTable.$infer
   for (const l of lineas) {
     let sumAbonos = 0;
     for (const a of conDetalle) {
-      const det: { lineaId: number; valor: number }[] = JSON.parse(a.lineaDetalle!);
+      const _rd = JSON.parse(a.lineaDetalle!);
+      const det: { lineaId: number; valor: number }[] = Array.isArray(_rd) ? _rd : (_rd.lineas ?? []);
       sumAbonos += det.filter((d) => d.lineaId === l.id).reduce((s, d) => s + d.valor, 0);
     }
     running.set(l.id, Math.max(0, toNum(l.valorAbonado) - sumAbonos));
   }
 
   for (const abono of conDetalle) {
-    const det: { lineaId: number; valor: number }[] = JSON.parse(abono.lineaDetalle!);
+    const _raw = JSON.parse(abono.lineaDetalle!);
+    const det: { lineaId: number; valor: number }[] = Array.isArray(_raw) ? _raw : (_raw.lineas ?? []);
+    const abonoCustomRef: string | undefined = Array.isArray(_raw) ? undefined : (_raw.ref ?? undefined);
     for (const { lineaId, valor } of det) {
       const linea = byId.get(lineaId);
       if (!linea || valor <= 0) continue;
@@ -782,7 +773,7 @@ async function rebuildVentasCredito(tx: Tx, credito: typeof creditosTable.$infer
       const antes = running.get(lineaId) ?? 0;
       const restante = Math.max(0, total - antes);
       const pagaCompleto = Math.abs(valor - restante) < 1;
-      await crearFilaVentaPago(tx, credito, linea, valor, pagaCompleto, abono.id, abono.fecha);
+      await crearFilaVentaPago(tx, credito, linea, valor, pagaCompleto, abono.id, abono.fecha, abonoCustomRef);
       running.set(lineaId, antes + valor);
     }
   }

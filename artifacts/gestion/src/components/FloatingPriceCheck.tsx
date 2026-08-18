@@ -10,7 +10,7 @@ interface LineaConsulta {
   cantidad: string;
 }
 
-export function FloatingPriceCheck() {
+export function FloatingPriceCheck({ topbar }: { topbar?: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
   const [lineas, setLineas] = useState<LineaConsulta[]>([{ productoId: "", cantidad: "1" }]);
   const [busquedas, setBusquedas] = useState<string[]>([""]);
@@ -112,6 +112,177 @@ export function FloatingPriceCheck() {
   const grandTotalSinIva = calcLines.reduce((s, l) => s + l.subtotalSinIva, 0);
   const grandTotalConIva = calcLines.reduce((s, l) => s + l.subtotalConIva, 0);
 
+  const panelContent = (
+    <>
+      {/* Header */}
+      <div className="bg-muted px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0 rounded-t-2xl">
+        <div className="flex items-center gap-2 text-foreground font-medium text-sm">
+          <Calculator className="w-4 h-4 text-green-500" />
+          Consulta Rápida de Precios
+        </div>
+        <button
+          onClick={() => setIsOpen(false)}
+          className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-background rounded-md transition-colors"
+          title="Minimizar"
+        >
+          <Minus className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Column headers */}
+      <div className="px-4 pt-3 pb-1.5 grid grid-cols-[1fr_52px_168px_20px] gap-x-3 flex-shrink-0">
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Producto</span>
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-center">Cant.</span>
+        <div className="grid grid-cols-3 gap-x-1">
+          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-right">P. Compra</span>
+          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-right">s/IVA</span>
+          <span className="text-[10px] font-semibold text-green-600 uppercase tracking-wider text-right">c/IVA</span>
+        </div>
+        <span />
+      </div>
+
+      {/* Scrollable product rows */}
+      <div className="px-4 pb-2 space-y-2 overflow-y-auto flex-1 min-h-0">
+        {lineas.map((linea, i) => {
+          const calc = calcLine(linea);
+          const opts = filteredProductos(i);
+          const hasQ = busquedas[i]?.length > 0;
+          const cant = parseFloat(linea.cantidad) || 1;
+
+          return (
+            <div key={i} className="space-y-1">
+              <div className="grid grid-cols-[1fr_52px_168px_20px] gap-x-3 items-center">
+                <div className="relative">
+                  <input
+                    ref={(el) => { inputRefs.current[i] = el; }}
+                    type="text"
+                    placeholder="Buscar producto..."
+                    value={busquedas[i]}
+                    onChange={(e) => updateBusqueda(i, e.target.value)}
+                    onFocus={() => openDropdown(i)}
+                    className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-green-500 outline-none"
+                  />
+                </div>
+                <input
+                  type="number"
+                  min="0.25"
+                  step="0.25"
+                  value={linea.cantidad}
+                  onChange={(e) => updateCantidad(i, e.target.value)}
+                  className="w-full bg-background border border-border px-2 py-2 rounded-lg text-sm text-center focus:ring-1 focus:ring-green-500 outline-none"
+                  placeholder="1"
+                />
+                {calc ? (
+                  <div className="grid grid-cols-3 gap-x-1 text-xs">
+                    <span className="text-right text-muted-foreground font-medium tabular-nums">{formatCurrency(calc.prod.precioCompra)}</span>
+                    <span className="text-right text-muted-foreground font-medium tabular-nums">{formatCurrency(calc.prod.precioVentaSinIva)}</span>
+                    <span className="text-right text-green-500 font-bold tabular-nums">{formatCurrency(calc.prod.precioVentaConIva)}</span>
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground/40 text-center col-span-1">—</div>
+                )}
+                {lineas.length > 1 ? (
+                  <button onClick={() => removeLinea(i)} className="p-0.5 text-muted-foreground hover:text-destructive rounded transition-colors">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <span />
+                )}
+              </div>
+
+              {calc && cant > 1 && (
+                <div className="grid grid-cols-[1fr_52px_168px_20px] gap-x-3">
+                  <div className="text-[10px] text-muted-foreground pl-1">× {cant} unidades</div>
+                  <span />
+                  <div className="grid grid-cols-3 gap-x-1 text-[10px]">
+                    <span className="text-right text-muted-foreground tabular-nums">{formatCurrency(calc.subtotalCompra)}</span>
+                    <span className="text-right text-muted-foreground tabular-nums">{formatCurrency(calc.subtotalSinIva)}</span>
+                    <span className="text-right text-green-500 font-semibold tabular-nums">{formatCurrency(calc.subtotalConIva)}</span>
+                  </div>
+                  <span />
+                </div>
+              )}
+
+              {dropdownOpen === i && hasQ && opts.length > 0 && dropdownPos && createPortal(
+                <div
+                  ref={(el) => { portalRef.current = el; }}
+                  style={{ position: "fixed", top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width, zIndex: 9999 }}
+                  className="bg-card border border-border rounded-lg shadow-2xl overflow-hidden max-h-52 overflow-y-auto"
+                >
+                  {opts.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); selectProducto(i, String(p.id), p.nombre); }}
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted transition-colors border-b border-border/40 last:border-0"
+                    >
+                      <span className="font-medium text-foreground">{p.nombre}</span>
+                      {p.marca && <span className="text-muted-foreground ml-1.5 text-xs">— {p.marca}</span>}
+                    </button>
+                  ))}
+                </div>,
+                document.body
+              )}
+            </div>
+          );
+        })}
+
+        {lineas.length < 6 && (
+          <button
+            onClick={addLinea}
+            className="w-full py-2 border border-dashed border-border rounded-lg text-xs text-muted-foreground hover:text-foreground hover:border-green-500 transition-colors flex items-center justify-center gap-1 mt-1"
+          >
+            <Plus className="w-3 h-3" />
+            Agregar producto ({lineas.length}/6)
+          </button>
+        )}
+      </div>
+
+      {/* Grand total */}
+      {calcLines.length > 0 && (
+        <div className="border-t-2 border-border bg-muted/50 px-4 py-3 flex-shrink-0 rounded-b-2xl">
+          <div className="grid grid-cols-[1fr_52px_168px_20px] gap-x-3 items-center">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Gran Total</p>
+            <span />
+            <div className="grid grid-cols-3 gap-x-1">
+              <span className="text-right text-xs font-medium tabular-nums">{formatCurrency(grandTotalCompra)}</span>
+              <span className="text-right text-xs font-medium tabular-nums">{formatCurrency(grandTotalSinIva)}</span>
+              <span className="text-right text-sm font-bold text-green-500 tabular-nums">{formatCurrency(grandTotalConIva)}</span>
+            </div>
+            <span />
+          </div>
+        </div>
+      )}
+    </>
+  );
+
+  if (topbar) {
+    return (
+      <div ref={containerRef} className="relative">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          aria-label="Consultar precios"
+          className="relative p-2 rounded-full hover:bg-muted transition-colors cursor-pointer block"
+        >
+          <Calculator className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground hover:text-foreground transition-colors" />
+        </button>
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: -10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              className="absolute right-0 top-full mt-2 w-[min(680px,calc(100vw-2rem))] bg-card border border-border shadow-2xl rounded-2xl flex flex-col z-50"
+              style={{ maxHeight: "min(600px, calc(100vh - 120px))" }}
+            >
+              {panelContent}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
   return (
     <div ref={containerRef} className="flex flex-col items-end">
       <AnimatePresence>
@@ -123,183 +294,10 @@ export function FloatingPriceCheck() {
             className="mb-4 w-[680px] bg-card border border-border shadow-2xl rounded-2xl flex flex-col"
             style={{ maxHeight: "min(600px, calc(100vh - 120px))" }}
           >
-            {/* Header — always visible, never scrolls */}
-            <div className="bg-muted px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0 rounded-t-2xl">
-              <div className="flex items-center gap-2 text-foreground font-medium text-sm">
-                <Calculator className="w-4 h-4 text-green-500" />
-                Consulta Rápida de Precios
-              </div>
-              <button
-                onClick={() => setIsOpen(false)}
-                className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-background rounded-md transition-colors"
-                title="Minimizar"
-              >
-                <Minus className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Column headers */}
-            <div className="px-4 pt-3 pb-1.5 grid grid-cols-[1fr_52px_168px_20px] gap-x-3 flex-shrink-0">
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Producto</span>
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-center">Cant.</span>
-              <div className="grid grid-cols-3 gap-x-1">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-right">P. Compra</span>
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-right">s/IVA</span>
-                <span className="text-[10px] font-semibold text-green-600 uppercase tracking-wider text-right">c/IVA</span>
-              </div>
-              <span />
-            </div>
-
-            {/* Scrollable product rows */}
-            <div className="px-4 pb-2 space-y-2 overflow-y-auto flex-1 min-h-0">
-              {lineas.map((linea, i) => {
-                const calc = calcLine(linea);
-                const opts = filteredProductos(i);
-                const hasQ = busquedas[i]?.length > 0;
-                const cant = parseFloat(linea.cantidad) || 1;
-
-                return (
-                  <div key={i} className="space-y-1">
-                    {/* Main row: product | qty | prices | remove */}
-                    <div className="grid grid-cols-[1fr_52px_168px_20px] gap-x-3 items-center">
-                      {/* Product search */}
-                      <div className="relative">
-                        <input
-                          ref={(el) => { inputRefs.current[i] = el; }}
-                          type="text"
-                          placeholder="Buscar producto..."
-                          value={busquedas[i]}
-                          onChange={(e) => updateBusqueda(i, e.target.value)}
-                          onFocus={() => openDropdown(i)}
-                          className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-green-500 outline-none"
-                        />
-                      </div>
-
-                      {/* Quantity */}
-                      <input
-                        type="number"
-                        min="0.25"
-                        step="0.25"
-                        value={linea.cantidad}
-                        onChange={(e) => updateCantidad(i, e.target.value)}
-                        className="w-full bg-background border border-border px-2 py-2 rounded-lg text-sm text-center focus:ring-1 focus:ring-green-500 outline-none"
-                        placeholder="1"
-                      />
-
-                      {/* Prices — 3 columns: compra, s/IVA, c/IVA */}
-                      {calc ? (
-                        <div className="grid grid-cols-3 gap-x-1 text-xs">
-                          <span className="text-right text-muted-foreground font-medium tabular-nums">
-                            {formatCurrency(calc.prod.precioCompra)}
-                          </span>
-                          <span className="text-right text-muted-foreground font-medium tabular-nums">
-                            {formatCurrency(calc.prod.precioVentaSinIva)}
-                          </span>
-                          <span className="text-right text-green-500 font-bold tabular-nums">
-                            {formatCurrency(calc.prod.precioVentaConIva)}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="text-xs text-muted-foreground/40 text-center col-span-1">—</div>
-                      )}
-
-                      {/* Remove */}
-                      {lineas.length > 1 ? (
-                        <button
-                          onClick={() => removeLinea(i)}
-                          className="p-0.5 text-muted-foreground hover:text-destructive rounded transition-colors"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      ) : (
-                        <span />
-                      )}
-                    </div>
-
-                    {/* Subtotals row — only when qty > 1 and product selected */}
-                    {calc && cant > 1 && (
-                      <div className="grid grid-cols-[1fr_52px_168px_20px] gap-x-3">
-                        <div className="text-[10px] text-muted-foreground pl-1">
-                          × {cant} unidades
-                        </div>
-                        <span />
-                        <div className="grid grid-cols-3 gap-x-1 text-[10px]">
-                          <span className="text-right text-muted-foreground tabular-nums">
-                            {formatCurrency(calc.subtotalCompra)}
-                          </span>
-                          <span className="text-right text-muted-foreground tabular-nums">
-                            {formatCurrency(calc.subtotalSinIva)}
-                          </span>
-                          <span className="text-right text-green-500 font-semibold tabular-nums">
-                            {formatCurrency(calc.subtotalConIva)}
-                          </span>
-                        </div>
-                        <span />
-                      </div>
-                    )}
-
-                    {/* Portal dropdown */}
-                    {dropdownOpen === i && hasQ && opts.length > 0 && dropdownPos && createPortal(
-                      <div
-                        ref={(el) => { portalRef.current = el; }}
-                        style={{
-                          position: "fixed",
-                          top: dropdownPos.top,
-                          left: dropdownPos.left,
-                          width: dropdownPos.width,
-                          zIndex: 9999,
-                        }}
-                        className="bg-card border border-border rounded-lg shadow-2xl overflow-hidden max-h-52 overflow-y-auto"
-                      >
-                        {opts.map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onMouseDown={(e) => { e.preventDefault(); selectProducto(i, String(p.id), p.nombre); }}
-                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted transition-colors border-b border-border/40 last:border-0"
-                          >
-                            <span className="font-medium text-foreground">{p.nombre}</span>
-                            {p.marca && <span className="text-muted-foreground ml-1.5 text-xs">— {p.marca}</span>}
-                          </button>
-                        ))}
-                      </div>,
-                      document.body
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Add product button */}
-              {lineas.length < 6 && (
-                <button
-                  onClick={addLinea}
-                  className="w-full py-2 border border-dashed border-border rounded-lg text-xs text-muted-foreground hover:text-foreground hover:border-green-500 transition-colors flex items-center justify-center gap-1 mt-1"
-                >
-                  <Plus className="w-3 h-3" />
-                  Agregar producto ({lineas.length}/6)
-                </button>
-              )}
-            </div>
-
-            {/* Grand total — always visible at bottom */}
-            {calcLines.length > 0 && (
-              <div className="border-t-2 border-border bg-muted/50 px-4 py-3 flex-shrink-0 rounded-b-2xl">
-                <div className="grid grid-cols-[1fr_52px_168px_20px] gap-x-3 items-center">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Gran Total</p>
-                  <span />
-                  <div className="grid grid-cols-3 gap-x-1">
-                    <span className="text-right text-xs font-medium tabular-nums">{formatCurrency(grandTotalCompra)}</span>
-                    <span className="text-right text-xs font-medium tabular-nums">{formatCurrency(grandTotalSinIva)}</span>
-                    <span className="text-right text-sm font-bold text-green-500 tabular-nums">{formatCurrency(grandTotalConIva)}</span>
-                  </div>
-                  <span />
-                </div>
-              </div>
-            )}
+            {panelContent}
           </motion.div>
         )}
       </AnimatePresence>
-
       <div className="relative group/price">
         <button
           onClick={() => setIsOpen(!isOpen)}

@@ -132,6 +132,9 @@ export default function Creditos() {
   };
 
   const totalLineas = lineas.reduce((sum, l) => sum + (parseFloat(l.cantidad) || 0) * (parseFloat(l.precioVenta) || 0), 0);
+  const editingCredit = editingId ? (creditos as any[])?.find((c: any) => c.id === editingId) : null;
+  const totalAbonados = editingCredit?.abonos?.reduce((s: number, a: any) => s + (a.valorAbonado || 0), 0) ?? 0;
+  const showSaldoPorLinea = editingId !== null && totalAbonados > 0;
   const handleClienteSelect = (nombre: string) => {
     const cliente = clientes?.find((c) => c.nombre === nombre);
     if (cliente) {
@@ -610,6 +613,7 @@ export default function Creditos() {
                       <th className="px-3 py-2 font-medium w-28">P. Compra</th>
                       <th className="px-3 py-2 font-medium w-28">P. Venta</th>
                       <th className="px-3 py-2 font-medium w-24">Total</th>
+                      {showSaldoPorLinea && <th className="px-3 py-2 font-medium w-24 text-amber-500">Saldo</th>}
                       <th className="px-3 py-2 w-6"></th>
                     </tr></thead>
                     <tbody className="divide-y divide-border">
@@ -631,13 +635,23 @@ export default function Creditos() {
                           </td>
                           <td className="px-3 py-2">{(() => { const pv = parseFloat(linea.precioVenta); const pc = parseFloat(linea.precioCompra); const isBelow = linea.precioVenta !== "" && linea.precioCompra !== "" && pc > 0 && pv < pc; return (<div><input type="number" min="0" value={linea.precioVenta} onChange={(e) => updateLinea(linea.id, "precioVenta", e.target.value)} className={`w-full px-2 py-1.5 rounded-lg text-xs focus:ring-1 outline-none border ${isBelow ? "border-red-500 focus:ring-red-500 bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400" : "bg-background border-border focus:ring-primary"}`} />{isBelow && <p className="text-red-500 dark:text-red-400 text-[10px] mt-0.5 leading-tight">⚠ Menor al costo</p>}</div>); })()}</td>
                           <td className="px-3 py-2 text-xs font-bold text-primary">{formatCurrency((parseFloat(linea.cantidad) || 0) * (parseFloat(linea.precioVenta) || 0))}</td>
+                          {showSaldoPorLinea && <td className="px-3 py-2 text-xs font-semibold text-amber-500">{(() => { const lt = (parseFloat(linea.cantidad)||0)*(parseFloat(linea.precioVenta)||0); const ab = totalLineas > 0 ? lt / totalLineas * totalAbonados : 0; return formatCurrency(Math.max(0, lt - ab)); })()}</td>}
                           <td className="px-3 py-2"><button type="button" onClick={() => removeLinea(linea.id)} disabled={lineas.length === 1} className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-30"><X className="w-3.5 h-3.5" /></button></td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot className="border-t border-border bg-muted/30">
                       <tr><td colSpan={4} className="px-3 py-2 text-right text-xs font-medium text-muted-foreground uppercase">Total crédito</td>
-                        <td className="px-3 py-2 font-bold text-primary text-xs">{formatCurrency(totalLineas)}</td><td></td></tr>
+                        <td className="px-3 py-2 font-bold text-primary text-xs">{formatCurrency(totalLineas)}</td>
+                        {showSaldoPorLinea && <td></td>}<td></td></tr>
+                      {showSaldoPorLinea && <>
+                        <tr><td colSpan={4} className="px-3 py-2 text-right text-xs font-medium text-green-500 uppercase">Abonado</td>
+                          <td className="px-3 py-2 font-semibold text-green-500 text-xs">{formatCurrency(totalAbonados)}</td>
+                          <td></td><td></td></tr>
+                        <tr><td colSpan={4} className="px-3 py-2 text-right text-xs font-medium text-amber-500 uppercase">Pendiente</td>
+                          <td className="px-3 py-2 font-bold text-amber-500 text-xs">{formatCurrency(Math.max(0, totalLineas - totalAbonados))}</td>
+                          <td></td><td></td></tr>
+                      </>}
                     </tfoot>
                   </table>
                 </div>

@@ -6,3 +6,4 @@
 - [Grupo 3 schema decisions](grupo3-schema.md) — Créditos/NosDebe separados por tipo en misma tabla; precioCompra en líneas; abonosCreditosTable; historialPreciosTable; flujo abono→ventas con pago completo vs parcial.
 - [Rebuild de Ventas al editar/eliminar pagos](abono-rebuild.md) — editar/eliminar un abono debe reconstruir TODAS las filas de Ventas del crédito en orden cronológico; lo incremental deja totales inflados.
 - [Abono reversal linkage](abono-reversal.md) — abonosCreditosTable.lineaDetalle (JSON) + ventasDiariasTable.creditoAbonoId permiten revertir exactamente un abono; sin esos dos campos no es posible hacer DELETE/PUT de abonos.
+- [POST abono handler corrupción](post-abono-fix.md) — el handler POST /:id/abono tenía el cuerpo del PUT (revertirAbono, abonoId, creditoId no definidos); fue reescrito para hacer INSERT en abonosCreditosTable y crear ventas directamente.
