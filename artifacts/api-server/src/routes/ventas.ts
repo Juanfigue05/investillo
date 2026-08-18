@@ -143,9 +143,11 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
 
-  // Restore stock if it was a normal sale with product
+  // Restore stock if it was a normal sale with product.
+  // Filas auto-creadas por pagos de crédito (creditoAbonoId != null) no tocan stock —
+  // el crédito ya descontó al crearse; restaurar aquí sería un doble conteo.
   const [venta] = await db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.id, id));
-  if (venta && (venta.tipoLinea === "venta" || !venta.tipoLinea) && venta.productoId) {
+  if (venta && (venta.tipoLinea === "venta" || !venta.tipoLinea) && venta.productoId && !venta.creditoAbonoId) {
     const [prod] = await db.select().from(productosTable).where(eq(productosTable.id, venta.productoId));
     if (prod) {
       const nuevoStock = toNum(prod.stockActual) + toNum(venta.cantidad);
