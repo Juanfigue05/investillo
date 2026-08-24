@@ -80,6 +80,7 @@ cd investillo
 pnpm install
 ```
 
+
 ### 3.3 Variables de entorno necesarias
 
 El proyecto usa 3 archivos de entorno en la raíz (ninguno se sube al repositorio — están en `.gitignore`):
