@@ -8,13 +8,15 @@ import {
   useEliminarVenta,
   useActualizarVenta,
   useGetTrabajadores,
-  useCrearManoObra,
   useGetHistorial,
   useGuardarDiaHistorial,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
 import { Printer, Save, Trash2, ChevronDown, X, Pencil, Check, BookMarked } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { ManoObraSelector, calcularDistribucion } from "@/components/ManoObraSelector";
+import { encolarOperacion } from "@/lib/offline-db";
+import { toast } from "@/hooks/use-toast";
 
 const SPECIAL_MANOOBRA = "__manoobra__";
 const SPECIAL_ABONO = "__abono__";
@@ -82,7 +84,6 @@ function SearchableSelect({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Close on scroll ONLY when the scroll happens outside the portal
   useEffect(() => {
     if (!open) return;
     const close = (e: Event) => {
@@ -170,6 +171,8 @@ function SearchableSelect({
   );
 }
 
+const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
+
 export default function VentasDiarias() {
   const [fecha, setFecha] = useState(new Date().toISOString().split("T")[0]);
   const { data: ventas, isLoading } = useGetVentas({ fecha });
@@ -181,7 +184,6 @@ export default function VentasDiarias() {
   const crearMutation = useCrearVenta();
   const eliminarMutation = useEliminarVenta();
   const actualizarMutation = useActualizarVenta();
-  const crearManoObraMutation = useCrearManoObra();
   const guardarDiaMutation = useGuardarDiaHistorial();
 
   const [newRow, setNewRow] = useState({
@@ -195,6 +197,7 @@ export default function VentasDiarias() {
     precioCompra: 0,
     valorAbono: 0,
     trabajadoresSeleccionados: [] as number[],
+    valoresFijados: {} as Record<number, number>,
   });
 
   const [stockAlerta, setStockAlerta] = useState<{ stock: number; minimo: number } | null>(null);
@@ -326,55 +329,68 @@ export default function VentasDiarias() {
         return;
       }
       const valor = newRow.precioManoObra;
-      const n = newRow.trabajadoresSeleccionados.length;
-      const base = Math.floor(valor / n);
-      const resto = valor - base * n;
-      const distribuciones = newRow.trabajadoresSeleccionados.map((tid, i) => {
-        const t = trabajadores?.find((w) => w.id === tid);
-        return { trabajadorId: tid, trabajadorNombre: t?.nombre || `Trabajador ${tid}`, valor: i === n - 1 ? base + resto : base, descuentoSeguro: 0, descuentoOtros: 0 };
+      const dist = calcularDistribucion(valor, newRow.trabajadoresSeleccionados, newRow.valoresFijados);
+      const distribuciones = dist.map((d) => {
+        const t = trabajadores?.find((w) => w.id === d.trabajadorId);
+        return { trabajadorId: d.trabajadorId, trabajadorNombre: t?.nombre || `Trabajador ${d.trabajadorId}`, valor: d.valor };
       });
-      crearManoObraMutation.mutate(
-        { data: { fecha, descripcion: newRow.referencia, valorTotal: valor, distribuciones } },
-        {
-          onSuccess: () => {
-            crearMutation.mutate(
-              {
-                data: {
-                  fecha, referencia: newRow.referencia, tipoLinea: "manoobra",
-                  productoNombre: "Mano de Obra",
-                  productoMarca: newRow.trabajadoresSeleccionados.map((tid) => trabajadores?.find((w) => w.id === tid)?.nombre || `T${tid}`).join(", "),
-                  cantidad: 1, precioCompraUnidad: 0, precioVentaUnidad: valor, precioVentaTotal: valor, beneficio: valor,
-                  descripcion: distribuciones.map((d) => `${d.trabajadorNombre}: ${formatCurrency(d.valor)}`).join(" | "),
-                },
-              },
-              {
-                onSuccess: () => {
-                  queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
-                  queryClient.invalidateQueries({ queryKey: ["/api/manoobra"] });
-                  setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioManoObra: 0, trabajadoresSeleccionados: [] }));
-                },
-              }
-            );
-          },
+
+      const payloadManoObra = {
+        fecha, referencia: newRow.referencia, valorTotal: valor, distribuciones,
+        productoMarca: distribuciones.map((d) => `${d.trabajadorNombre.toUpperCase()}(${Math.round(d.valor / 1000)})`).join(""),
+        descripcion: distribuciones.map((d) => `${d.trabajadorNombre}: ${formatCurrency(d.valor)}`).join(" | "),
+      };
+
+      const limpiarFilaManoObra = () =>
+        setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioManoObra: 0, trabajadoresSeleccionados: [], valoresFijados: {} }));
+
+      (async () => {
+        if (navigator.onLine) {
+          try {
+            const res = await fetch(`${API}/ventas/manoobra`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payloadManoObra),
+            });
+            if (res.ok) {
+              queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/manoobra"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/trabajadores"] });
+              limpiarFilaManoObra();
+              return;
+            }
+          } catch {
+            // sigue abajo, se encola
+          }
         }
-      );
+        await encolarOperacion({ tipo: "manoobra_venta", metodo: "POST", endpoint: "/ventas/manoobra", payload: payloadManoObra });
+        toast({ title: "Guardado sin conexión", description: "Esta mano de obra se sincronizará automáticamente cuando vuelva internet." });
+        limpiarFilaManoObra();
+      })();
+
       return;
     }
 
     if (modoActual === "abono") {
       if (!newRow.productoNombreManual || !newRow.valorAbono) { alert("Completa el nombre y el valor del abono"); return; }
+
+      const payloadAbono = {
+        fecha, referencia: newRow.referencia, tipoLinea: "credito" as const,
+        productoNombre: `Abono A: ${newRow.productoNombreManual}`,
+        cantidad: 1, precioCompraUnidad: 0, precioVentaUnidad: newRow.valorAbono,
+        precioVentaTotal: newRow.valorAbono, beneficio: 0, descripcion: "Abono a crédito",
+      };
+
       crearMutation.mutate(
-        {
-          data: {
-            fecha, referencia: newRow.referencia, tipoLinea: "credito",
-            productoNombre: `Abono A: ${newRow.productoNombreManual}`,
-            cantidad: 1, precioCompraUnidad: 0, precioVentaUnidad: newRow.valorAbono,
-            precioVentaTotal: newRow.valorAbono, beneficio: 0, descripcion: "Abono a crédito",
-          },
-        },
-        {
+        { data: payloadAbono },
+         {
           onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+            setNewRow((prev) => ({ ...prev, productoSeleccionado: "", productoNombreManual: "", valorAbono: 0 }));
+          },
+          onError: async () => {
+            await encolarOperacion({ tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadAbono });
+            toast({ title: "Guardado sin conexión", description: "Este abono se sincronizará automáticamente cuando vuelva internet." });
             setNewRow((prev) => ({ ...prev, productoSeleccionado: "", productoNombreManual: "", valorAbono: 0 }));
           },
         }
@@ -385,24 +401,31 @@ export default function VentasDiarias() {
     const prod = productos?.find((p) => String(p.id) === newRow.productoSeleccionado);
     const nombreProducto = prod?.nombre || "";
     if (!nombreProducto) { alert("Selecciona un producto del inventario"); return; }
-    const cantNum = parseFloat(newRow.cantidad.replace(",", "."));
-    if (isNaN(cantNum) || cantNum <= 0) { alert("Cantidad inválida. Usa coma para decimales, ej: 1,5"); return; }
-    const beneficio = (newRow.precioVenta - newRow.precioCompra) * cantNum;
-    const total = newRow.precioVenta * cantNum;
+    const cantNumNueva = parseFloat(newRow.cantidad.replace(",", "."));
+    if (isNaN(cantNumNueva) || cantNumNueva <= 0) { alert("Cantidad inválida. Usa coma para decimales, ej: 1,5"); return; }
+    const beneficio = (newRow.precioVenta - newRow.precioCompra) * cantNumNueva;
+    const total = newRow.precioVenta * cantNumNueva;
+
+    const payloadVenta = {
+      fecha, referencia: newRow.referencia, tipoLinea: "venta" as const,
+      productoId: prod ? prod.id : undefined, productoNombre: nombreProducto,
+      productoCodigo: prod?.codigo, productoMarca: newRow.marca || prod?.marca || undefined,
+      cantidad: cantNumNueva, precioCompraUnidad: newRow.precioCompra,
+      precioVentaUnidad: newRow.precioVenta, precioVentaTotal: total, beneficio,
+    };
+
     crearMutation.mutate(
-      {
-        data: {
-          fecha, referencia: newRow.referencia, tipoLinea: "venta",
-          productoId: prod ? prod.id : undefined, productoNombre: nombreProducto,
-          productoCodigo: prod?.codigo, productoMarca: newRow.marca || prod?.marca || undefined,
-          cantidad: cantNum, precioCompraUnidad: newRow.precioCompra,
-          precioVentaUnidad: newRow.precioVenta, precioVentaTotal: total, beneficio,
-        },
-      },
+      { data: payloadVenta },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
           queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+          setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0 }));
+          setStockAlerta(null);
+        },
+        onError: async () => {
+          await encolarOperacion({ tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadVenta });
+          toast({ title: "Guardado sin conexión", description: "Esta venta se sincronizará automáticamente cuando vuelva internet." });
           setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0 }));
           setStockAlerta(null);
         },
@@ -436,7 +459,6 @@ export default function VentasDiarias() {
     );
   };
 
-  // Computed totals
   const ventasRows = ventas?.filter((v) => v.tipoLinea === "venta") || [];
 
   const totalPCompra = ventasRows.reduce((acc, v) => acc + v.precioCompraUnidad, 0);
@@ -454,7 +476,6 @@ export default function VentasDiarias() {
   return (
     <Layout>
       <div className="space-y-5">
-        {/* Header */}
         <div className="no-print flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div>
             <h1 className="text-2xl lg:text-3xl font-display font-bold text-foreground">Ventas Diarias</h1>
@@ -501,7 +522,6 @@ export default function VentasDiarias() {
           </div>
         </div>
 
-        {/* Table */}
         <div className="print-zone bg-card border border-border rounded-2xl overflow-hidden shadow-xl shadow-black/10">
           <div className="print-only print-date-header">
             Ventas Diarias — {fechaFormateada}
@@ -524,12 +544,11 @@ export default function VentasDiarias() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {/* New Row Input */}
                 <tr className={`no-print bg-background/40 ${modoActual === "manoobra" ? "row-manoobra" : modoActual === "abono" ? "row-credito" : ""}`}>
                   <td className="p-2 no-print">
                     <button
                       onClick={handleAddRow}
-                      disabled={crearMutation.isPending || crearManoObraMutation.isPending}
+                      disabled={crearMutation.isPending}
                       className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow"
                       title="Guardar fila"
                     >
@@ -574,14 +593,15 @@ export default function VentasDiarias() {
                       <input type="text" value={newRow.marca} onChange={(e) => setNewRow({ ...newRow, marca: e.target.value })} className="w-20 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="Marca" />
                     )}
                     {modoActual === "manoobra" && (
-                      <div className="flex flex-wrap gap-1 max-w-[160px]">
-                        {trabajadores?.map((t) => (
-                          <button key={t.id} type="button" onClick={() => toggleTrabajador(t.id)}
-                            className={`px-2 py-1 rounded-lg border text-xs font-medium transition-all ${newRow.trabajadoresSeleccionados.includes(t.id) ? "bg-yellow-500/20 border-yellow-500 text-yellow-400" : "bg-background border-border text-muted-foreground hover:border-yellow-500/50"}`}
-                          >
-                            {t.nombre}
-                          </button>
-                        ))}
+                      <div className="max-w-[160px]">
+                        <ManoObraSelector
+                          trabajadores={trabajadores || []}
+                          total={newRow.precioManoObra}
+                          seleccionados={newRow.trabajadoresSeleccionados}
+                          fijados={newRow.valoresFijados}
+                          onChangeSeleccionados={(ids) => setNewRow((prev) => ({ ...prev, trabajadoresSeleccionados: ids }))}
+                          onChangeFijados={(fijados) => setNewRow((prev) => ({ ...prev, valoresFijados: fijados }))}
+                        />
                       </div>
                     )}
                     {modoActual === "abono" && <span className="text-xs text-blue-400 italic">Abono</span>}
@@ -618,7 +638,6 @@ export default function VentasDiarias() {
                   <td className="p-2 no-print"></td>
                 </tr>
 
-                {/* Registered rows */}
                 {isLoading ? (
                   <tr><td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">Cargando ventas...</td></tr>
                 ) : ventas?.length === 0 ? (
@@ -682,9 +701,7 @@ export default function VentasDiarias() {
                 )}
               </tbody>
 
-              {/* ── Totals footer ── */}
               <tfoot className="border-t-2 border-border">
-                {/* Row 1: Sales totals */}
                 {(ventasRows.length > 0) && (
                   <tr className="bg-card">
                     <td className="no-print"></td>
@@ -698,7 +715,6 @@ export default function VentasDiarias() {
                     <td className="no-print"></td>
                   </tr>
                 )}
-
               </tfoot>
             </table>
           </div>

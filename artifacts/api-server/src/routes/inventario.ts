@@ -35,7 +35,11 @@ function mapProducto(p: typeof productosTable.$inferSelect) {
 }
 
 router.get("/", async (req, res) => {
-  const productos = await db.select().from(productosTable).orderBy(productosTable.nombre);
+  const productos = await db
+    .select()
+    .from(productosTable)
+    .where(eq(productosTable.activo, true))
+    .orderBy(productosTable.nombre);
   res.json(productos.map(mapProducto));
 });
 
@@ -146,8 +150,8 @@ router.put("/:id/stock", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
-  await db.delete(productosTable).where(eq(productosTable.id, id));
-  res.json({ mensaje: "Producto eliminado" });
+  await db.update(productosTable).set({ activo: false }).where(eq(productosTable.id, id));
+  res.json({ mensaje: "Producto marcado como inactivo" });
 });
 
 export default router;

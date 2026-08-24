@@ -872,7 +872,7 @@ async function trabajadoresManoObra(tx: Tx, creditoId: number) {
   if (!mo) return { nombres: "", detalle: "" };
   const dists = await tx.select().from(distribucionesTable).where(eq(distribucionesTable.manoObraId, mo.id));
   return {
-    nombres: dists.map((d) => d.trabajadorNombre).join(", "),
+    nombres: dists.map((d) => `${d.trabajadorNombre.toUpperCase()}(${Math.round(toNum(d.valor) / 1000)})`).join(""),
     detalle: dists.map((d) => `${d.trabajadorNombre}: $${toNum(d.valor).toLocaleString("es-CO")}`).join(" | "),
   };
 }

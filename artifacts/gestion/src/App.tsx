@@ -1,7 +1,9 @@
 import { Switch, Route, Router as WouterRouter } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useEffect } from "react";
+import { iniciarSincronizacionAutomatica } from "@/lib/sync-engine";
 
 // Pages
 import Dashboard from "@/pages/dashboard";
@@ -17,8 +19,9 @@ import CierreDiario from "@/pages/cierre-diario";
 import HistorialCierres from "@/pages/historial-cierres";
 import ClientesPage from "@/pages/clientes";
 import NotFound from "@/pages/not-found";
+import ManoObra from "@/pages/mano-obra";
 
-const queryClient = new QueryClient();
+import { queryClient } from "@/lib/queryClient";
 
 function Router() {
   return (
@@ -35,12 +38,16 @@ function Router() {
       <Route path="/cierre-diario" component={CierreDiario} />
       <Route path="/historial-cierres" component={HistorialCierres} />
       <Route path="/clientes" component={ClientesPage} />
+      <Route path="/mano-obra" component={ManoObra} />
       <Route component={NotFound} />
     </Switch>
   );
 }
 
 function App() {
+    useEffect(() => {
+    iniciarSincronizacionAutomatica();
+    }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

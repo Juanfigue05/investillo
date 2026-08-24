@@ -13,6 +13,7 @@ import {
   Calculator,
   History,
   Users,
+  Wrench
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,7 @@ const NAV_ITEMS = [
   { href: "/historial", label: "Historial de Ventas", icon: BookOpen },
   { href: "/historial-cierres", label: "Historial Cierres", icon: History },
   { href: "/historial-precios", label: "Historial de Precios", icon: TrendingUp },
+  { href: "/mano-obra", label: "Trabajadores", icon: Wrench },
 ];
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {

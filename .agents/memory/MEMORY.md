@@ -1,9 +1,0 @@
-- [DB recompile required](db-recompile.md) — after schema changes, must run `pnpm tsc -p lib/db/tsconfig.json` AND `pnpm tsc -p lib/api-client-react/tsconfig.json` before running tsc on dependents; `push` alone is not enough.
-- [Historial schema](historial-schema.md) — `historial_dias` table has unique fecha (immutable), notas, guardadoEn; ventas stay in ventas_diarias and are queried by fecha on demand.
-- [Abono flujos distintos](abono-flujos.md) — "Abono A" in Ventas Diarias is a simple blue row, independent of Créditos; credit payments from Créditos page create ONE simple "Abono A" row (not per-product rows).
-- [totalGanado fix](totalganado-fix.md) — manoobra route was using `db.$count()` for totalGanado (wrong); must read worker first then add `dist.valor` to existing total.
-- [Mano de obra en créditos](credito-mano-obra-sync.md) — la MO de Créditos/Nos Debe se sincroniza solo vía el API de créditos (campo manoObra); nunca crear /manoobra aparte desde el frontend.
-- [Grupo 3 schema decisions](grupo3-schema.md) — Créditos/NosDebe separados por tipo en misma tabla; precioCompra en líneas; abonosCreditosTable; historialPreciosTable; flujo abono→ventas con pago completo vs parcial.
-- [Rebuild de Ventas al editar/eliminar pagos](abono-rebuild.md) — editar/eliminar un abono debe reconstruir TODAS las filas de Ventas del crédito en orden cronológico; lo incremental deja totales inflados.
-- [Abono reversal linkage](abono-reversal.md) — abonosCreditosTable.lineaDetalle (JSON) + ventasDiariasTable.creditoAbonoId permiten revertir exactamente un abono; sin esos dos campos no es posible hacer DELETE/PUT de abonos.
-- [POST abono handler corrupción](post-abono-fix.md) — el handler POST /:id/abono tenía el cuerpo del PUT (revertirAbono, abonoId, creditoId no definidos); fue reescrito para hacer INSERT en abonosCreditosTable y crear ventas directamente.

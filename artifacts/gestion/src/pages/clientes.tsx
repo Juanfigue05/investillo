@@ -1,3 +1,4 @@
+import {  Edit2, AlertCircle, ChevronsUpDown, Filter, ChevronDown as ChevDown, Upload, CheckCircle2, Loader2, FileDown, GitMerge } from "lucide-react";
 import { useState, useMemo } from "react";
 import { Layout } from "@/components/Layout";
 import {
@@ -152,6 +153,42 @@ export default function Clientes() {
 
   const isSaving = crearMutation.isPending || actualizarMutation.isPending;
 
+  interface ImportResultCliente {
+  ok: boolean;
+  total: number;
+  procesados: number;
+  omitidos: number;
+  duplicados: number;
+  error?: string;
+}
+
+const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
+
+// dentro del componente:
+const [importandoClientes, setImportandoClientes] = useState(false);
+const [importResultClientes, setImportResultClientes] = useState<ImportResultCliente | null>(null);
+
+const handleImportClientes = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  setImportandoClientes(true);
+  setImportResultClientes(null);
+  try {
+    const form = new FormData();
+    form.append("archivo", file);
+    const res = await fetch(`${API}/clientes-import`, { method: "POST", body: form });
+    const data: ImportResultCliente = await res.json();
+    setImportResultClientes(data);
+    if (data.ok) queryClient.invalidateQueries({ queryKey: ["clientes"] });
+  } catch (err) {
+    setImportResultClientes({ ok: false, total: 0, procesados: 0, omitidos: 0, duplicados: 0, error: String(err) });
+  } finally {
+    setImportandoClientes(false);
+    e.target.value = "";
+  }
+};
+
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -163,12 +200,36 @@ export default function Clientes() {
               {clientes ? `${clientes.length} cliente${clientes.length === 1 ? "" : "s"} registrado${clientes.length === 1 ? "" : "s"}` : "Cargando..."}
             </p>
           </div>
-          <button
-            onClick={openNew}
-            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg text-sm"
-          >
-            <Plus className="w-4 h-4" /> Nuevo Cliente
-          </button>
+          
+          <div className="flex flex-wrap items-center gap-2">
+            <a href={`${API}/clientes-import/template`}
+              download="plantilla_clientes.xlsx"
+              className="flex items-center gap-2 px-4 py-2.5 bg-muted text-foreground rounded-xl font-medium hover:bg-muted/80 transition-all text-sm"
+            >
+              <FileDown className="w-4 h-4 text-green-400" />
+              Descargar plantilla
+            </a>
+
+            <label className="flex items-center gap-2 px-4 py-2.5 bg-muted text-foreground rounded-xl font-medium hover:bg-muted/80 transition-all text-sm cursor-pointer">
+              {importandoClientes 
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Importando...</>
+                : <><Upload className="w-4 h-4 text-primary" /> Importar Excel</>}
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleImportClientes}
+                disabled={importandoClientes}
+                className="hidden"
+              />
+            </label>
+
+            <button
+              onClick={openNew}
+              className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg text-sm"
+            >
+              <Plus className="w-4 h-4" /> Nuevo Cliente
+            </button>
+          </div>
         </div>
 
         {/* Search */}
@@ -181,6 +242,19 @@ export default function Clientes() {
             onChange={(e) => setBusqueda(e.target.value)}
             className="w-full pl-9 pr-9 py-2.5 bg-card border border-border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
           />
+          {importResultClientes && (
+            <div className={`rounded-xl p-4 border ${importResultClientes.ok ? "bg-emerald-500/10 border-emerald-500/20" : "bg-destructive/10 border-destructive/20"}`}>
+              {importResultClientes.ok ? (
+                <p className="text-sm">
+                  <strong>{importResultClientes.procesados}</strong> clientes importados
+                  {importResultClientes.duplicados > 0 && ` · ${importResultClientes.duplicados} duplicados omitidos`}
+                  {importResultClientes.omitidos > 0 && ` · ${importResultClientes.omitidos} filas sin nombre omitidas`}
+                </p>
+              ) : (
+                <p className="text-sm text-destructive">{importResultClientes.error}</p>
+              )}
+            </div>
+          )}
           {busqueda && (
             <button onClick={() => setBusqueda("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
               <X className="w-4 h-4" />

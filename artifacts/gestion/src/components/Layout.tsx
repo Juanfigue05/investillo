@@ -4,6 +4,8 @@ import { FloatingNotepad } from "./FloatingNotepad";
 import { FloatingPriceCheck } from "./FloatingPriceCheck";
 import { Bell, Menu, X, CheckCheck, Trash2, Check, Pin, PinOff } from "lucide-react";
 import { getGetAlertasStockQueryKey, useGetAlertasStock } from "@workspace/api-client-react";
+import { BackupLocal } from "./BackupLocal";
+import { ConnectionStatus } from "./ConnectionStatus";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 function loadSet(key: string): Set<number> {
@@ -102,8 +104,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <span className="text-base font-display font-bold text-primary sm:hidden">Investillo</span>
 
           <div className="flex items-center gap-3 ml-auto">
-            <FloatingPriceCheck topbar />
+            <ConnectionStatus />
+            <FloatingPriceCheck topbar />   
             <FloatingNotepad topbar />
+            <BackupLocal topbar />
             <button
               type="button"
               aria-label="Ver alertas de inventario"

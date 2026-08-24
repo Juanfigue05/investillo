@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { ventasDiariasTable, productosTable } from "@workspace/db/schema";
 import { eq, sql, and, gte, lte } from "drizzle-orm";
+import { manoObraTable, distribucionesTable, trabajadoresTable, operacionesSincronizadasTable } from "@workspace/db/schema";
 
 const router: IRouter = Router();
 
@@ -74,39 +75,61 @@ router.get("/", async (req, res) => {
   res.json(ventas.map(mapVenta));
 });
 
-router.post("/", async (req, res) => {
-  const { fecha, referencia, tipoLinea, productoId, productoNombre, productoCodigo, productoMarca, cantidad, precioCompraUnidad, precioVentaUnidad, precioVentaTotal, beneficio, descripcion } = req.body;
+router.post("/manoobra", async (req, res) => {
+  const operationId = req.header("x-operation-id");
 
-  const cantidadNum = parseFloat(cantidad);
-
-  const [venta] = await db.insert(ventasDiariasTable).values({
-    fecha,
-    referencia,
-    tipoLinea: tipoLinea || "venta",
-    productoId: productoId || null,
-    productoNombre: productoNombre || null,
-    productoCodigo: productoCodigo || null,
-    productoMarca: productoMarca || null,
-    cantidad: String(cantidadNum),
-    precioCompraUnidad: String(parseFloat(precioCompraUnidad || 0)),
-    precioVentaUnidad: String(parseFloat(precioVentaUnidad)),
-    precioVentaTotal: String(parseFloat(precioVentaTotal)),
-    beneficio: String(parseFloat(beneficio || 0)),
-    descripcion: descripcion || null,
-  }).returning();
-
-  // Reducir inventario al registrar una venta normal
-  if ((tipoLinea === "venta" || !tipoLinea) && productoId) {
-    const [prod] = await db.select().from(productosTable).where(eq(productosTable.id, parseInt(productoId)));
-    if (prod) {
-      const nuevoStock = Math.max(0, toNum(prod.stockActual) - cantidadNum);
-      await db.update(productosTable)
-        .set({ stockActual: String(nuevoStock), actualizadoEn: new Date() })
-        .where(eq(productosTable.id, parseInt(productoId)));
-    }
+  if (operationId) {
+    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   }
 
-  res.status(201).json(mapVenta(venta));
+  const { fecha, referencia, valorTotal, distribuciones, productoMarca, descripcion } = req.body;
+
+  try {
+    const resultado = await db.transaction(async (tx) => {
+      const [mo] = await tx.insert(manoObraTable).values({
+        fecha, descripcion: referencia, valorTotal: String(parseFloat(valorTotal)),
+      }).returning();
+
+      for (const dist of distribuciones || []) {
+        await tx.insert(distribucionesTable).values({
+          manoObraId: mo.id,
+          trabajadorId: dist.trabajadorId,
+          trabajadorNombre: dist.trabajadorNombre || `Trabajador ${dist.trabajadorId}`,
+          valor: String(parseFloat(dist.valor)),
+          descuentoSeguro: "0",
+          descuentoOtros: "0",
+        });
+
+        const [trab] = await tx.select().from(trabajadoresTable).where(eq(trabajadoresTable.id, dist.trabajadorId));
+        if (trab) {
+          await tx.update(trabajadoresTable)
+            .set({ totalGanado: String(toNum(trab.totalGanado) + parseFloat(dist.valor || 0)) })
+            .where(eq(trabajadoresTable.id, dist.trabajadorId));
+        }
+      }
+
+      const [venta] = await tx.insert(ventasDiariasTable).values({
+        fecha, referencia, tipoLinea: "manoobra",
+        productoNombre: "Mano de Obra",
+        productoMarca: productoMarca || null,
+        cantidad: "1", precioCompraUnidad: "0",
+        precioVentaUnidad: String(parseFloat(valorTotal)), precioVentaTotal: String(parseFloat(valorTotal)),
+        beneficio: String(parseFloat(valorTotal)),
+        descripcion: descripcion || null,
+      }).returning();
+
+      if (operationId) {
+        await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "manoobra_venta", recursoId: venta.id }).onConflictDoNothing();
+      }
+
+      return venta;
+    });
+
+    res.status(201).json(resultado);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 router.put("/:id", async (req, res) => {

@@ -1,435 +1,311 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Layout } from "@/components/Layout";
-import {
-  useGetManoObra,
-  useCrearManoObra,
-  useGetTrabajadores,
-  useCrearVenta,
-  useActualizarTrabajador,
-  useCrearTrabajador,
-} from "@workspace/api-client-react";
+import { useGetTrabajadores, useCrearTrabajador } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
-import { Wrench, Plus, Save, Users, Pencil, Check, X, Search, Filter } from "lucide-react";
+import { Users, Plus, Pencil, X, Check, ShieldCheck, Calendar, Clock, Wallet } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
-export default function ManoObra() {
-  const { data: manoObras, isLoading } = useGetManoObra();
-  const { data: trabajadores } = useGetTrabajadores();
+const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
+interface PagoSeguro {
+  id: number;
+  fecha: string;
+  monto: number;
+}
+
+interface PerfilForm {
+  nombre: string;
+  numeroSeguro: string;
+  telefono: string;
+  correo: string;
+  eps: string;
+  aplicaSeguro: boolean;
+  fechaProximoPagoSeguro: string;
+}
+
+function diasRestantes(fecha: string | null): number | null {
+  if (!fecha) return null;
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const objetivo = new Date(fecha + "T00:00:00");
+  return Math.round((objetivo.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+export default function Trabajadores() {
+  const { data: trabajadores, isLoading } = useGetTrabajadores();
   const queryClient = useQueryClient();
-  const crearMutation = useCrearManoObra();
-  const crearVentaMutation = useCrearVenta();
-  const actualizarTrabMutation = useActualizarTrabajador();
   const crearTrabMutation = useCrearTrabajador();
 
-  const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({
-    descripcion: "",
-    valorTotal: "",
-    trabajadoresIds: [] as number[],
-  });
-  const [trabajadorValores, setTrabajadorValores] = useState<Record<number, string>>({});
-  const [editingTrab, setEditingTrab] = useState<number | null>(null);
-  const [editNombre, setEditNombre] = useState("");
   const [showAddTrab, setShowAddTrab] = useState(false);
   const [newTrabNombre, setNewTrabNombre] = useState("");
+  const [newTrabAplicaSeguro, setNewTrabAplicaSeguro] = useState(false);
 
-  // Filters
-  const [filtroTrabajador, setFiltroTrabajador] = useState("");
-  const [filtroFechaDesde, setFiltroFechaDesde] = useState("");
-  const [filtroFechaHasta, setFiltroFechaHasta] = useState("");
-  const [filtroServicio, setFiltroServicio] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [perfilForm, setPerfilForm] = useState<PerfilForm | null>(null);
+  const [guardandoPerfil, setGuardandoPerfil] = useState(false);
 
-  const redistributeEqually = (ids: number[], total: string) => {
-    const valor = parseFloat(total) || 0;
-    if (ids.length === 0 || valor === 0) return {};
-    const n = ids.length;
-    const base = Math.floor(valor / n);
-    const resto = valor - base * n;
-    const result: Record<number, string> = {};
-    ids.forEach((id, i) => { result[id] = String(i === n - 1 ? base + resto : base); });
-    return result;
-  };
+  const [pagos, setPagos] = useState<PagoSeguro[]>([]);
+  const [cargandoPagos, setCargandoPagos] = useState(false);
+  const [nuevoPagoFecha, setNuevoPagoFecha] = useState("");
+  const [nuevoPagoMonto, setNuevoPagoMonto] = useState("");
+  const [registrandoPago, setRegistrandoPago] = useState(false);
 
-  const toggleTrabajador = (id: number) => {
-    setFormData((prev) => {
-      const newIds = prev.trabajadoresIds.includes(id)
-        ? prev.trabajadoresIds.filter((t) => t !== id)
-        : [...prev.trabajadoresIds, id];
-      setTrabajadorValores(redistributeEqually(newIds, prev.valorTotal));
-      return { ...prev, trabajadoresIds: newIds };
-    });
-  };
-
-  const handleValorTotalChange = (val: string) => {
-    setFormData((prev) => ({ ...prev, valorTotal: val }));
-    if (formData.trabajadoresIds.length > 0) {
-      setTrabajadorValores(redistributeEqually(formData.trabajadoresIds, val));
-    }
-  };
-
-  const sumDistribucion = formData.trabajadoresIds.reduce((sum, id) => sum + (parseFloat(trabajadorValores[id] || "0") || 0), 0);
-  const totalValor = parseFloat(formData.valorTotal) || 0;
-  const sumDiffers = Math.abs(sumDistribucion - totalValor) > 1;
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    const valor = parseFloat(formData.valorTotal);
-    if (!formData.descripcion || !valor || formData.trabajadoresIds.length === 0) {
-      alert("Llene la descripción, el valor y seleccione al menos un trabajador.");
-      return;
-    }
-    if (sumDiffers) {
-      alert(`La suma (${formatCurrency(sumDistribucion)}) no coincide con el total (${formatCurrency(valor)}). Ajusta los valores.`);
-      return;
-    }
-    const distribuciones = formData.trabajadoresIds.map((id) => {
-      const t = trabajadores?.find((w) => w.id === id);
-      return {
-        trabajadorId: id,
-        trabajadorNombre: t?.nombre || `Trabajador ${id}`,
-        valor: parseFloat(trabajadorValores[id] || "0") || 0,
-        descuentoSeguro: 0,
-        descuentoOtros: 0,
-      };
-    });
-    crearMutation.mutate(
-      { data: { fecha: new Date().toISOString().split("T")[0], descripcion: formData.descripcion, valorTotal: valor, distribuciones } },
-      {
-        onSuccess: () => {
-          crearVentaMutation.mutate(
-            {
-              data: {
-                fecha: new Date().toISOString().split("T")[0],
-                referencia: "Servicio",
-                tipoLinea: "manoobra",
-                productoNombre: "Mano de Obra",
-                productoMarca: distribuciones.map((d) => d.trabajadorNombre).join(", "),
-                cantidad: 1, precioCompraUnidad: 0, precioVentaUnidad: valor, precioVentaTotal: valor, beneficio: valor,
-                descripcion: distribuciones.map((d) => `${d.trabajadorNombre}: ${formatCurrency(d.valor)}`).join(" | "),
-              },
-            },
-            {
-              onSuccess: () => {
-                queryClient.invalidateQueries({ queryKey: ["/api/manoobra"] });
-                queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
-                setShowForm(false);
-                setFormData({ descripcion: "", valorTotal: "", trabajadoresIds: [] });
-                setTrabajadorValores({});
-              },
-            }
-          );
-        },
-      }
-    );
-  };
-
-  const handleSaveTrab = (id: number) => {
-    if (!editNombre.trim()) return;
-    actualizarTrabMutation.mutate(
-      { id, data: { nombre: editNombre.trim(), descuentoSeguro: 0, descuentoOtros: 0 } },
-      { onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/trabajadores"] }); setEditingTrab(null); } }
-    );
-  };
+  const invalidar = () => queryClient.invalidateQueries({ queryKey: ["/api/trabajadores"] });
 
   const handleAddTrab = () => {
     if (!newTrabNombre.trim()) return;
     crearTrabMutation.mutate(
-      { data: { nombre: newTrabNombre.trim(), descuentoSeguro: 0, descuentoOtros: 0 } },
-      { onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/trabajadores"] }); setShowAddTrab(false); setNewTrabNombre(""); } }
+      { data: { nombre: newTrabNombre.trim(), descuentoSeguro: 0, descuentoOtros: 0, aplicaSeguro: newTrabAplicaSeguro } as any },
+      { onSuccess: () => { invalidar(); setShowAddTrab(false); setNewTrabNombre(""); setNewTrabAplicaSeguro(false); } }
     );
   };
 
-  const hasFilters = filtroTrabajador || filtroFechaDesde || filtroFechaHasta || filtroServicio;
-
-  const filteredManoObras = useMemo(() => {
-    if (!manoObras) return [];
-    return manoObras.filter((mo) => {
-      if (filtroServicio && !mo.descripcion.toLowerCase().includes(filtroServicio.toLowerCase())) return false;
-      if (filtroFechaDesde && mo.fecha < filtroFechaDesde) return false;
-      if (filtroFechaHasta && mo.fecha > filtroFechaHasta) return false;
-      if (filtroTrabajador) {
-        const q = filtroTrabajador.toLowerCase();
-        const hasTrab = mo.distribuciones.some((d) => d.trabajadorNombre.toLowerCase().includes(q));
-        if (!hasTrab) return false;
-      }
-      return true;
+  const abrirTarjeta = (t: any) => {
+    if (expandedId === t.id) { setExpandedId(null); return; }
+    setExpandedId(t.id);
+    setPerfilForm({
+      nombre: t.nombre,
+      numeroSeguro: t.numeroSeguro || "",
+      telefono: t.telefono || "",
+      correo: t.correo || "",
+      eps: t.eps || "",
+      aplicaSeguro: Boolean(t.aplicaSeguro),
+      fechaProximoPagoSeguro: t.fechaProximoPagoSeguro || "",
     });
-  }, [manoObras, filtroTrabajador, filtroFechaDesde, filtroFechaHasta, filtroServicio]);
+    if (t.aplicaSeguro) cargarPagos(t.id);
+  };
+
+  const cargarPagos = async (trabajadorId: number) => {
+    setCargandoPagos(true);
+    try {
+      const res = await fetch(`${API}/trabajadores/${trabajadorId}/pagos-seguro`);
+      setPagos(await res.json());
+    } catch {
+      setPagos([]);
+    } finally {
+      setCargandoPagos(false);
+    }
+  };
+
+  const guardarPerfil = async (id: number) => {
+    if (!perfilForm) return;
+    setGuardandoPerfil(true);
+    try {
+      await fetch(`${API}/trabajadores/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(perfilForm),
+      });
+      invalidar();
+      if (perfilForm.aplicaSeguro) cargarPagos(id);
+    } finally {
+      setGuardandoPerfil(false);
+    }
+  };
+
+  const registrarPago = async (trabajadorId: number) => {
+    if (!nuevoPagoFecha || !nuevoPagoMonto) return;
+    setRegistrandoPago(true);
+    try {
+      await fetch(`${API}/trabajadores/${trabajadorId}/pagos-seguro`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fecha: nuevoPagoFecha, monto: parseFloat(nuevoPagoMonto) }),
+      });
+      setNuevoPagoFecha(""); setNuevoPagoMonto("");
+      invalidar();
+      cargarPagos(trabajadorId);
+    } finally {
+      setRegistrandoPago(false);
+    }
+  };
 
   return (
     <Layout>
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl lg:text-3xl font-display font-bold text-foreground">Control Mano de Obra</h1>
-            <p className="text-muted-foreground mt-1 text-sm">Registra y distribuye los cobros de servicios entre mecánicos.</p>
+            <h1 className="text-2xl lg:text-3xl font-display font-bold text-foreground">Trabajadores</h1>
+            <p className="text-muted-foreground mt-1 text-sm">Perfil de cada trabajador y seguimiento del seguro social.</p>
           </div>
           <button
-            onClick={() => setShowForm(!showForm)}
+            onClick={() => { setShowAddTrab(!showAddTrab); setNewTrabNombre(""); setNewTrabAplicaSeguro(false); }}
             className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 text-sm"
           >
             <Plus className="w-4 h-4" />
-            Registrar Servicio
+            Agregar Trabajador
           </button>
         </div>
 
-        {/* Workers management */}
-        <div className="bg-card border border-border rounded-2xl p-5 shadow-xl">
-          <div className="flex justify-between items-center mb-4">
-            <div className="flex items-center gap-3">
-              <Users className="w-5 h-5 text-primary" />
-              <h3 className="text-base font-bold text-foreground">Gestión de Trabajadores</h3>
-            </div>
-            <button
-              onClick={() => { setShowAddTrab(!showAddTrab); setNewTrabNombre(""); }}
-              className="flex items-center gap-2 px-3 py-1.5 bg-muted text-foreground rounded-xl border border-border hover:bg-muted/80 transition-colors text-sm font-medium"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Agregar
-            </button>
-          </div>
-
-          {showAddTrab && (
-            <div className="flex gap-3 mb-4 animate-in fade-in slide-in-from-top-2">
-              <input
-                autoFocus type="text" placeholder="Nombre del nuevo trabajador"
-                value={newTrabNombre} onChange={(e) => setNewTrabNombre(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAddTrab()}
-                className="flex-1 bg-background border border-border px-4 py-2 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
-              />
+        {showAddTrab && (
+          <div className="bg-card border border-border rounded-2xl p-5 shadow-xl space-y-3 animate-in fade-in slide-in-from-top-2">
+            <input
+              autoFocus type="text" placeholder="Nombre del nuevo trabajador"
+              value={newTrabNombre} onChange={(e) => setNewTrabNombre(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAddTrab()}
+              className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
+            />
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <input type="checkbox" checked={newTrabAplicaSeguro} onChange={(e) => setNewTrabAplicaSeguro(e.target.checked)} className="accent-primary" />
+              Aplica descuento de seguro
+            </label>
+            <div className="flex gap-2">
               <button onClick={handleAddTrab} disabled={crearTrabMutation.isPending} className="px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors text-sm">Guardar</button>
               <button onClick={() => setShowAddTrab(false)} className="px-4 py-2 bg-muted text-foreground rounded-xl font-medium hover:bg-muted/80 transition-colors text-sm border border-border">Cancelar</button>
             </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {trabajadores?.map((t) => (
-              <div key={t.id} className="bg-background rounded-xl border border-border p-3 flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary flex-shrink-0 text-sm">
-                  {t.nombre.charAt(0).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  {editingTrab === t.id ? (
-                    <input autoFocus type="text" value={editNombre} onChange={(e) => setEditNombre(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") handleSaveTrab(t.id); if (e.key === "Escape") setEditingTrab(null); }}
-                      className="w-full bg-card border border-primary px-2 py-1 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
-                    />
-                  ) : (
-                    <div>
-                      <p className="font-medium text-foreground text-sm">{t.nombre}</p>
-                      <p className="text-xs text-muted-foreground">Trabajador #{t.id}</p>
-                    </div>
-                  )}
-                </div>
-                <div className="flex-shrink-0 flex gap-1">
-                  {editingTrab === t.id ? (
-                    <>
-                      <button onClick={() => handleSaveTrab(t.id)} disabled={actualizarTrabMutation.isPending} className="p-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20"><Check className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => setEditingTrab(null)} className="p-1.5 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80"><X className="w-3.5 h-3.5" /></button>
-                    </>
-                  ) : (
-                    <button onClick={() => { setEditingTrab(t.id); setEditNombre(t.nombre); }} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg"><Pencil className="w-3.5 h-3.5" /></button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Service form */}
-        {showForm && (
-          <div className="bg-card border border-border p-5 rounded-2xl shadow-xl animate-in fade-in slide-in-from-top-4">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-display font-bold text-foreground">Nuevo Registro de Mano de Obra</h3>
-              <button onClick={() => setShowForm(false)} className="p-2 hover:bg-muted rounded-lg text-muted-foreground"><X className="w-4 h-4" /></button>
-            </div>
-            <form onSubmit={handleSave} className="space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Descripción del Servicio</label>
-                  <input required type="text" value={formData.descripcion} onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })} placeholder="Ej: Cambio de pastillas" className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Valor Cobrado Total ($)</label>
-                  <input required type="number" value={formData.valorTotal} onChange={(e) => handleValorTotalChange(e.target.value)} placeholder="50000" className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-2">Trabajadores involucrados <span className="text-xs">(selecciona y ajusta el valor)</span></label>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {trabajadores?.map((t) => (
-                    <button key={t.id} type="button" onClick={() => toggleTrabajador(t.id)}
-                      className={`px-3 py-1.5 rounded-xl border text-sm transition-all ${formData.trabajadoresIds.includes(t.id) ? "bg-primary/20 border-primary text-primary" : "bg-background border-border text-muted-foreground hover:border-muted-foreground"}`}
-                    >
-                      {t.nombre}
-                    </button>
-                  ))}
-                </div>
-                {formData.trabajadoresIds.length > 0 && (
-                  <div className="bg-background rounded-xl border border-border divide-y divide-border overflow-hidden">
-                    {formData.trabajadoresIds.map((id) => {
-                      const t = trabajadores?.find((w) => w.id === id);
-                      return (
-                        <div key={id} className="flex items-center gap-4 px-4 py-3">
-                          <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs flex-shrink-0">
-                            {(t?.nombre || "?").charAt(0).toUpperCase()}
-                          </div>
-                          <span className="flex-1 text-sm font-medium text-foreground">{t?.nombre || `T${id}`}</span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-muted-foreground">$</span>
-                            <input
-                              type="number"
-                              value={trabajadorValores[id] || ""}
-                              onChange={(e) => setTrabajadorValores((prev) => ({ ...prev, [id]: e.target.value }))}
-                              className="w-28 bg-card border border-border px-2 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-right"
-                              placeholder="0"
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div className={`flex items-center justify-between px-4 py-2 ${sumDiffers ? "bg-destructive/10" : "bg-green-500/5"}`}>
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Suma distribuida</span>
-                      <span className={`text-sm font-bold ${sumDiffers ? "text-destructive" : "text-green-500"}`}>
-                        {formatCurrency(sumDistribucion)} {sumDiffers ? `(faltan ${formatCurrency(Math.abs(totalValor - sumDistribucion))})` : "✓"}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="flex justify-end pt-3 border-t border-border">
-                <button type="submit" disabled={crearMutation.isPending || crearVentaMutation.isPending || sumDiffers}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all disabled:opacity-50 text-sm"
-                >
-                  <Save className="w-4 h-4" />
-                  Guardar y Enviar a Ventas
-                </button>
-              </div>
-            </form>
           </div>
         )}
 
-        {/* Filters */}
-        <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Wrench className="w-4 h-4 text-primary" />
-              <h3 className="font-bold text-foreground">Historial de Servicios</h3>
-            </div>
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${hasFilters ? "bg-primary/10 border-primary text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
-            >
-              <Filter className="w-3.5 h-3.5" />
-              Filtrar
-              {hasFilters && <span className="bg-primary text-primary-foreground text-[10px] rounded-full w-4 h-4 flex items-center justify-center">!</span>}
-            </button>
-          </div>
+        {isLoading ? (
+          <div className="text-center py-10 text-muted-foreground text-sm">Cargando trabajadores...</div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {trabajadores?.map((t: any) => {
+              const abierto = expandedId === t.id;
+              const dias = diasRestantes(t.fechaProximoPagoSeguro);
 
-          {showFilters && (
-            <div className="p-4 border-b border-border bg-muted/30 animate-in fade-in">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Trabajador</label>
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                    <input
-                      type="text"
-                      placeholder="Buscar trabajador..."
-                      value={filtroTrabajador}
-                      onChange={(e) => setFiltroTrabajador(e.target.value)}
-                      className="w-full pl-8 pr-3 py-2 bg-background border border-border rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Servicio</label>
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                    <input
-                      type="text"
-                      placeholder="Buscar servicio..."
-                      value={filtroServicio}
-                      onChange={(e) => setFiltroServicio(e.target.value)}
-                      className="w-full pl-8 pr-3 py-2 bg-background border border-border rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Desde</label>
-                  <input type="date" value={filtroFechaDesde} onChange={(e) => setFiltroFechaDesde(e.target.value)} className="w-full py-2 px-3 bg-background border border-border rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Hasta</label>
-                  <input type="date" value={filtroFechaHasta} onChange={(e) => setFiltroFechaHasta(e.target.value)} className="w-full py-2 px-3 bg-background border border-border rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" />
-                </div>
-              </div>
-              {hasFilters && (
-                <button onClick={() => { setFiltroTrabajador(""); setFiltroFechaDesde(""); setFiltroFechaHasta(""); setFiltroServicio(""); }}
-                  className="mt-2 text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1"
-                >
-                  <X className="w-3 h-3" />
-                  Limpiar filtros
-                </button>
-              )}
-            </div>
-          )}
+              return (
+                <div key={t.id} className="bg-card border border-border rounded-2xl shadow-xl overflow-hidden">
+                  <button onClick={() => abrirTarjeta(t)} className="w-full flex items-center gap-3 p-4 text-left hover:bg-muted/30 transition-colors">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary flex-shrink-0">
+                      {t.nombre.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground text-sm">{t.nombre}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {t.aplicaSeguro && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-md">
+                            <ShieldCheck className="w-3 h-3" /> Seguro activo
+                          </span>
+                        )}
+                        {t.aplicaSeguro && t.seguroSaldoPendiente > 0 && (
+                          <span className="text-[10px] font-medium text-amber-400">Saldo: {formatCurrency(t.seguroSaldoPendiente)}</span>
+                        )}
+                      </div>
+                    </div>
+                    <Pencil className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                  </button>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="bg-muted text-muted-foreground border-b border-border">
-                  <th className="px-5 py-3 font-medium">Fecha</th>
-                  <th className="px-5 py-3 font-medium">Servicio</th>
-                  <th className="px-5 py-3 font-medium">Valor Total</th>
-                  <th className="px-5 py-3 font-medium hidden md:table-cell">Distribución</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {isLoading ? (
-                  <tr><td colSpan={4} className="text-center py-8 text-muted-foreground">Cargando registros...</td></tr>
-                ) : filteredManoObras.length === 0 ? (
-                  <tr><td colSpan={4} className="text-center py-8 text-muted-foreground">
-                    {hasFilters ? "No hay resultados con los filtros aplicados." : "No hay servicios registrados aún."}
-                  </td></tr>
-                ) : (
-                  filteredManoObras.map((mo) => (
-                    <tr key={mo.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="px-5 py-3 text-muted-foreground text-xs whitespace-nowrap">
-                        {new Date(mo.fecha + "T12:00:00").toLocaleDateString("es-CO")}
-                      </td>
-                      <td className="px-5 py-3 font-medium text-foreground">{mo.descripcion}</td>
-                      <td className="px-5 py-3 text-primary font-bold whitespace-nowrap">{formatCurrency(mo.valorTotal)}</td>
-                      <td className="px-5 py-3 hidden md:table-cell">
-                        <div className="flex flex-wrap gap-1.5">
-                          {mo.distribuciones.map((d) => (
-                            <span key={d.id} className="bg-background border border-border px-2 py-1 rounded-md text-xs flex items-center gap-1">
-                              <span className="font-medium text-foreground">{d.trabajadorNombre}</span>
-                              <span className="text-muted-foreground">{formatCurrency(d.valor)}</span>
-                            </span>
-                          ))}
+                  {abierto && perfilForm && (
+                    <div className="border-t border-border p-4 space-y-4 animate-in fade-in">
+                      {/* ── Perfil ── */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-muted-foreground mb-1">Nombre</label>
+                          <input value={perfilForm.nombre} onChange={(e) => setPerfilForm({ ...perfilForm, nombre: e.target.value })}
+                            className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
                         </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-              {filteredManoObras.length > 0 && (
-                <tfoot className="bg-muted/30 border-t border-border">
-                  <tr>
-                    <td colSpan={2} className="px-5 py-2 text-xs text-muted-foreground text-right">{filteredManoObras.length} registro{filteredManoObras.length !== 1 ? "s" : ""}</td>
-                    <td className="px-5 py-2 text-xs font-bold text-primary">
-                      {formatCurrency(filteredManoObras.reduce((s, mo) => s + mo.valorTotal, 0))}
-                    </td>
-                    <td className="hidden md:table-cell"></td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+                        <div>
+                          <label className="block text-xs font-medium text-muted-foreground mb-1">Teléfono</label>
+                          <input value={perfilForm.telefono} onChange={(e) => setPerfilForm({ ...perfilForm, telefono: e.target.value })}
+                            className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-muted-foreground mb-1">Correo</label>
+                          <input value={perfilForm.correo} onChange={(e) => setPerfilForm({ ...perfilForm, correo: e.target.value })}
+                            className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-muted-foreground mb-1">EPS</label>
+                          <input value={perfilForm.eps} onChange={(e) => setPerfilForm({ ...perfilForm, eps: e.target.value })}
+                            className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-xs font-medium text-muted-foreground mb-1">Número de seguro</label>
+                          <input value={perfilForm.numeroSeguro} onChange={(e) => setPerfilForm({ ...perfilForm, numeroSeguro: e.target.value })}
+                            className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                        </div>
+                      </div>
+
+                      <label className="flex items-center gap-2 text-sm text-foreground">
+                        <input type="checkbox" checked={perfilForm.aplicaSeguro} onChange={(e) => setPerfilForm({ ...perfilForm, aplicaSeguro: e.target.checked })} className="accent-primary" />
+                        Aplica descuento de seguro
+                      </label>
+
+                      <button onClick={() => guardarPerfil(t.id)} disabled={guardandoPerfil}
+                        className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors text-sm disabled:opacity-50">
+                        <Check className="w-4 h-4" /> {guardandoPerfil ? "Guardando..." : "Guardar perfil"}
+                      </button>
+
+                      {/* ── Seguro ── */}
+                      {perfilForm.aplicaSeguro && (
+                        <div className="border-t border-border pt-4 space-y-3">
+                          <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4 text-emerald-400" /> Seguimiento del seguro
+                          </h4>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-background rounded-xl border border-border p-3">
+                              <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Wallet className="w-3 h-3" /> Saldo pendiente</p>
+                              <p className="text-lg font-bold text-amber-400">{formatCurrency(t.seguroSaldoPendiente)}</p>
+                            </div>
+                            <div className="bg-background rounded-xl border border-border p-3">
+                              <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" /> Próximo pago</p>
+                              {dias === null ? (
+                                <p className="text-xs text-muted-foreground">Sin fecha definida</p>
+                              ) : dias < 0 ? (
+                                <p className="text-sm font-bold text-destructive">Atrasado {Math.abs(dias)} día{Math.abs(dias) === 1 ? "" : "s"}</p>
+                              ) : dias === 0 ? (
+                                <p className="text-sm font-bold text-amber-400">¡Es hoy!</p>
+                              ) : (
+                                <p className="text-sm font-bold text-foreground">Faltan {dias} día{dias === 1 ? "" : "s"}</p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1"><Calendar className="w-3 h-3" /> Fecha del próximo pago a la entidad</label>
+                            <input type="date" value={perfilForm.fechaProximoPagoSeguro}
+                              onChange={(e) => setPerfilForm({ ...perfilForm, fechaProximoPagoSeguro: e.target.value })}
+                              className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                          </div>
+
+                          <div className="bg-background rounded-xl border border-border p-3 space-y-2">
+                            <p className="text-xs font-medium text-foreground">Registrar pago realizado</p>
+                            <div className="flex gap-2">
+                              <input type="date" value={nuevoPagoFecha} onChange={(e) => setNuevoPagoFecha(e.target.value)}
+                                className="flex-1 bg-card border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" />
+                              <input type="number" placeholder="Monto" value={nuevoPagoMonto} onChange={(e) => setNuevoPagoMonto(e.target.value)}
+                                className="w-28 bg-card border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" />
+                              <button onClick={() => registrarPago(t.id)} disabled={registrandoPago}
+                                className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-50">
+                                Registrar
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground mb-1.5">Historial de pagos</p>
+                            {cargandoPagos ? (
+                              <p className="text-xs text-muted-foreground">Cargando...</p>
+                            ) : pagos.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">Sin pagos registrados todavía.</p>
+                            ) : (
+                              <div className="space-y-1 max-h-32 overflow-y-auto">
+                                {pagos.map((p) => (
+                                  <div key={p.id} className="flex justify-between text-xs bg-background rounded-lg px-2.5 py-1.5 border border-border">
+                                    <span className="text-muted-foreground">{new Date(p.fecha + "T12:00:00").toLocaleDateString("es-CO")}</span>
+                                    <span className="font-medium text-foreground">{formatCurrency(p.monto)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        </div>
+        )}
+
+        {!isLoading && (!trabajadores || trabajadores.length === 0) && (
+          <div className="bg-card border border-border rounded-2xl p-10 text-center text-muted-foreground">
+            <Users className="w-10 h-10 mx-auto mb-3 opacity-30" />
+            <p className="text-sm">No hay trabajadores registrados todavía.</p>
+          </div>
+        )}
       </div>
     </Layout>
   );

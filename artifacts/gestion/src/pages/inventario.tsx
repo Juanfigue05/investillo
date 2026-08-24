@@ -297,7 +297,7 @@ export default function Inventario() {
               className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm"
             >
               <FileDown className="w-4 h-4 text-green-400" />
-              Plantilla
+             Descargar Plantilla
             </a>
 
             {/* Import Excel button */}

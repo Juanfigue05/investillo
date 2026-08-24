@@ -12,6 +12,7 @@ interface ConceptoEntrada {
 
 interface CierreTrabajador {
   id: string;
+  trabajadorId: number | null;
   nombre: string;
   moEntradas: string[];   // 10 rows, miles shorthand
   seguro: string;         // miles shorthand e.g. "30" = 30000
@@ -34,11 +35,12 @@ const emptyConceptos = (): ConceptoEntrada[] =>
   Array.from({ length: 3 }, () => ({ descripcion: "", valor: "" }));
 const emptyMO = (): string[] => Array.from({ length: 10 }, () => "");
 
-const newTrabajador = (nombre = ""): CierreTrabajador => ({
+const newTrabajador = (nombre = "", trabajadorId: number | null = null): CierreTrabajador => ({
   id: `${Date.now()}-${Math.random()}`,
+  trabajadorId,
   nombre,
   moEntradas: emptyMO(),
-  seguro: "30",        // 30 → $30.000
+  seguro: "30",
   leDamos: emptyConceptos(),
   nosDebe: emptyConceptos(),
   expandido: true,
@@ -151,6 +153,7 @@ function snapshotToItem(snap: TrabajadorSnapshot): CierreTrabajador {
     : emptyC();
   return {
     id: snap.id ?? `${Date.now()}-${Math.random()}`,
+    trabajadorId: snap.trabajadorId ?? null,   // ← agregar esta línea
     nombre: snap.nombre ?? "",
     moEntradas,
     seguro: snap.seguro ?? "30",
@@ -162,6 +165,7 @@ function snapshotToItem(snap: TrabajadorSnapshot): CierreTrabajador {
 
 interface TrabajadorSnapshot {
   id: string;
+  trabajadorId?: number | null;   // ← agregar esta línea
   nombre: string;
   moEntradas: string[];
   seguro: string;
@@ -202,9 +206,9 @@ export default function CierreDiario() {
     }
   }, []);
 
-  const agregarDesdeLista = (nombre: string) => {
-    setItems((prev) => [...prev, newTrabajador(nombre)]);
-    setShowSelect(false);
+  const agregarDesdeLista = (id: number, nombre: string) => {
+  setItems((prev) => [...prev, newTrabajador(nombre, id)]);
+  setShowSelect(false);
   };
   const agregarLibre = () => {
     const n = nombreLibre.trim();
@@ -337,7 +341,7 @@ export default function CierreDiario() {
               {trabajadores?.map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => agregarDesdeLista(t.nombre)}
+                  onClick={() => agregarDesdeLista(t.id, t.nombre)}
                   className="px-3 py-1.5 bg-muted hover:bg-primary/10 hover:text-primary border border-border rounded-lg text-sm transition-colors"
                 >
                   {t.nombre}
@@ -416,7 +420,8 @@ export default function CierreDiario() {
                           type="text"
                           value={t.nombre}
                           onChange={(e) => updateItem(t.id, { nombre: e.target.value })}
-                          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-foreground"
+                          disabled={t.trabajadorId !== null}
+                          className={`w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-foreground ${t.trabajadorId !== null ? "opacity-70 cursor-not-allowed" : ""}`}
                         />
                       </div>
                       <div>
