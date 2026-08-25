@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { cierreDiarioTable, trabajadoresTable } from "@workspace/db/schema";
 import { eq, desc, sql } from "drizzle-orm";
+import { operacionesSincronizadasTable } from "@workspace/db/schema";
 
 const router = Router();
 
@@ -43,6 +44,12 @@ router.post("/", async (req, res) => {
     const { fecha, datos, totalPagar } = req.body as { fecha: string; datos: unknown; totalPagar: number };
     if (!fecha || !datos) { res.status(400).json({ error: "fecha y datos son requeridos" }); return; }
 
+    const operationId = req.header("x-operation-id");
+    if (operationId) {
+      const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+      if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+    }
+
     const nuevo = seguroPorTrabajador(datos);
 
     const resultado = await db.transaction(async (tx) => {
@@ -75,7 +82,9 @@ router.post("/", async (req, res) => {
         .returning();
       return created;
     });
-
+    if (operationId && resultado) {
+      await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "cierre_diario", recursoId: resultado.id }).onConflictDoNothing();
+    }
     res.status(resultado ? 201 : 500).json(resultado);
   } catch (err) {
     res.status(500).json({ error: String(err) });

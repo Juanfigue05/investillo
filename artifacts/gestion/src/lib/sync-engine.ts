@@ -9,8 +9,9 @@ let sincronizando = false;
 const QUERY_KEYS_POR_TIPO: Record<string, string[]> = {
   venta: ["/api/ventas"],
   manoobra_venta: ["/api/ventas", "/api/manoobra", "/api/trabajadores"],
-  credito: ["/api/creditos"],
-  compra: ["/api/compras"],
+  credito: ["/api/creditos", "/api/trabajadores", "/api/inventario"],
+  compra: ["/api/compras", "/api/inventario", "/api/historial-precios"],
+  cierre_diario: ["/api/cierre-diario", "/api/trabajadores"],
 };
 
 export async function procesarPendientes() {

@@ -11,6 +11,7 @@ import {
   ventasDiariasTable,
 } from "@workspace/db/schema";
 import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
+import { operacionesSincronizadasTable } from "@workspace/db/schema";
 
 const router: IRouter = Router();
 
@@ -30,7 +31,7 @@ function abreviarNombre(nombre: string): string {
 
 type CreditoManoObraInput = {
   valor: number;
-  trabajadores?: { id: number; nombre: string }[];
+  trabajadores?: { id: number; nombre: string; valor?: number }[];
 };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -95,20 +96,35 @@ async function syncManoObraCredito(
   // Construir nuevas distribuciones
   let nuevas: { trabajadorId: number; trabajadorNombre: string; valor: number }[] = [];
   if (input.trabajadores && input.trabajadores.length > 0) {
-    // Validar y deduplicar trabajadores; resolver nombres desde la BD (no confiar en el request)
     const ids = [...new Set(input.trabajadores.map((t) => Number(t.id)))];
     const registros = await tx.select().from(trabajadoresTable).where(inArray(trabajadoresTable.id, ids));
     if (registros.length !== ids.length) {
       throw new Error("Uno o más trabajadores seleccionados no existen");
     }
-    const n = registros.length;
-    const base = Math.floor(valor / n);
-    const resto = valor - base * n;
-    nuevas = registros.map((t, i) => ({
-      trabajadorId: t.id,
-      trabajadorNombre: t.nombre,
-      valor: i === n - 1 ? base + resto : base,
-    }));
+
+    // Si el frontend ya envió valores personalizados por trabajador, se usan tal cual.
+    const tieneValoresPersonalizados = input.trabajadores.every((t) => typeof t.valor === "number");
+
+    if (tieneValoresPersonalizados) {
+      const sumaPersonalizada = input.trabajadores.reduce((s, t) => s + Math.round(t.valor || 0), 0);
+      if (sumaPersonalizada > Math.round(valor)) {
+        throw new Error("La suma de los valores asignados a los trabajadores supera el valor total de la mano de obra");
+      }
+      nuevas = input.trabajadores.map((t) => {
+        const registro = registros.find((r) => r.id === Number(t.id))!;
+        return { trabajadorId: registro.id, trabajadorNombre: registro.nombre, valor: Math.round(t.valor || 0) };
+      });
+    } else {
+      // Reparto automático en partes iguales (comportamiento anterior, sigue disponible)
+      const n = registros.length;
+      const base = Math.floor(valor / n);
+      const resto = valor - base * n;
+      nuevas = registros.map((t, i) => ({
+        trabajadorId: t.id,
+        trabajadorNombre: t.nombre,
+        valor: i === n - 1 ? base + resto : base,
+      }));
+    }
     if (existing) await revertir(existing.id);
   } else if (existing) {
     // Sin trabajadores explícitos → reescalar las distribuciones existentes al nuevo valor
@@ -236,6 +252,11 @@ router.get("/", async (req, res) => {
 
 // POST /creditos
 router.post("/", async (req, res) => {
+  const operationId = req.header("x-operation-id");
+  if (operationId) {
+    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+  }
   const {
     tipo,
     concepto,
@@ -308,12 +329,19 @@ router.post("/", async (req, res) => {
     res.status(400).json({ error: err instanceof Error ? err.message : "Error al crear el crédito" });
     return;
   }
-
+  if (operationId) {
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: credito.id }).onConflictDoNothing();
+  }
   res.status(201).json(await mapCredito(credito));
 });
 
 // PUT /creditos/:id
 router.put("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id");
+  if (operationId) {
+    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+  }
   const id = parseInt(req.params.id);
   const {
     tipo,
@@ -446,11 +474,19 @@ router.put("/:id", async (req, res) => {
     return;
   }
 
+  if (operationId) {
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: credito.id }).onConflictDoNothing();
+  }
   res.json(await mapCredito(credito));
 });
 
 // POST /creditos/:id/abono — registra un nuevo abono y crea filas en ventas_diarias
 router.post("/:id/abono", async (req, res) => {
+  const operationId = req.header("x-operation-id");
+  if (operationId) {
+    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+  }
   const creditoId = parseInt(req.params.id);
   const { valor, lineas, customRef } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string };
   const abonoTotal = parseFloat(String(valor));
@@ -531,7 +567,10 @@ router.post("/:id/abono", async (req, res) => {
 
     return updatedCredito;
   });
-
+  
+  if (operationId) {
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: credito.id }).onConflictDoNothing();
+  }
   res.json(await mapCredito(updated));
 });
 
@@ -593,6 +632,11 @@ router.delete("/:id/abono/:abonoId", async (req, res) => {
 
 // PUT /creditos/:id/abono/:abonoId — edita un pago (revierte el anterior y aplica el nuevo)
 router.put("/:id/abono/:abonoId", async (req, res) => {
+  const operationId = req.header("x-operation-id");
+  if (operationId) {
+    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+  }
   const creditoId = parseInt(req.params.id);
   const abonoId = parseInt(req.params.abonoId);
   const { valor, lineas, customRef } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string };
@@ -667,10 +711,13 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
     // Reconstruir TODAS las filas de Ventas de los pagos de este crédito en orden
     // cronológico (el estado completo/parcial de otros pagos puede haber cambiado)
     await rebuildVentasCredito(tx, updatedCredito);
-
+    if (operationId) {
+      await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: credito.id }).onConflictDoNothing();
+    }
     return updatedCredito;
   });
 
+  
   res.json(await mapCredito(updated));
 });
 

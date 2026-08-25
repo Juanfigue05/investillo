@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { comprasTable, historialPreciosTable, productosTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq,sql } from "drizzle-orm";
+import { operacionesSincronizadasTable } from "@workspace/db/schema";
 
 const router: IRouter = Router();
 
@@ -40,6 +41,11 @@ router.get("/", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  const operationId = req.header("x-operation-id");
+  if (operationId) {
+    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+  }
   const { productoId, estado } = req.body;
 
   const [producto] = await db.select().from(productosTable).where(eq(productosTable.id, parseInt(productoId)));
@@ -58,10 +64,18 @@ router.post("/", async (req, res) => {
     estado: estado || "pendiente",
   }).returning();
 
+  if (operationId) {
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra", recursoId: compra.id }).onConflictDoNothing();
+  }
   res.status(201).json(mapCompra(compra));
 });
 
 router.put("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id");
+  if (operationId) {
+    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+  }
   const id = parseInt(req.params.id);
   const {
     estado,
@@ -86,9 +100,9 @@ router.put("/:id", async (req, res) => {
   if (estado === "llegado" && cantidadRecibida) {
     const [producto] = await db.select().from(productosTable).where(eq(productosTable.id, existing.productoId));
     if (producto) {
-      const newStock = toNum(producto.stockActual) + parseFloat(cantidadRecibida);
-      const updateProd: Partial<typeof productosTable.$inferInsert> = {
-        stockActual: String(newStock),
+      const cantidadNum = parseFloat(cantidadRecibida);
+      const updateProd: Record<string, unknown> = {
+        stockActual: sql`${productosTable.stockActual} + ${cantidadNum}`,
         actualizadoEn: new Date(),
       };
 
@@ -155,6 +169,9 @@ router.put("/:id", async (req, res) => {
     .where(eq(comprasTable.id, id))
     .returning();
 
+  if (operationId) {
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra", recursoId: compra.id }).onConflictDoNothing();
+  }
   res.json({ ...mapCompra(compra), preciosModificados });
 });
 

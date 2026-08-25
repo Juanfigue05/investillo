@@ -35,13 +35,9 @@ Investillo es un **monorepo pnpm** con 4 áreas principales:
 | `gestion`         | `artifacts/gestion`   | Frontend — React 18 + Vite + TypeScript + Tailwind CSS + shadcn/ui    |
 | `api-server`      | `artifacts/api-server`| Backend — Node.js + Express + TypeScript                              |
 |   `db`            | `lib/db`              | Esquema y acceso a datos — Drizzle ORM + PostgreSQL                   |
-|-------------------|-----------------------|-----------------------------------------------------------------------|
-| `api-spec`        |                                                                                               |
-| `api-client-react`|          `lib/`       | Contrato de API generado (OpenAPI + Orval) y validación (Zod)         |
-| `api-zod`         |                                                                                               |
-|-------------------|-----------------------|-----------------------------------------------------------------------|
+|`api-spec`,`api-client-react`,`api-zod`|          `lib/`       | Contrato de API generado (OpenAPI + Orval) y validación (Zod)         |
+|          |                                                                                               |
 | `scripts`         | `scripts/`            | Scripts utilitarios (respaldo de base de datos, etc.)                 |
-|-------------------|-----------------------|-----------------------------------------------------------------------|
 
 **Lenguaje:** TypeScript en todo el stack (frontend, backend y librerías compartidas).
 
@@ -70,7 +66,6 @@ Investillo es un **monorepo pnpm** con 4 áreas principales:
 | Git para Windows                  | última                        | Control de versiones                                                                                                      |
 | PostgreSQL (Command Line Tools)   | **17.x**                      | `pg_dump` / `pg_restore` — debe ser igual o más nueva que la versión del servidor remoto (Supabase corre PostgreSQL 17)   |
 | Terminal                          | **CMD (Símbolo del sistema)** | Este proyecto se desarrolla y prueba en CMD — no se usa PowerShell ni Git Bash para correr los scripts del monorepo       |
-|-----------------------------------|-------------------------------|---------------------------------------------------------------------------------------------------------------------------|
 
 ### 3.2 Pasos de instalación
 
@@ -131,7 +126,6 @@ Todos se ejecutan desde la raíz del proyecto, en **CMD**.
 | `pnpm run backup`     | Ejecuta el respaldo de 3 capas: Supabase → archivo local → Aiven → Cloudflare R2              |
 | `pnpm run build`      | Compila typecheck + build de producción de todos los paquetes                                 |
 | `pnpm run typecheck`  | Verifica tipos de TypeScript en todo el monorepo, sin compilar                                |
-|-----------------------|-----------------------------------------------------------------------------------------------|
 
 ---
 

@@ -3,7 +3,7 @@ import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 export interface OperacionPendiente {
   operationId: string;
   tipo: string;
-  metodo: "POST" | "PATCH" | "DELETE";
+  metodo: "POST" | "PUT" | "PATCH" | "DELETE";
   endpoint: string;
   payload: unknown;
   creadoEn: string;

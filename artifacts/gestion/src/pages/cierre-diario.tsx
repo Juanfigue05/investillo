@@ -3,6 +3,8 @@ import { Layout } from "@/components/Layout";
 import { useGetTrabajadores } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
 import { Calculator, Plus, Trash2, ChevronDown, ChevronUp, Save, CheckCircle, Pencil } from "lucide-react";
+import { encolarOperacion } from "@/lib/offline-db";
+import { toast } from "@/hooks/use-toast";
 
 // ---------- types ----------
 interface ConceptoEntrada {
@@ -254,26 +256,35 @@ export default function CierreDiario() {
     [items]
   );
 
-  const handleGuardar = async () => {
-    if (items.length === 0) return;
-    setGuardando(true);
-    setGuardadoOk(false);
-    try {
-      // Serialize items with computed values for history
-      const datos = items.map((t) => {
-        const calc = calcTrabajador(t);
-        return { ...t, calc };
-      });
-      // Use editFecha when editing a past cierre, otherwise today
-      await guardarCierre(editFecha ?? fechaHoy, datos, grandTotal);
+const handleGuardar = async () => {
+  if (items.length === 0) return;
+  setGuardando(true);
+  setGuardadoOk(false);
+
+  const datos = items.map((t) => {
+    const calc = calcTrabajador(t);
+    return { ...t, calc };
+  });
+  const fecha = editFecha ?? fechaHoy;
+
+  try {
+    await guardarCierre(fecha, datos, grandTotal);
+    setGuardadoOk(true);
+    setTimeout(() => setGuardadoOk(false), 3000);
+  } catch (e) {
+    // Si el error viene de la red (sin conexión), se guarda local; si es otro tipo de error, se avisa normal
+    if (navigator.onLine) {
+      alert("Error al guardar: " + e);
+    } else {
+      await encolarOperacion({ tipo: "cierre_diario", metodo: "POST", endpoint: "/cierre-diario", payload: { fecha, datos, totalPagar: grandTotal } });
+      toast({ title: "Guardado sin conexión", description: "Este cierre diario se sincronizará automáticamente cuando vuelva internet." });
       setGuardadoOk(true);
       setTimeout(() => setGuardadoOk(false), 3000);
-    } catch (e) {
-      alert("Error al guardar: " + e);
-    } finally {
-      setGuardando(false);
     }
-  };
+  } finally {
+    setGuardando(false);
+  }
+};
 
   return (
     <Layout>

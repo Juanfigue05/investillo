@@ -10,6 +10,8 @@ import {
 import { formatCurrency } from "@/lib/utils";
 import { PackageCheck, Truck, Plus, X, Printer } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { encolarOperacion } from "@/lib/offline-db";
+import { toast } from "@/hooks/use-toast";
 
 interface LlegadaForm {
   cantidad: string;
@@ -27,6 +29,8 @@ interface PrecioConfirmModal {
   precioCompraNuevo: number;
   precioVentaNuevo: number;
 }
+
+const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
 function ProductoAutocomplete({
   productos,
@@ -186,24 +190,29 @@ export default function Compras() {
   };
 
   const ejecutarLlegada = (compra: any, form: LlegadaForm, actualizarPrecioInventario: boolean) => {
+    const payloadLlegada = {
+      estado: "llegado" as const,
+      cantidadRecibida: parseFloat(form.cantidad),
+      nuevoPrecioCompra: form.nuevoPrecioCompra ? parseFloat(form.nuevoPrecioCompra) : undefined,
+      nuevoPrecioVentaSinIva: form.nuevoPrecioVentaSinIva ? parseFloat(form.nuevoPrecioVentaSinIva) : undefined,
+      tieneIva: form.tieneIva,
+      proveedor: form.proveedor || undefined,
+      actualizarPrecioInventario,
+    };
+
     actualizarMutation.mutate(
-      {
-        id: compra.id,
-        data: {
-          estado: "llegado",
-          cantidadRecibida: parseFloat(form.cantidad),
-          nuevoPrecioCompra: form.nuevoPrecioCompra ? parseFloat(form.nuevoPrecioCompra) : undefined,
-          nuevoPrecioVentaSinIva: form.nuevoPrecioVentaSinIva ? parseFloat(form.nuevoPrecioVentaSinIva) : undefined,
-          tieneIva: form.tieneIva,
-          proveedor: form.proveedor || undefined,
-          actualizarPrecioInventario,
-        },
-      },
+      { id: compra.id, data: payloadLlegada },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
           queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
           queryClient.invalidateQueries({ queryKey: ["/api/historial-precios"] });
+          setLlegadaOpen(null);
+          setPrecioConfirm(null);
+        },
+        onError: async () => {
+          await encolarOperacion({ tipo: "compra", metodo: "PUT", endpoint: `/compras/${compra.id}`, payload: payloadLlegada });
+          toast({ title: "Guardado sin conexión", description: "Esta llegada de mercancía se sincronizará automáticamente cuando vuelva internet." });
           setLlegadaOpen(null);
           setPrecioConfirm(null);
         },
@@ -251,11 +260,18 @@ export default function Compras() {
       alert("Selecciona un producto");
       return;
     }
+    const payloadCompra = { productoId: productoSeleccionado };
     crearMutation.mutate(
-      { data: { productoId: productoSeleccionado } },
+      { data: payloadCompra },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+          setShowAddForm(false);
+          setProductoSeleccionado(null);
+        },
+        onError: async () => {
+          await encolarOperacion({ tipo: "compra", metodo: "POST", endpoint: "/compras", payload: payloadCompra });
+          toast({ title: "Guardado sin conexión", description: "Esta orden de compra se sincronizará automáticamente cuando vuelva internet." });
           setShowAddForm(false);
           setProductoSeleccionado(null);
         },

@@ -15,6 +15,9 @@ import {
 import { formatCurrency, formatTelefono, soloDigitos } from "@/lib/utils";
 import { Plus, Trash2, X, Pencil, Search, ChevronDown, ChevronUp, Clock } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { ManoObraSelector, calcularDistribucion } from "@/components/ManoObraSelector";
+import { encolarOperacion } from "@/lib/offline-db";
+import { toast } from "@/hooks/use-toast";
 
 const TIPO = "nosdebe";
 const MO_NOMBRE = "Mano de Obra";
@@ -24,12 +27,13 @@ interface ManoObraState {
   activo: boolean;
   valor: string;
   trabajadores: number[];
-  marca: string; // nombres de trabajadores (preservado al editar)
+  fijados: Record<number, number>;   // ← nuevo
+  marca: string;
   lineaId?: number;
   valorAbonado?: number;
 }
 
-const emptyManoObra: ManoObraState = { activo: false, valor: "", trabajadores: [], marca: "" };
+const emptyManoObra: ManoObraState = { activo: false, valor: "", trabajadores: [], fijados: {}, marca: "" };
 
 interface LineaInput {
   id: number;
@@ -170,7 +174,7 @@ export default function NosDebePage() {
     const ivaLine = c.lineas.find((l: any) => l.productoNombre === IVA_NOMBRE);
     const prodLines = c.lineas.filter((l: any) => l !== moLine && l !== ivaLine);
     setManoObra(moLine
-      ? { activo: true, valor: String(moLine.precioVenta), trabajadores: [], marca: moLine.productoMarca || "", lineaId: moLine.id, valorAbonado: moLine.valorAbonado }
+      ? { activo: true, valor: String(moLine.precioVenta), trabajadores: [], fijados: {}, marca: moLine.productoMarca || "", lineaId: moLine.id, valorAbonado: moLine.valorAbonado }
       : { ...emptyManoObra });
     setAplicaIva(!!ivaLine);
     setIvaLinea(ivaLine ? { id: ivaLine.id, valorAbonado: ivaLine.valorAbonado } : {});
@@ -266,8 +270,14 @@ export default function NosDebePage() {
         ? {
             valor: manoObraValor,
             ...(manoObra.trabajadores.length > 0
-              ? { trabajadores: manoObra.trabajadores.map((tid) => ({ id: tid, nombre: trabajadores?.find((w) => w.id === tid)?.nombre || `Trabajador ${tid}` })) }
-              : {}),
+                ? {
+                trabajadores: calcularDistribucion(manoObraValor, manoObra.trabajadores, manoObra.fijados).map((d) => ({
+                  id: d.trabajadorId,
+                  nombre: trabajadores?.find((w) => w.id === d.trabajadorId)?.nombre || `Trabajador ${d.trabajadorId}`,
+                  valor: d.valor,
+                })),
+              }
+            : { valor: 0 }),
           }
         : { valor: 0 },
     };
@@ -284,8 +294,25 @@ export default function NosDebePage() {
         setAplicaIva(false); setIvaLinea({}); setEditingHasAbonos(false);
       },
     };
-    if (editingId) actualizarMutation.mutate({ id: editingId, data }, options);
-    else crearMutation.mutate({ data }, options);
+    if (editingId) {
+      actualizarMutation.mutate({ id: editingId, data }, {
+        ...options,
+        onError: async () => {
+          await encolarOperacion({ tipo: "credito", metodo: "PUT", endpoint: `/creditos/${editingId}`, payload: data });
+          toast({ title: "Guardado sin conexión", description: "Este cambio se sincronizará automáticamente cuando vuelva internet." });
+          options.onSuccess?.();
+        },
+      });
+    } else {
+      crearMutation.mutate({ data }, {
+        ...options,
+        onError: async () => {
+          await encolarOperacion({ tipo: "credito", metodo: "POST", endpoint: "/creditos", payload: data });
+          toast({ title: "Guardado sin conexión", description: "Este registro se sincronizará automáticamente cuando vuelva internet." });
+          options.onSuccess?.();
+        },
+      });
+    }
   };
 
   const resetPay = () => { setShowPay(null); setAbono(""); setLineasSeleccionadas([]); setEditingAbonoId(null); };
@@ -329,7 +356,17 @@ export default function NosDebePage() {
     if (editingAbonoId !== null) {
       editarAbonoMutation.mutate({ id: c.id, abonoId: editingAbonoId, data }, { onSuccess });
     } else {
-      abonarMutation.mutate({ id: c.id, data }, { onSuccess });
+      abonarMutation.mutate(
+        { id: c.id, data },
+        {
+          onSuccess,
+          onError: async () => {
+            await encolarOperacion({ tipo: "credito", metodo: "POST", endpoint: `/creditos/${c.id}/abono`, payload: data });
+            toast({ title: "Guardado sin conexión", description: "Este abono se sincronizará automáticamente cuando vuelva internet." });
+            onSuccess();
+          },
+        }
+      );
     }
   };
 
@@ -543,12 +580,14 @@ export default function NosDebePage() {
                         <p className="text-xs text-muted-foreground mb-1">Asignada a: {manoObra.marca}</p>
                       )}
                       <div className="flex flex-wrap gap-2">
-                        {trabajadores?.filter((t) => t.activo).map((t) => (
-                          <label key={t.id} className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition-colors ${manoObra.trabajadores.includes(t.id) ? "bg-yellow-500/15 border-yellow-500/40 text-yellow-500" : "bg-background border-border text-muted-foreground"}`}>
-                            <input type="checkbox" className="w-3.5 h-3.5 accent-yellow-500" checked={manoObra.trabajadores.includes(t.id)} onChange={() => toggleTrabajadorMO(t.id)} />
-                            {t.nombre}
-                          </label>
-                        ))}
+                        <ManoObraSelector
+                          trabajadores={(trabajadores || []).filter((t) => t.activo)}
+                          total={manoObraValor}
+                          seleccionados={manoObra.trabajadores}
+                          fijados={manoObra.fijados}
+                          onChangeSeleccionados={(ids) => setManoObra((p) => ({ ...p, trabajadores: ids }))}
+                          onChangeFijados={(fijados) => setManoObra((p) => ({ ...p, fijados }))}
+                        />
                       </div>
                     </div>
                   </div>
