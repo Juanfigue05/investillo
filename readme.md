@@ -35,8 +35,7 @@ Investillo es un **monorepo pnpm** con 4 áreas principales:
 | `gestion`         | `artifacts/gestion`   | Frontend — React 18 + Vite + TypeScript + Tailwind CSS + shadcn/ui    |
 | `api-server`      | `artifacts/api-server`| Backend — Node.js + Express + TypeScript                              |
 |   `db`            | `lib/db`              | Esquema y acceso a datos — Drizzle ORM + PostgreSQL                   |
-|`api-spec`,`api-client-react`,`api-zod`|          `lib/`       | Contrato de API generado (OpenAPI + Orval) y validación (Zod)         |
-|          |                                                                                               |
+|`api-spec`,`api-client-react`,`api-zod`     |          `lib/`       | Contrato de API generado (OpenAPI + Orval) y validación (Zod)         |
 | `scripts`         | `scripts/`            | Scripts utilitarios (respaldo de base de datos, etc.)                 |
 
 **Lenguaje:** TypeScript en todo el stack (frontend, backend y librerías compartidas).
@@ -122,6 +121,7 @@ Todos se ejecutan desde la raíz del proyecto, en **CMD**.
 |-----------------------|-----------------------------------------------------------------------------------------------|
 | `pnpm install`        | Instala todas las dependencias del monorepo                                                   |
 | `pnpm run dev`        | Arranca backend + frontend juntos en una sola terminal (con recarga en caliente del frontend) |
+| `pnpm run start:prod` | Arranca backend + frontend juntos en modo produccion                                          |
 | `pnpm run db:push`    | Sincroniza el esquema de Drizzle con la base de datos apuntada en `.env.api`                  |
 | `pnpm run backup`     | Ejecuta el respaldo de 3 capas: Supabase → archivo local → Aiven → Cloudflare R2              |
 | `pnpm run build`      | Compila typecheck + build de producción de todos los paquetes                                 |
