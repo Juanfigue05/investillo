@@ -12,6 +12,8 @@ const QUERY_KEYS_POR_TIPO: Record<string, string[]> = {
   credito: ["/api/creditos", "/api/trabajadores", "/api/inventario"],
   compra: ["/api/compras", "/api/inventario", "/api/historial-precios"],
   cierre_diario: ["/api/cierre-diario", "/api/trabajadores"],
+  producto: ["/api/inventario"],
+  cliente: ["/api/clientes"],
 };
 
 export async function procesarPendientes() {

@@ -11,3 +11,4 @@ export * from "./cierre_diario";
 export * from "./clientes";
 export * from "./pagos_seguro";
 export * from "./operaciones_sincronizadas";
+export * from "./remachadas";

@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { productosTable } from "@workspace/db/schema";
 import { eq, lte, sql } from "drizzle-orm";
+import { operacionesSincronizadasTable } from "@workspace/db/schema";
 
 const router: IRouter = Router();
 
@@ -62,6 +63,12 @@ router.get("/:id", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  const operationId = req.header("x-operation-id");
+  if (operationId) {
+    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+  }
+
   const { nombre, codigo, marca, tipo, referencia, adicional, precioCompra, precioVentaSinIva, tieneIva, stockActual, stockMinimo } = req.body;
 
   const pvSinIva = parseFloat(precioVentaSinIva);
@@ -82,10 +89,19 @@ router.post("/", async (req, res) => {
     stockMinimo: String(parseFloat(stockMinimo)),
   }).returning();
 
+  if (operationId) {
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "producto", recursoId: producto.id }).onConflictDoNothing();
+  }
   res.status(201).json(mapProducto(producto));
 });
 
 router.put("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id");
+  if (operationId) {
+    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+  }
+
   const id = parseInt(req.params.id);
   const { nombre, codigo, marca, tipo, referencia, adicional, precioCompra, precioVentaSinIva, tieneIva, stockActual, stockMinimo } = req.body;
 
@@ -115,6 +131,9 @@ router.put("/:id", async (req, res) => {
   if (!producto) {
     res.status(404).json({ error: "Producto no encontrado" });
     return;
+  }
+  if (operationId) {
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "producto", recursoId: producto.id }).onConflictDoNothing();
   }
   res.json(mapProducto(producto));
 });

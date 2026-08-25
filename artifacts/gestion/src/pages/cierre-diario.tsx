@@ -5,6 +5,8 @@ import { formatCurrency } from "@/lib/utils";
 import { Calculator, Plus, Trash2, ChevronDown, ChevronUp, Save, CheckCircle, Pencil } from "lucide-react";
 import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
+import { CalculadoraCierre } from "@/components/CalculadoraCierre";
+import { Calculator as CalcIcon } from "lucide-react";
 
 // ---------- types ----------
 interface ConceptoEntrada {
@@ -25,7 +27,7 @@ interface CierreTrabajador {
 
 // ---------- helpers ----------
 const roundUp1000 = (n: number) => Math.ceil(n / 1000) * 1000;
-
+const [calcCierreOpen, setCalcCierreOpen] = useState(false);
 /** Parse a "miles" shorthand: "55" → 55000, "45.5" → 45500, "" → 0 */
 const parseMiles = (raw: string): number => {
   if (!raw.trim()) return 0;
@@ -317,6 +319,10 @@ const handleGuardar = async () => {
               </>
             )}
           </div>
+          <button onClick={() => setCalcCierreOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm">
+          <CalcIcon className="w-4 h-4" /> Calculadora
+          </button>
+          <CalculadoraCierre open={calcCierreOpen} onClose={() => setCalcCierreOpen(false)} />
           <div className="flex gap-2 flex-wrap">
             {items.length > 0 && (
               <button

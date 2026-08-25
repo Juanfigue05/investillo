@@ -4,6 +4,8 @@ import { useGetInventario, useCrearProducto, useActualizarProducto, useEliminarP
 import { formatCurrency, calcularPrecioConIva } from "@/lib/utils";
 import { Plus, Search, Edit2, Trash2, AlertCircle, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, ChevronDown as ChevDown, Upload, CheckCircle2, Loader2, FileDown, GitMerge } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { encolarOperacion } from "@/lib/offline-db";
+import { toast } from "@/hooks/use-toast";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
@@ -259,13 +261,29 @@ export default function Inventario() {
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingId) {
-      actualizarMutation.mutate({ id: editingId, data: formData }, {
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventario"] }); setShowForm(false); },
-      });
+      actualizarMutation.mutate(
+        { id: editingId, data: formData },
+        {
+          onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventario"] }); setShowForm(false); },
+          onError: async () => {
+            await encolarOperacion({ tipo: "producto", metodo: "PUT", endpoint: `/inventario/${editingId}`, payload: formData });
+            toast({ title: "Guardado sin conexión", description: "Este producto se sincronizará automáticamente cuando vuelva internet." });
+            setShowForm(false);
+          },
+        }
+      );
     } else {
-      crearMutation.mutate({ data: formData }, {
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventario"] }); setShowForm(false); },
-      });
+      crearMutation.mutate(
+        { data: formData },
+        {
+          onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventario"] }); setShowForm(false); },
+          onError: async () => {
+            await encolarOperacion({ tipo: "producto", metodo: "POST", endpoint: "/inventario", payload: formData });
+            toast({ title: "Guardado sin conexión", description: "Este producto se sincronizará automáticamente cuando vuelva internet." });
+            setShowForm(false);
+          },
+        }
+      );
     }
   };
 

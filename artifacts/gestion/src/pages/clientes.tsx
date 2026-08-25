@@ -14,6 +14,8 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { formatTelefono, soloDigitos } from "@/lib/utils";
 import { Plus, Search, X, Pencil, Trash2, Car, User, Phone, Mail, ChevronDown, ChevronUp, Check } from "lucide-react";
+import { encolarOperacion } from "@/lib/offline-db";
+import { toast } from "@/hooks/use-toast";
 
 interface VehiculoForm {
   id?: number;
@@ -117,16 +119,36 @@ export default function Clientes() {
   // ── Inline vehicle actions on existing client ─────────────────────
   const handleSaveVehiculo = (clienteId: number) => {
     if (!vehiculoForm || !vehiculoForm.veh.placa.trim()) return;
-    const veh = vehiculoForm.veh;
-    if (editingVehId !== null) {
-      actualizarVehiculoMutation.mutate(
-        { id: clienteId, vid: editingVehId, data: { placa: veh.placa.trim(), descripcion: veh.descripcion || null } },
-        { onSuccess: () => { invalidate(); setVehiculoForm(null); setEditingVehId(null); } },
+    setFormErrors([]);
+
+    const vehs = vehiculos.filter((v) => v.placa.trim());
+    const onGuardadoExitoso = () => { invalidate(); setShowForm(false); setEditingId(null); setForm({ ...emptyForm }); setVehiculos([]); };
+
+    if (editingId) {
+      const payload = { nombre: form.nombre.trim(), telefono: form.telefono || null, correo: form.correo || null, notas: form.notas || null };
+      actualizarMutation.mutate(
+        { id: editingId, data: payload },
+        {
+          onSuccess: onGuardadoExitoso,
+          onError: async () => {
+            await encolarOperacion({ tipo: "cliente", metodo: "PUT", endpoint: `/clientes/${editingId}`, payload });
+            toast({ title: "Guardado sin conexión", description: "Este cliente se sincronizará automáticamente cuando vuelva internet." });
+            onGuardadoExitoso();
+          },
+        },
       );
     } else {
-      agregarVehiculoMutation.mutate(
-        { id: clienteId, data: { placa: veh.placa.trim(), descripcion: veh.descripcion || null } },
-        { onSuccess: () => { invalidate(); setVehiculoForm(null); } },
+      const payload = { nombre: form.nombre.trim(), telefono: form.telefono || null, correo: form.correo || null, notas: form.notas || null, vehiculos: vehs.map((v) => ({ placa: v.placa.trim(), descripcion: v.descripcion || null })) };
+      crearMutation.mutate(
+        { data: payload },
+        {
+          onSuccess: onGuardadoExitoso,
+          onError: async () => {
+            await encolarOperacion({ tipo: "cliente", metodo: "POST", endpoint: "/clientes", payload });
+            toast({ title: "Guardado sin conexión", description: "Este cliente se sincronizará automáticamente cuando vuelva internet." });
+            onGuardadoExitoso();
+          },
+        },
       );
     }
   };

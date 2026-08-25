@@ -1,4 +1,3 @@
 @echo off
-cd /d "%~dp0"
-start "" http://localhost:8080
+cd /d "C:\ruta\investillo"
 pnpm run start:prod

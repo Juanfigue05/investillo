@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { clientesTable, vehiculosClienteTable } from "@workspace/db/schema";
 import { eq, desc, ilike, or, and } from "drizzle-orm";
+import { operacionesSincronizadasTable } from "@workspace/db/schema";
 
 const router: IRouter = Router();
 
@@ -58,6 +59,12 @@ router.get("/:id", async (req, res) => {
 
 // POST /clientes
 router.post("/", async (req, res) => {
+  const operationId = req.header("x-operation-id");
+  if (operationId) {
+    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+  }
+
   const { nombre, telefono, correo, notas, vehiculos = [] } = req.body as {
     nombre: string;
     telefono?: string;
@@ -82,11 +89,20 @@ router.post("/", async (req, res) => {
     }
     return created;
   });
+  if (operationId) {
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "cliente", recursoId: cliente.id }).onConflictDoNothing();
+  }
   res.status(201).json(await mapCliente(cliente));
 });
 
 // PUT /clientes/:id
 router.put("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id");
+  if (operationId) {
+    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+  }
+
   const id = parseInt(req.params.id);
   const { nombre, telefono, correo, notas } = req.body as {
     nombre?: string;
@@ -104,6 +120,10 @@ router.put("/:id", async (req, res) => {
   if (notas !== undefined) update.notas = notas || null;
 
   const [updated] = await db.update(clientesTable).set(update).where(eq(clientesTable.id, id)).returning();
+  
+  if (operationId) {
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "cliente", recursoId: id }).onConflictDoNothing();
+  }
   res.json(await mapCliente(updated));
 });
 

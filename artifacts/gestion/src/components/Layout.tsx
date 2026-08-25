@@ -6,6 +6,8 @@ import { Bell, Menu, X, CheckCheck, Trash2, Check, Pin, PinOff } from "lucide-re
 import { getGetAlertasStockQueryKey, useGetAlertasStock } from "@workspace/api-client-react";
 import { BackupLocal } from "./BackupLocal";
 import { ConnectionStatus } from "./ConnectionStatus";
+import { CalculadoraCierre } from "./CalculadoraCierre";
+import { Calculator as CalcIcon } from "lucide-react";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 function loadSet(key: string): Set<number> {
@@ -25,7 +27,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
-
+  const [calcCierreOpen, setCalcCierreOpen] = useState(false);
   const [read, setRead] = useState<Set<number>>(() => loadSet(KEYS.read));
   const [dismissed, setDismissed] = useState<Set<number>>(() => loadSet(KEYS.dismissed));
   const [pinned, setPinned] = useState<Set<number>>(() => loadSet(KEYS.pinned));
@@ -108,6 +110,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <FloatingPriceCheck topbar />   
             <FloatingNotepad topbar />
             <BackupLocal topbar />
+
+            <button onClick={() => setCalcCierreOpen(true)} className="p-2 rounded-full hover:bg-muted transition-colors" aria-label="Calculadora de cierre">
+              <CalcIcon className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground hover:text-foreground transition-colors" />
+            </button>
+            <CalculadoraCierre open={calcCierreOpen} onClose={() => setCalcCierreOpen(false)} />
+              
             <button
               type="button"
               aria-label="Ver alertas de inventario"

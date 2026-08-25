@@ -35,11 +35,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const frontendDist = path.join(__dirname, "../../gestion/dist");
+const frontendDist = path.join(__dirname, "../../gestion/dist/public");
 
 app.use(express.static(frontendDist));
-app.get("*", (req, res, next) => {
-  if (req.path.startsWith("/api")) return next();
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api")) { next(); return; }
   res.sendFile(path.join(frontendDist, "index.html"));
 });
 
