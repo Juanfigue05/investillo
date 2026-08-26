@@ -21,13 +21,13 @@ function saveSet(key: string, s: Set<number>) {
 const KEYS = { read: "alertas_read", dismissed: "alertas_dismissed", pinned: "alertas_pinned" };
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const [calcCierreOpen, setCalcCierreOpen] = useState(false);
   const { data: alertas } = useGetAlertasStock({
     query: { queryKey: getGetAlertasStockQueryKey(), refetchInterval: 4000 },
   });
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const [calcCierreOpen, setCalcCierreOpen] = useState(false);
   const [read, setRead] = useState<Set<number>>(() => loadSet(KEYS.read));
   const [dismissed, setDismissed] = useState<Set<number>>(() => loadSet(KEYS.dismissed));
   const [pinned, setPinned] = useState<Set<number>>(() => loadSet(KEYS.pinned));

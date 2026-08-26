@@ -27,7 +27,6 @@ interface CierreTrabajador {
 
 // ---------- helpers ----------
 const roundUp1000 = (n: number) => Math.ceil(n / 1000) * 1000;
-const [calcCierreOpen, setCalcCierreOpen] = useState(false);
 /** Parse a "miles" shorthand: "55" → 55000, "45.5" → 45500, "" → 0 */
 const parseMiles = (raw: string): number => {
   if (!raw.trim()) return 0;
@@ -181,7 +180,8 @@ interface TrabajadorSnapshot {
 // ---------- main ----------
 export default function CierreDiario() {
   const { data: trabajadores } = useGetTrabajadores();
-
+  const [calcCierreOpen, setCalcCierreOpen] = useState(false); 
+   
   const fechaHoy = new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD
   const hoyLabel = new Date().toLocaleDateString("es-CO", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
