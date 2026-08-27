@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetTrabajadores, useCrearTrabajador } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
-import { Users, Plus, Pencil, X, Check, ShieldCheck, Calendar, Clock, Wallet } from "lucide-react";
+import { Users, Plus, ShieldCheck, Calendar, Clock, Wallet } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
@@ -39,17 +39,45 @@ export default function Trabajadores() {
   const [newTrabNombre, setNewTrabNombre] = useState("");
   const [newTrabAplicaSeguro, setNewTrabAplicaSeguro] = useState(false);
 
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [perfilForm, setPerfilForm] = useState<PerfilForm | null>(null);
-  const [guardandoPerfil, setGuardandoPerfil] = useState(false);
+  // Antes había UN solo perfilForm (para el trabajador expandido). Ahora es un mapa: uno por cada trabajador.
+  const [perfilForms, setPerfilForms] = useState<Record<number, PerfilForm>>({});
+  const [guardandoPerfilId, setGuardandoPerfilId] = useState<number | null>(null);
 
-  const [pagos, setPagos] = useState<PagoSeguro[]>([]);
-  const [cargandoPagos, setCargandoPagos] = useState(false);
-  const [nuevoPagoFecha, setNuevoPagoFecha] = useState("");
-  const [nuevoPagoMonto, setNuevoPagoMonto] = useState("");
-  const [registrandoPago, setRegistrandoPago] = useState(false);
+  // Antes había UNA sola lista de pagos (del trabajador expandido). Ahora es un mapa: uno por cada trabajador.
+  const [pagosPorTrabajador, setPagosPorTrabajador] = useState<Record<number, PagoSeguro[]>>({});
+  const [cargandoPagosId, setCargandoPagosId] = useState<number | null>(null);
+  const [nuevoPagoFecha, setNuevoPagoFecha] = useState<Record<number, string>>({});
+  const [nuevoPagoMonto, setNuevoPagoMonto] = useState<Record<number, string>>({});
+  const [registrandoPagoId, setRegistrandoPagoId] = useState<number | null>(null);
 
   const invalidar = () => queryClient.invalidateQueries({ queryKey: ["/api/trabajadores"] });
+
+  // Al llegar la lista de trabajadores, arma el formulario de perfil de TODOS de una vez
+  // (antes esto solo pasaba para el único trabajador que se hacía clic para expandir).
+  useEffect(() => {
+    if (!trabajadores) return;
+    setPerfilForms((prev) => {
+      const nuevos = { ...prev };
+      trabajadores.forEach((t: any) => {
+        if (!nuevos[t.id]) {
+          nuevos[t.id] = {
+            nombre: t.nombre,
+            numeroSeguro: t.numeroSeguro || "",
+            telefono: t.telefono || "",
+            correo: t.correo || "",
+            eps: t.eps || "",
+            aplicaSeguro: Boolean(t.aplicaSeguro),
+            fechaProximoPagoSeguro: t.fechaProximoPagoSeguro || "",
+          };
+        }
+      });
+      return nuevos;
+    });
+    trabajadores.forEach((t: any) => {
+      if (t.aplicaSeguro && !(t.id in pagosPorTrabajador)) cargarPagos(t.id);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trabajadores]);
 
   const handleAddTrab = () => {
     if (!newTrabNombre.trim()) return;
@@ -59,63 +87,57 @@ export default function Trabajadores() {
     );
   };
 
-  const abrirTarjeta = (t: any) => {
-    if (expandedId === t.id) { setExpandedId(null); return; }
-    setExpandedId(t.id);
-    setPerfilForm({
-      nombre: t.nombre,
-      numeroSeguro: t.numeroSeguro || "",
-      telefono: t.telefono || "",
-      correo: t.correo || "",
-      eps: t.eps || "",
-      aplicaSeguro: Boolean(t.aplicaSeguro),
-      fechaProximoPagoSeguro: t.fechaProximoPagoSeguro || "",
-    });
-    if (t.aplicaSeguro) cargarPagos(t.id);
-  };
-
   const cargarPagos = async (trabajadorId: number) => {
-    setCargandoPagos(true);
+    setCargandoPagosId(trabajadorId);
     try {
       const res = await fetch(`${API}/trabajadores/${trabajadorId}/pagos-seguro`);
-      setPagos(await res.json());
+      const data = await res.json();
+      setPagosPorTrabajador((prev) => ({ ...prev, [trabajadorId]: data }));
     } catch {
-      setPagos([]);
+      setPagosPorTrabajador((prev) => ({ ...prev, [trabajadorId]: [] }));
     } finally {
-      setCargandoPagos(false);
+      setCargandoPagosId(null);
     }
   };
 
+  const actualizarCampoPerfil = (id: number, cambios: Partial<PerfilForm>) => {
+    setPerfilForms((prev) => ({ ...prev, [id]: { ...prev[id], ...cambios } }));
+  };
+
   const guardarPerfil = async (id: number) => {
-    if (!perfilForm) return;
-    setGuardandoPerfil(true);
+    const form = perfilForms[id];
+    if (!form) return;
+    setGuardandoPerfilId(id);
     try {
       await fetch(`${API}/trabajadores/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(perfilForm),
+        body: JSON.stringify(form),
       });
       invalidar();
-      if (perfilForm.aplicaSeguro) cargarPagos(id);
+      if (form.aplicaSeguro) cargarPagos(id);
     } finally {
-      setGuardandoPerfil(false);
+      setGuardandoPerfilId(null);
     }
   };
 
   const registrarPago = async (trabajadorId: number) => {
-    if (!nuevoPagoFecha || !nuevoPagoMonto) return;
-    setRegistrandoPago(true);
+    const fecha = nuevoPagoFecha[trabajadorId];
+    const monto = nuevoPagoMonto[trabajadorId];
+    if (!fecha || !monto) return;
+    setRegistrandoPagoId(trabajadorId);
     try {
       await fetch(`${API}/trabajadores/${trabajadorId}/pagos-seguro`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fecha: nuevoPagoFecha, monto: parseFloat(nuevoPagoMonto) }),
+        body: JSON.stringify({ fecha, monto: parseFloat(monto) }),
       });
-      setNuevoPagoFecha(""); setNuevoPagoMonto("");
+      setNuevoPagoFecha((prev) => ({ ...prev, [trabajadorId]: "" }));
+      setNuevoPagoMonto((prev) => ({ ...prev, [trabajadorId]: "" }));
       invalidar();
       cargarPagos(trabajadorId);
     } finally {
-      setRegistrandoPago(false);
+      setRegistrandoPagoId(null);
     }
   };
 
@@ -158,14 +180,17 @@ export default function Trabajadores() {
         {isLoading ? (
           <div className="text-center py-10 text-muted-foreground text-sm">Cargando trabajadores...</div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
             {trabajadores?.map((t: any) => {
-              const abierto = expandedId === t.id;
+              const form = perfilForms[t.id];
               const dias = diasRestantes(t.fechaProximoPagoSeguro);
+              const pagos = pagosPorTrabajador[t.id] || [];
+
+              if (!form) return null;
 
               return (
                 <div key={t.id} className="bg-card border border-border rounded-2xl shadow-xl overflow-hidden">
-                  <button onClick={() => abrirTarjeta(t)} className="w-full flex items-center gap-3 p-4 text-left hover:bg-muted/30 transition-colors">
+                  <div className="w-full flex items-center gap-3 p-4">
                     <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary flex-shrink-0">
                       {t.nombre.charAt(0).toUpperCase()}
                     </div>
@@ -182,118 +207,115 @@ export default function Trabajadores() {
                         )}
                       </div>
                     </div>
-                    <Pencil className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                  </button>
+                  </div>
 
-                  {abierto && perfilForm && (
-                    <div className="border-t border-border p-4 space-y-4 animate-in fade-in">
-                      {/* ── Perfil ── */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-muted-foreground mb-1">Nombre</label>
-                          <input value={perfilForm.nombre} onChange={(e) => setPerfilForm({ ...perfilForm, nombre: e.target.value })}
-                            className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-muted-foreground mb-1">Teléfono</label>
-                          <input value={perfilForm.telefono} onChange={(e) => setPerfilForm({ ...perfilForm, telefono: e.target.value })}
-                            className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-muted-foreground mb-1">Correo</label>
-                          <input value={perfilForm.correo} onChange={(e) => setPerfilForm({ ...perfilForm, correo: e.target.value })}
-                            className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-muted-foreground mb-1">EPS</label>
-                          <input value={perfilForm.eps} onChange={(e) => setPerfilForm({ ...perfilForm, eps: e.target.value })}
-                            className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
-                        </div>
-                        <div className="col-span-2">
-                          <label className="block text-xs font-medium text-muted-foreground mb-1">Número de seguro</label>
-                          <input value={perfilForm.numeroSeguro} onChange={(e) => setPerfilForm({ ...perfilForm, numeroSeguro: e.target.value })}
-                            className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
-                        </div>
+                  <div className="border-t border-border p-4 space-y-4">
+                    {/* ── Perfil ── */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Nombre</label>
+                        <input value={form.nombre} onChange={(e) => actualizarCampoPerfil(t.id, { nombre: e.target.value })}
+                          className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
                       </div>
+                      <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Teléfono</label>
+                        <input value={form.telefono} onChange={(e) => actualizarCampoPerfil(t.id, { telefono: e.target.value })}
+                          className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Correo</label>
+                        <input value={form.correo} onChange={(e) => actualizarCampoPerfil(t.id, { correo: e.target.value })}
+                          className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">EPS</label>
+                        <input value={form.eps} onChange={(e) => actualizarCampoPerfil(t.id, { eps: e.target.value })}
+                          className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Número de seguro</label>
+                        <input value={form.numeroSeguro} onChange={(e) => actualizarCampoPerfil(t.id, { numeroSeguro: e.target.value })}
+                          className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                      </div>
+                    </div>
 
-                      <label className="flex items-center gap-2 text-sm text-foreground">
-                        <input type="checkbox" checked={perfilForm.aplicaSeguro} onChange={(e) => setPerfilForm({ ...perfilForm, aplicaSeguro: e.target.checked })} className="accent-primary" />
-                        Aplica descuento de seguro
-                      </label>
+                    <label className="flex items-center gap-2 text-sm text-foreground">
+                      <input type="checkbox" checked={form.aplicaSeguro} onChange={(e) => actualizarCampoPerfil(t.id, { aplicaSeguro: e.target.checked })} className="accent-primary" />
+                      Aplica descuento de seguro
+                    </label>
 
-                      <button onClick={() => guardarPerfil(t.id)} disabled={guardandoPerfil}
-                        className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors text-sm disabled:opacity-50">
-                        <Check className="w-4 h-4" /> {guardandoPerfil ? "Guardando..." : "Guardar perfil"}
-                      </button>
+                    <button onClick={() => guardarPerfil(t.id)} disabled={guardandoPerfilId === t.id}
+                      className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors text-sm disabled:opacity-50">
+                      {guardandoPerfilId === t.id ? "Guardando..." : "Guardar perfil"}
+                    </button>
 
-                      {/* ── Seguro ── */}
-                      {perfilForm.aplicaSeguro && (
-                        <div className="border-t border-border pt-4 space-y-3">
-                          <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
-                            <ShieldCheck className="w-4 h-4 text-emerald-400" /> Seguimiento del seguro
-                          </h4>
+                    {/* ── Seguro ── */}
+                    {form.aplicaSeguro && (
+                      <div className="border-t border-border pt-4 space-y-3">
+                        <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-emerald-400" /> Seguimiento del seguro
+                        </h4>
 
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="bg-background rounded-xl border border-border p-3">
-                              <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Wallet className="w-3 h-3" /> Saldo pendiente</p>
-                              <p className="text-lg font-bold text-amber-400">{formatCurrency(t.seguroSaldoPendiente)}</p>
-                            </div>
-                            <div className="bg-background rounded-xl border border-border p-3">
-                              <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" /> Próximo pago</p>
-                              {dias === null ? (
-                                <p className="text-xs text-muted-foreground">Sin fecha definida</p>
-                              ) : dias < 0 ? (
-                                <p className="text-sm font-bold text-destructive">Atrasado {Math.abs(dias)} día{Math.abs(dias) === 1 ? "" : "s"}</p>
-                              ) : dias === 0 ? (
-                                <p className="text-sm font-bold text-amber-400">¡Es hoy!</p>
-                              ) : (
-                                <p className="text-sm font-bold text-foreground">Faltan {dias} día{dias === 1 ? "" : "s"}</p>
-                              )}
-                            </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-background rounded-xl border border-border p-3">
+                            <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Wallet className="w-3 h-3" /> Saldo pendiente</p>
+                            <p className="text-lg font-bold text-amber-400">{formatCurrency(t.seguroSaldoPendiente)}</p>
                           </div>
-
-                          <div>
-                            <label className="block text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1"><Calendar className="w-3 h-3" /> Fecha del próximo pago a la entidad</label>
-                            <input type="date" value={perfilForm.fechaProximoPagoSeguro}
-                              onChange={(e) => setPerfilForm({ ...perfilForm, fechaProximoPagoSeguro: e.target.value })}
-                              className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
-                          </div>
-
-                          <div className="bg-background rounded-xl border border-border p-3 space-y-2">
-                            <p className="text-xs font-medium text-foreground">Registrar pago realizado</p>
-                            <div className="flex gap-2">
-                              <input type="date" value={nuevoPagoFecha} onChange={(e) => setNuevoPagoFecha(e.target.value)}
-                                className="flex-1 bg-card border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" />
-                              <input type="number" placeholder="Monto" value={nuevoPagoMonto} onChange={(e) => setNuevoPagoMonto(e.target.value)}
-                                className="w-28 bg-card border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" />
-                              <button onClick={() => registrarPago(t.id)} disabled={registrandoPago}
-                                className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-50">
-                                Registrar
-                              </button>
-                            </div>
-                          </div>
-
-                          <div>
-                            <p className="text-xs font-medium text-muted-foreground mb-1.5">Historial de pagos</p>
-                            {cargandoPagos ? (
-                              <p className="text-xs text-muted-foreground">Cargando...</p>
-                            ) : pagos.length === 0 ? (
-                              <p className="text-xs text-muted-foreground">Sin pagos registrados todavía.</p>
+                          <div className="bg-background rounded-xl border border-border p-3">
+                            <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" /> Próximo pago</p>
+                            {dias === null ? (
+                              <p className="text-xs text-muted-foreground">Sin fecha definida</p>
+                            ) : dias < 0 ? (
+                              <p className="text-sm font-bold text-destructive">Atrasado {Math.abs(dias)} día{Math.abs(dias) === 1 ? "" : "s"}</p>
+                            ) : dias === 0 ? (
+                              <p className="text-sm font-bold text-amber-400">¡Es hoy!</p>
                             ) : (
-                              <div className="space-y-1 max-h-32 overflow-y-auto">
-                                {pagos.map((p) => (
-                                  <div key={p.id} className="flex justify-between text-xs bg-background rounded-lg px-2.5 py-1.5 border border-border">
-                                    <span className="text-muted-foreground">{new Date(p.fecha + "T12:00:00").toLocaleDateString("es-CO")}</span>
-                                    <span className="font-medium text-foreground">{formatCurrency(p.monto)}</span>
-                                  </div>
-                                ))}
-                              </div>
+                              <p className="text-sm font-bold text-foreground">Faltan {dias} día{dias === 1 ? "" : "s"}</p>
                             )}
                           </div>
                         </div>
-                      )}
-                    </div>
-                  )}
+
+                        <div>
+                          <label className="block text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1"><Calendar className="w-3 h-3" /> Fecha del próximo pago a la entidad</label>
+                          <input type="date" value={form.fechaProximoPagoSeguro}
+                            onChange={(e) => actualizarCampoPerfil(t.id, { fechaProximoPagoSeguro: e.target.value })}
+                            className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                        </div>
+
+                        <div className="bg-background rounded-xl border border-border p-3 space-y-2">
+                          <p className="text-xs font-medium text-foreground">Registrar pago realizado</p>
+                          <div className="flex gap-2">
+                            <input type="date" value={nuevoPagoFecha[t.id] || ""} onChange={(e) => setNuevoPagoFecha((prev) => ({ ...prev, [t.id]: e.target.value }))}
+                              className="flex-1 bg-card border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" />
+                            <input type="number" placeholder="Monto" value={nuevoPagoMonto[t.id] || ""} onChange={(e) => setNuevoPagoMonto((prev) => ({ ...prev, [t.id]: e.target.value }))}
+                              className="w-28 bg-card border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" />
+                            <button onClick={() => registrarPago(t.id)} disabled={registrandoPagoId === t.id}
+                              className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-50">
+                              Registrar
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-1.5">Historial de pagos</p>
+                          {cargandoPagosId === t.id ? (
+                            <p className="text-xs text-muted-foreground">Cargando...</p>
+                          ) : pagos.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">Sin pagos registrados todavía.</p>
+                          ) : (
+                            <div className="space-y-1 max-h-32 overflow-y-auto">
+                              {pagos.map((p) => (
+                                <div key={p.id} className="flex justify-between text-xs bg-background rounded-lg px-2.5 py-1.5 border border-border">
+                                  <span className="text-muted-foreground">{new Date(p.fecha + "T12:00:00").toLocaleDateString("es-CO")}</span>
+                                  <span className="font-medium text-foreground">{formatCurrency(p.monto)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}

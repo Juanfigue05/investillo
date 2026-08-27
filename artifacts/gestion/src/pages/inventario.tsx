@@ -6,6 +6,7 @@ import { Plus, Search, Edit2, Trash2, AlertCircle, ChevronUp, ChevronDown, Chevr
 import { useQueryClient } from "@tanstack/react-query";
 import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
+import { RemachadasPanel } from "@/components/RemachadasPanel";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
@@ -60,6 +61,8 @@ export default function Inventario() {
   const crearMutation = useCrearProducto();
   const actualizarMutation = useActualizarProducto();
   const eliminarMutation = useEliminarProducto();
+
+  const [vista, setVista] = useState<"productos" | "remachadas">("productos");
 
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -347,15 +350,26 @@ export default function Inventario() {
               Nuevo Producto
             </button>
           </div>
+          <div className="flex gap-2 border-b border-border">
+            <button onClick={() => setVista("productos")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${vista === "productos" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+              Productos
+            </button>
+            <button onClick={() => setVista("remachadas")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${vista === "remachadas" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+              Remachadas
+            </button>
+          </div>
         </div>
 
+        
+        <div className="space-y-4">
         {/* Import result banner */}
         {importResult && (
           <div className={`rounded-2xl border px-5 py-4 flex items-start gap-3 shadow-lg ${
             importResult.ok
               ? "bg-green-900/20 border-green-700/40 text-green-300"
-              : "bg-destructive/10 border-destructive/30 text-destructive"
-          }`}>
+              : "bg-destructive/10 border-destructive/30 text-destructive"          }`} >
             <div className="flex-shrink-0 mt-0.5">
               {importResult.ok ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
             </div>
@@ -610,7 +624,9 @@ export default function Inventario() {
             ))}
           </select>
         </div>
-
+        
+        {vista === "productos" && (
+        <>
         {/* Filter Panel */}
         {showFilters && (
           <div className="bg-card border border-border rounded-2xl p-4 shadow-lg animate-in fade-in slide-in-from-top-2">
@@ -809,108 +825,111 @@ export default function Inventario() {
             >Siguiente →</button>
           </div>
         )}
-      </div>
 
-      {/* Form Dialog */}
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <div className="bg-card w-full max-w-2xl rounded-2xl border border-border shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-border bg-muted/50 flex justify-between items-center sticky top-0">
-              <h3 className="text-xl font-display font-bold text-foreground">
-                {editingId ? "Editar Producto" : "Nuevo Producto"}
-              </h3>
-              <button onClick={() => setShowForm(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">✕</button>
+        {/* Form Dialog */}
+          {showForm && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+              <div className="bg-card w-full max-w-2xl rounded-2xl border border-border shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+                <div className="px-6 py-4 border-b border-border bg-muted/50 flex justify-between items-center sticky top-0">
+                  <h3 className="text-xl font-display font-bold text-foreground">
+                    {editingId ? "Editar Producto" : "Nuevo Producto"}
+                  </h3>
+                  <button onClick={() => setShowForm(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">✕</button>
+                </div>
+                <form onSubmit={handleSave} className="p-6 space-y-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-muted-foreground mb-1">Código</label>
+                      <input required type="text" value={formData.codigo} onChange={e => setFormData({ ...formData, codigo: e.target.value })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-muted-foreground mb-1">Nombre</label>
+                      <input required type="text" value={formData.nombre} onChange={e => setFormData({ ...formData, nombre: e.target.value })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-muted-foreground mb-1">Marca</label>
+                      <input type="text" value={formData.marca} onChange={e => setFormData({ ...formData, marca: e.target.value })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-muted-foreground mb-1">Tipo</label>
+                      <input type="text" placeholder="Ej: Filtro, Aceite, Frenos..." value={formData.tipo} onChange={e => setFormData({ ...formData, tipo: e.target.value })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-muted-foreground mb-1">Referencia</label>
+                      <input type="text" value={formData.referencia} onChange={e => setFormData({ ...formData, referencia: e.target.value })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Adicional / Observaciones</label>
+                    <textarea
+                      rows={3}
+                      placeholder="Información adicional, notas, compatibilidad, etc."
+                      value={formData.adicional}
+                      onChange={e => setFormData({ ...formData, adicional: e.target.value })}
+                      className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground resize-none text-sm"
+                    />
+                  </div>
+
+                  <hr className="border-border" />
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-muted-foreground mb-1">Stock Actual</label>
+                      <input required type="number" step="0.01" value={formData.stockActual} onChange={e => setFormData({ ...formData, stockActual: parseFloat(e.target.value) || 0 })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-muted-foreground mb-1">Stock Mínimo (Alerta)</label>
+                      <input required type="number" step="0.01" value={formData.stockMinimo} onChange={e => setFormData({ ...formData, stockMinimo: parseFloat(e.target.value) || 0 })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
+                    </div>
+                  </div>
+
+                  <hr className="border-border" />
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-muted-foreground mb-1">Precio Compra ($)</label>
+                      <input required type="number" value={formData.precioCompra} onChange={e => setFormData({ ...formData, precioCompra: parseFloat(e.target.value) || 0 })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-muted-foreground mb-1 flex items-center justify-between">
+                        <span>Precio Venta Sin IVA ($)</span>
+                        <span className={margen < 20 ? "text-destructive text-xs" : "text-green-500 text-xs"}>
+                          Margen: {margen.toFixed(1)}%
+                        </span>
+                      </label>
+                      <input required type="number" value={formData.precioVentaSinIva} onChange={e => setFormData({ ...formData, precioVentaSinIva: parseFloat(e.target.value) || 0 })} className={`w-full px-4 py-2 bg-background border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground ${formData.precioCompra > 0 && formData.precioVentaSinIva < formData.precioCompra ? "border-destructive" : "border-border"}`} />
+                      {formData.precioCompra > 0 && formData.precioVentaSinIva < formData.precioCompra && (
+                        <p className="text-destructive text-xs mt-1">⚠ Menor al costo</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-muted/30 p-4 rounded-xl border border-border">
+                    <label className="flex items-center gap-2 text-foreground cursor-pointer">
+                      <input type="checkbox" checked={formData.tieneIva} onChange={e => setFormData({ ...formData, tieneIva: e.target.checked })} className="w-5 h-5 rounded border-border text-primary focus:ring-primary bg-background" />
+                      Aplica IVA (19%)
+                    </label>
+                    <div className="flex-1 text-right">
+                      <span className="text-sm text-muted-foreground mr-2">Precio Final Público:</span>
+                      <span className="text-2xl font-bold text-primary">{formatCurrency(precioConIva)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-4">
+                    <button type="button" onClick={() => setShowForm(false)} className="px-6 py-2 rounded-xl text-foreground bg-muted hover:bg-muted/80 transition-colors">Cancelar</button>
+                    <button type="submit" disabled={crearMutation.isPending || actualizarMutation.isPending || (formData.precioCompra > 0 && formData.precioVentaSinIva < formData.precioCompra)} className="px-6 py-2 rounded-xl text-primary-foreground bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                      Guardar Producto
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
-            <form onSubmit={handleSave} className="p-6 space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Código</label>
-                  <input required type="text" value={formData.codigo} onChange={e => setFormData({ ...formData, codigo: e.target.value })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Nombre</label>
-                  <input required type="text" value={formData.nombre} onChange={e => setFormData({ ...formData, nombre: e.target.value })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Marca</label>
-                  <input type="text" value={formData.marca} onChange={e => setFormData({ ...formData, marca: e.target.value })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Tipo</label>
-                  <input type="text" placeholder="Ej: Filtro, Aceite, Frenos..." value={formData.tipo} onChange={e => setFormData({ ...formData, tipo: e.target.value })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Referencia</label>
-                  <input type="text" value={formData.referencia} onChange={e => setFormData({ ...formData, referencia: e.target.value })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Adicional / Observaciones</label>
-                <textarea
-                  rows={3}
-                  placeholder="Información adicional, notas, compatibilidad, etc."
-                  value={formData.adicional}
-                  onChange={e => setFormData({ ...formData, adicional: e.target.value })}
-                  className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground resize-none text-sm"
-                />
-              </div>
-
-              <hr className="border-border" />
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Stock Actual</label>
-                  <input required type="number" step="0.01" value={formData.stockActual} onChange={e => setFormData({ ...formData, stockActual: parseFloat(e.target.value) || 0 })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Stock Mínimo (Alerta)</label>
-                  <input required type="number" step="0.01" value={formData.stockMinimo} onChange={e => setFormData({ ...formData, stockMinimo: parseFloat(e.target.value) || 0 })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
-                </div>
-              </div>
-
-              <hr className="border-border" />
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Precio Compra ($)</label>
-                  <input required type="number" value={formData.precioCompra} onChange={e => setFormData({ ...formData, precioCompra: parseFloat(e.target.value) || 0 })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1 flex items-center justify-between">
-                    <span>Precio Venta Sin IVA ($)</span>
-                    <span className={margen < 20 ? "text-destructive text-xs" : "text-green-500 text-xs"}>
-                      Margen: {margen.toFixed(1)}%
-                    </span>
-                  </label>
-                  <input required type="number" value={formData.precioVentaSinIva} onChange={e => setFormData({ ...formData, precioVentaSinIva: parseFloat(e.target.value) || 0 })} className={`w-full px-4 py-2 bg-background border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground ${formData.precioCompra > 0 && formData.precioVentaSinIva < formData.precioCompra ? "border-destructive" : "border-border"}`} />
-                  {formData.precioCompra > 0 && formData.precioVentaSinIva < formData.precioCompra && (
-                    <p className="text-destructive text-xs mt-1">⚠ Menor al costo</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-muted/30 p-4 rounded-xl border border-border">
-                <label className="flex items-center gap-2 text-foreground cursor-pointer">
-                  <input type="checkbox" checked={formData.tieneIva} onChange={e => setFormData({ ...formData, tieneIva: e.target.checked })} className="w-5 h-5 rounded border-border text-primary focus:ring-primary bg-background" />
-                  Aplica IVA (19%)
-                </label>
-                <div className="flex-1 text-right">
-                  <span className="text-sm text-muted-foreground mr-2">Precio Final Público:</span>
-                  <span className="text-2xl font-bold text-primary">{formatCurrency(precioConIva)}</span>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button type="button" onClick={() => setShowForm(false)} className="px-6 py-2 rounded-xl text-foreground bg-muted hover:bg-muted/80 transition-colors">Cancelar</button>
-                <button type="submit" disabled={crearMutation.isPending || actualizarMutation.isPending || (formData.precioCompra > 0 && formData.precioVentaSinIva < formData.precioCompra)} className="px-6 py-2 rounded-xl text-primary-foreground bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                  Guardar Producto
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+          )}
+        </>
       )}
+        {vista === "remachadas" && <RemachadasPanel />}
+        </div>
+      </div> 
     </Layout>
-  );
-}
+)};

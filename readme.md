@@ -113,6 +113,80 @@ Esto lee el esquema definido en `lib/db/src/schema/*.ts` y crea/actualiza todas 
 
 ---
 
+## 3.5 Instalación local paso a paso (checklist detallado)
+
+Esta es la guía completa para dejar el sistema corriendo desde cero en un computador con Windows que nunca lo ha tenido instalado.
+
+### Paso 1 — Instalar Node.js 24
+
+1. Ve a https://nodejs.org/en/download y descarga el instalador `.msi` de la versión **24.x**.
+2. Ejecuta el instalador dejando todo en su configuración por defecto.
+3. Abre **Símbolo del sistema (CMD)** y verifica:
+```cmd
+   node -v
+```
+   Debe responder `v24.x.x`.
+
+### Paso 2 — Activar pnpm (viene incluido con Node 24 vía Corepack)
+
+```cmd
+corepack enable
+corepack prepare pnpm@latest --activate
+pnpm -v
+```
+
+### Paso 3 — Instalar Git para Windows
+
+1. Descarga desde https://git-scm.com/download/win.
+2. Durante la instalación, deja marcada la opción **"Git from the command line and also from 3rd-party software"**.
+3. No hace falta usar Git Bash para nada de este proyecto — todo se corre desde CMD.
+
+### Paso 4 — (Opcional) Instalar las herramientas de línea de comandos de PostgreSQL 17
+
+Solo necesario si este computador va a **ejecutar los respaldos** (`pnpm run backup`). Si el equipo solo va a usar la aplicación día a día, puedes saltar este paso.
+
+1. Descarga desde https://www.postgresql.org/download/windows/, elige la versión **17.x**.
+2. En "Select Components", **desmarca** "PostgreSQL Server" y "pgAdmin 4" — deja marcado únicamente **"Command Line Tools"**.
+3. Instala en la ruta por defecto (`C:\Program Files\PostgreSQL\17\`).
+
+### Paso 5 — Configurar VS Code para usar CMD (no PowerShell ni Git Bash)
+
+1. Abre VS Code → `Ctrl+Shift+P` → escribe **"Terminal: Select Default Profile"** → selecciona **Command Prompt**.
+2. Cierra cualquier terminal abierta y abre una nueva (`` Ctrl+` ``) — confirma que el prompt no tenga el prefijo `PS`.
+
+### Paso 6 — Clonar el proyecto e instalar dependencias
+
+```cmd
+cd C:\Users\TuUsuario\Documents
+git clone https://github.com/juanfigue/investillo.git
+cd investillo
+pnpm install
+```
+
+### Paso 7 — Crear los 3 archivos de entorno en la raíz del proyecto
+
+Créalos desde VS Code (Explorer → clic derecho en la carpeta raíz → New File), **no** desde el Bloc de notas de Windows (para evitar que quede con extensión `.txt` oculta).
+
+**`.env.api`**
+**`.env.web`**
+**`.env.backup`** (solo si este equipo hará respaldos)
+
+
+Reemplaza cada `<valor>` con los datos reales de tu proyecto de Supabase/Aiven/Cloudflare (ver sección 5).
+
+### Paso 8 — Aplicar el esquema de base de datos (solo la primera vez, o si el esquema cambió)
+
+```cmd
+pnpm run db:push
+```
+
+### Paso 9 — Elegir cómo correrlo
+
+- **Para desarrollo** (editando código, con recarga en caliente): `pnpm run dev`
+- **Para uso diario del negocio** (más liviano y estable): ver sección 6.0 "Modo producción" más abajo.
+
+---
+
 ## 4. Comandos disponibles
 
 Todos se ejecutan desde la raíz del proyecto, en **CMD**.
@@ -187,8 +261,84 @@ Genera un archivo `.dump` (formato comprimido de `pg_dump`, filtrado a `--schema
 **Automatización recomendada:** programar este comando semanalmente con el Programador de Tareas de Windows.
 
 ---
+### 6. Local — Modo producción (recomendado para el computador del negocio)
 
-## 6. Despliegue en producción
+Esta es la forma recomendada de dejar el sistema corriendo día a día en el portátil de la empresa — un solo proceso, más liviano que `pnpm run dev`, sin herramientas de desarrollo de por medio.
+
+**Cómo funciona:** el backend (`api-server`) compila y sirve tanto la API (`/api/...`) como el frontend ya compilado, todo desde un único puerto.
+
+**Correrlo manualmente:**
+```cmd
+pnpm run start:prod
+```
+Esto compila todo el proyecto y deja el servidor escuchando en el puerto configurado en `.env.api` (ej. `http://localhost:8080`).
+
+**Dejarlo como acceso directo del escritorio (recomendado):**
+
+1. Crea un archivo de texto en el Escritorio, nómbralo `Iniciar Investillo.bat`.
+2. Ábrelo con el Bloc de notas y pega:
+```bat
+   @echo off
+   cd /d "C:\Users\TuUsuario\Documents\investillo"  
+   
+   pnpm run start:prod
+```
+### o la direccion de donde quedo guardado el archivo Investillo.bat, que es dentro de la carpeta del proyecto
+
+   (ajusta la ruta a donde tengas realmente el proyecto)
+3. Guarda y cierra. Doble clic en ese archivo arranca todo el sistema — abre el navegador en `http://localhost:8080` (o el puerto que hayas configurado) para usarlo.
+
+**Nota:** cada vez que se actualice el código del proyecto, hay que volver a correr `pnpm run start:prod` para que compile la versión nueva — no basta con reiniciar el acceso directo si el código no cambió de ubicación, pero si sí cambió el código, el mismo comando ya se encarga de recompilar antes de arrancar.
+
+### 6.0.1 Instalar en el portátil de la empresa (primera vez)
+
+Esta es la lista completa para dejar el sistema funcionando en un computador nuevo, conectado a **la misma base de datos** que ya usas — no se crea una base de datos nueva, se conecta a la existente.
+
+**Paso 1 — Preparar el portátil**
+
+Sigue los Pasos 1 a 6 de la sección 3.5 (instalar Node, pnpm, Git, y clonar el repositorio) en el portátil de la empresa.
+
+**Paso 2 — Copiar tus archivos `.env` desde tu PC al portátil**
+
+Como bien dices, es mejor copiarlos tal cual — así te aseguras de que apunten exactamente a la misma Supabase/Aiven/Cloudflare que ya tienes configurados, sin volver a escribir contraseñas a mano y arriesgarte a un error de tipeo.
+
+1. En tu PC, copia estos 3 archivos a una USB o dispositivo de confianza: `.env.api`, `.env.web`, `.env.backup` (los tienes en la raíz de tu proyecto).
+2. En el portátil de la empresa, después de clonar el repositorio (`git clone ...`), pega esos 3 archivos directamente en la raíz de la carpeta `investillo` — al mismo nivel que `package.json`.
+3. **No los edites** — al ser una copia exacta, el portátil va a conectarse automáticamente a la misma base de datos de producción que ya usas, sin ningún paso adicional.
+
+⚠️ **Importante:** nunca subas estos archivos a GitHub (ya están en `.gitignore`, pero verifícalo si algo se ve raro) — contienen contraseñas reales de tus bases de datos.
+
+**Paso 3 — Instalar dependencias y confirmar la conexión**
+
+```cmd
+cd investillo
+pnpm install
+pnpm run start:prod
+```
+Abre `http://localhost:8080` — si carga la app con los mismos datos que ya tienes (mismos productos, mismos clientes), la conexión a la base de datos quedó correcta. **No hace falta correr `pnpm run db:push`** en el portátil — el esquema ya existe en Supabase, ese comando solo se usa cuando cambia la estructura de las tablas.
+
+**Paso 4 — Automatizar el arranque del sistema al encender el portátil**
+
+1. Presiona `Win + R`, escribe `shell:startup` y presiona Enter — se abre la carpeta de inicio de Windows.
+2. Copia ahí un acceso directo al archivo `.bat` que creaste en el Paso "Modo producción" de la sección 6.0.
+3. Desde ahora, cada vez que se encienda el portátil, el sistema arranca solo.
+
+**Paso 5 — Crear la tarea automática de respaldo (Programador de Tareas de Windows)**
+
+1. Abre **Programador de tareas** (búscalo en el menú Inicio).
+2. **Crear tarea básica** → nombre `Backup Investillo`.
+3. Desencadenador: **Semanalmente**, elige el día y hora que prefieras.
+4. Acción → **Iniciar un programa**:
+   - Programa/script: `cmd.exe`
+   - Argumentos: `/c cd /d "C:\ruta\investillo" && pnpm run backup >> backups\backup-log.txt 2>&1`
+5. Finalizar.
+
+**Paso 6 — (Opcional) Otras tareas automáticas que podrías necesitar**
+
+Si más adelante quieres automatizar algo más (por ejemplo, reiniciar el sistema automáticamente cada madrugada, o correr una limpieza de archivos temporales), se hace con el mismo Programador de Tareas — solo cambia el "Desencadenador" (diario/semanal/al iniciar sesión) y el comando en "Acción". Si llegas a necesitar una tarea específica, dime cuál y te doy el paso a paso exacto para esa.
+---
+
+## 7. Despliegue en producción
 
 El proyecto tiene 2 rutas de despliegue posibles. Ambas asumen que la base de datos (Supabase) ya está configurada según la sección 5.
 
@@ -219,7 +369,7 @@ Vercel está optimizado para frontends y funciones serverless — **no está dis
 
 ---
 
-## 7. Restricciones del sistema
+## 8. Restricciones del sistema
 
 - **Solo probado y soportado en Windows con terminal CMD.** Los scripts del monorepo (`preinstall`, `dev`) fueron ajustados específicamente para evitar sintaxis de PowerShell o Bash — usar otra terminal puede reintroducir errores ya resueltos.
 - **`pg_dump`/`pg_restore` locales deben ser versión ≥ a la del servidor remoto.** Actualmente Supabase corre PostgreSQL 17; las herramientas de línea de comandos instaladas localmente deben mantenerse en esa versión o superior.
@@ -231,7 +381,7 @@ Vercel está optimizado para frontends y funciones serverless — **no está dis
 
 ---
 
-## 8. Recomendaciones
+## 9. Recomendaciones
 
 - **Subir Supabase al plan Pro ($25/mes)** antes de operar con datos reales del negocio — el plan gratuito no incluye respaldos automáticos y se pausa por inactividad.
 - **Ejecutar `pnpm run backup` de forma automática semanal** (Programador de Tareas de Windows) además de manual cuando se hagan cambios grandes.
@@ -242,11 +392,11 @@ Vercel está optimizado para frontends y funciones serverless — **no está dis
 
 ---
 
-## 9. Cotización de referencia
+## 10. Cotización de referencia
 
 > **Nota importante:** esta sección es una referencia informativa de mercado, no una factura o cotización formal vinculante. Los valores reales dependen del acuerdo específico entre las partes.
 
-### 9.1 Servicios en la nube (costos recurrentes)
+### 10.1 Servicios en la nube (costos recurrentes)
 
 | Servicio | Plan actual | Costo | Cuándo subir de plan |
 |---|---|---|---|
@@ -257,7 +407,7 @@ Vercel está optimizado para frontends y funciones serverless — **no está dis
 
 **Estimado recurrente en producción estable:** ~$30-50 USD/mes (~$120.000–$200.000 COP/mes aprox., sujeto a tasa de cambio).
 
-### 9.2 Referencia de mercado para trabajo de desarrollo (informativo)
+### 10.2 Referencia de mercado para trabajo de desarrollo (informativo)
 
 Tabla de referencia basada en tarifas típicas del mercado freelance colombiano para trabajo de complejidad similar al ya realizado — **no es una cotización oficial de Anthropic ni de Claude**, que no ofrece servicios de desarrollo facturables:
 
