@@ -130,6 +130,7 @@ Esta es la guía completa para dejar el sistema corriendo desde cero en un compu
 ### Paso 2 — Activar pnpm (viene incluido con Node 24 vía Corepack)
 
 ```cmd
+npm install -g pnpm
 corepack enable
 corepack prepare pnpm@latest --activate
 pnpm -v
