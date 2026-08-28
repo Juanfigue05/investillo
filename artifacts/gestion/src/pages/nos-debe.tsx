@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ManoObraSelector, calcularDistribucion } from "@/components/ManoObraSelector";
 import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
+import { esFalloDeRed } from "@/lib/offline-db";
 
 const TIPO = "nosdebe";
 const MO_NOMBRE = "Mano de Obra";
@@ -298,6 +299,10 @@ export default function NosDebePage() {
       actualizarMutation.mutate({ id: editingId, data }, {
         ...options,
         onError: async () => {
+          if (!esFalloDeRed(Error)) {
+            toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+            return;
+          }
           await encolarOperacion({ tipo: "credito", metodo: "PUT", endpoint: `/creditos/${editingId}`, payload: data });
           toast({ title: "Guardado sin conexión", description: "Este cambio se sincronizará automáticamente cuando vuelva internet." });
           options.onSuccess?.();
@@ -307,6 +312,10 @@ export default function NosDebePage() {
       crearMutation.mutate({ data }, {
         ...options,
         onError: async () => {
+            if (!esFalloDeRed(Error)) {
+              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+              return;
+            }
           await encolarOperacion({ tipo: "credito", metodo: "POST", endpoint: "/creditos", payload: data });
           toast({ title: "Guardado sin conexión", description: "Este registro se sincronizará automáticamente cuando vuelva internet." });
           options.onSuccess?.();
@@ -361,6 +370,10 @@ export default function NosDebePage() {
         {
           onSuccess,
           onError: async () => {
+            if (!esFalloDeRed(Error)) {
+              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+              return;
+            }
             await encolarOperacion({ tipo: "credito", metodo: "POST", endpoint: `/creditos/${c.id}/abono`, payload: data });
             toast({ title: "Guardado sin conexión", description: "Este abono se sincronizará automáticamente cuando vuelva internet." });
             onSuccess();

@@ -12,6 +12,7 @@ import { PackageCheck, Truck, Plus, X, Printer } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
+import { esFalloDeRed } from "@/lib/offline-db";
 
 interface LlegadaForm {
   cantidad: string;
@@ -211,6 +212,10 @@ export default function Compras() {
           setPrecioConfirm(null);
         },
         onError: async () => {
+            if (!esFalloDeRed(Error)) {
+              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+              return;
+            }
           await encolarOperacion({ tipo: "compra", metodo: "PUT", endpoint: `/compras/${compra.id}`, payload: payloadLlegada });
           toast({ title: "Guardado sin conexión", description: "Esta llegada de mercancía se sincronizará automáticamente cuando vuelva internet." });
           setLlegadaOpen(null);
@@ -270,6 +275,10 @@ export default function Compras() {
           setProductoSeleccionado(null);
         },
         onError: async () => {
+            if (!esFalloDeRed(Error)) {
+              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+              return;
+            }
           await encolarOperacion({ tipo: "compra", metodo: "POST", endpoint: "/compras", payload: payloadCompra });
           toast({ title: "Guardado sin conexión", description: "Esta orden de compra se sincronizará automáticamente cuando vuelva internet." });
           setShowAddForm(false);

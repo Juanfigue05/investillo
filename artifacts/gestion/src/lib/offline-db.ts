@@ -141,3 +141,9 @@ export async function importarRespaldoLocal(archivo: File): Promise<ResultadoImp
     omitidasPorDuplicado,
   };
 }
+
+/** true = de verdad no hay red; false = el servidor respondió con un error real (no encolar, mostrar el error) */
+export function esFalloDeRed(error: unknown): boolean {
+  if (error && typeof error === "object" && (error as any).name === "ApiError") return false;
+  return error instanceof TypeError || !navigator.onLine;
+}

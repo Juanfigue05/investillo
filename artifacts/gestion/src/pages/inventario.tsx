@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { RemachadasPanel } from "@/components/RemachadasPanel";
+import { esFalloDeRed } from "@/lib/offline-db";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
@@ -269,6 +270,10 @@ export default function Inventario() {
         {
           onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventario"] }); setShowForm(false); },
           onError: async () => {
+            if (!esFalloDeRed(Error)) {
+              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+              return;
+            }
             await encolarOperacion({ tipo: "producto", metodo: "PUT", endpoint: `/inventario/${editingId}`, payload: formData });
             toast({ title: "Guardado sin conexión", description: "Este producto se sincronizará automáticamente cuando vuelva internet." });
             setShowForm(false);
@@ -281,6 +286,10 @@ export default function Inventario() {
         {
           onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventario"] }); setShowForm(false); },
           onError: async () => {
+            if (!esFalloDeRed(Error)) {
+              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+              return;
+            }
             await encolarOperacion({ tipo: "producto", metodo: "POST", endpoint: "/inventario", payload: formData });
             toast({ title: "Guardado sin conexión", description: "Este producto se sincronizará automáticamente cuando vuelva internet." });
             setShowForm(false);

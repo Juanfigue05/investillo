@@ -17,6 +17,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ManoObraSelector, calcularDistribucion } from "@/components/ManoObraSelector";
 import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
+import { esFalloDeRed } from "@/lib/offline-db";
 
 const SPECIAL_MANOOBRA = "__manoobra__";
 const SPECIAL_ABONO = "__abono__";
@@ -359,6 +360,11 @@ export default function VentasDiarias() {
               limpiarFilaManoObra();
               return;
             }
+            if (navigator.onLine) {
+              const errData = await res.json().catch(() => null);
+              toast({ title: "No se pudo guardar", description: errData?.error || `Error del servidor (${res.status})`, variant: "destructive" });
+              return;
+            }
           } catch {
             // sigue abajo, se encola
           }
@@ -389,6 +395,10 @@ export default function VentasDiarias() {
             setNewRow((prev) => ({ ...prev, productoSeleccionado: "", productoNombreManual: "", valorAbono: 0 }));
           },
           onError: async () => {
+            if (!esFalloDeRed(Error)) {
+              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+              return;
+            }
             await encolarOperacion({ tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadAbono });
             toast({ title: "Guardado sin conexión", description: "Este abono se sincronizará automáticamente cuando vuelva internet." });
             setNewRow((prev) => ({ ...prev, productoSeleccionado: "", productoNombreManual: "", valorAbono: 0 }));
@@ -424,6 +434,10 @@ export default function VentasDiarias() {
           setStockAlerta(null);
         },
         onError: async () => {
+          if (!esFalloDeRed(Error)) {
+              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+              return;
+            }
           await encolarOperacion({ tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadVenta });
           toast({ title: "Guardado sin conexión", description: "Esta venta se sincronizará automáticamente cuando vuelva internet." });
           setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0 }));
