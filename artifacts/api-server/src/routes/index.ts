@@ -15,6 +15,7 @@ import inventarioImportRouter from "./inventario-import";
 import clientesRouter from "./clientes";
 import clientesImportRouter from "./clientes-import";
 import remachadasRouter from "./remachadas";
+import gruposTrabajoRouter from "./grupos-trabajo";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use("/cierre-diario", cierreDiarioRouter);
 router.use("/clientes", clientesRouter);
 router.use("/clientes-import", clientesImportRouter);
 router.use("/remachadas", remachadasRouter);
+router.use("/grupos-trabajo", gruposTrabajoRouter);
 
 export default router;

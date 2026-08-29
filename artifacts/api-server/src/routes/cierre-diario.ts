@@ -19,8 +19,10 @@ function parseMiles(raw: unknown): number {
 }
 
 /** Suma el seguro (en pesos) por trabajadorId dentro de un snapshot del día */
-function seguroPorTrabajador(datos: unknown): Map<number, number> {
+function seguroPorTrabajador(datosCrudos: unknown): Map<number, number> {
   const mapa = new Map<number, number>();
+  // Formato nuevo: { trabajadores: [...], gruposTrabajo: [...] }. Formato viejo: array directo.
+  const datos = Array.isArray(datosCrudos) ? datosCrudos : (datosCrudos as any)?.trabajadores;
   if (!Array.isArray(datos)) return mapa;
   for (const item of datos as TrabajadorSnapshotIn[]) {
     if (!item?.trabajadorId) continue;
