@@ -75,6 +75,60 @@ router.get("/", async (req, res) => {
   res.json(ventas.map(mapVenta));
 });
 
+router.post("/", async (req, res) => {
+  const operationId = req.header("x-operation-id");
+
+  if (operationId) {
+    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+  }
+
+  const {
+    fecha, referencia, tipoLinea, productoId,
+    productoNombre, productoCodigo, productoMarca,
+    cantidad, precioCompraUnidad, precioVentaUnidad,
+    precioVentaTotal, beneficio, descripcion,
+  } = req.body;
+
+  try {
+    const venta = await db.transaction(async (tx) => {
+      const [creada] = await tx.insert(ventasDiariasTable).values({
+        fecha,
+        referencia,
+        tipoLinea: tipoLinea || "venta",
+        productoId: productoId || null,
+        productoNombre: productoNombre || null,
+        productoCodigo: productoCodigo || null,
+        productoMarca: productoMarca || null,
+        cantidad: String(parseFloat(cantidad)),
+        precioCompraUnidad: String(parseFloat(precioCompraUnidad || 0)),
+        precioVentaUnidad: String(parseFloat(precioVentaUnidad)),
+        precioVentaTotal: String(parseFloat(precioVentaTotal)),
+        beneficio: String(parseFloat(beneficio || 0)),
+        descripcion: descripcion || null,
+      }).returning();
+
+      // Resta atómica de stock -- así una venta encolada offline nunca desface el inventario al sincronizar.
+      const esVentaConProducto = (tipoLinea === "venta" || !tipoLinea) && productoId;
+      if (esVentaConProducto) {
+        await tx.update(productosTable)
+          .set({ stockActual: sql`GREATEST(0, ${productosTable.stockActual} - ${parseFloat(cantidad)})`, actualizadoEn: new Date() })
+          .where(eq(productosTable.id, Number(productoId)));
+      }
+
+      if (operationId) {
+        await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "venta", recursoId: creada.id }).onConflictDoNothing();
+      }
+
+      return creada;
+    });
+
+    res.status(201).json(mapVenta(venta));
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 router.post("/manoobra", async (req, res) => {
   const operationId = req.header("x-operation-id");
 

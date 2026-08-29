@@ -1,6 +1,15 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 
+
+process.on("uncaughtException", (err) => {
+  console.error("Error no capturado (el servidor sigue corriendo):", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Promesa rechazada sin capturar (el servidor sigue corriendo):", reason);
+});
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {
