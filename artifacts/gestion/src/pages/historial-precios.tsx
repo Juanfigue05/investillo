@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetHistorialPrecios } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
@@ -7,16 +7,26 @@ import { useQueryClient } from "@tanstack/react-query";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  Bar, BarChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 
 export default function HistorialPreciosPage() {
+  const [resumenMensual, setResumenMensual] = useState<{ mes: string; promedioDiario: number }[]>([]);
   const { data: registros, isLoading, refetch } = useGetHistorialPrecios();
   const queryClient = useQueryClient();
   const [busqueda, setBusqueda] = useState("");
   const [productoFiltro, setProductoFiltro] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+    useEffect(() => {
+    fetch(`${API}/compras/resumen-mensual`)
+      .then((r) => r.json())
+      .then(setResumenMensual);
+  }, []);
 
+  const datosGrafica = resumenMensual.map((r) => ({
+    mes: new Date(r.mes + "-02").toLocaleDateString("es-CO", { month: "short", year: "2-digit" }),
+    promedio: r.promedioDiario,
+  }));
   const handleDeleteEntry = async (id: number) => {
     if (!confirm("¿Eliminar este registro de precio?")) return;
     setDeletingId(id);
@@ -139,35 +149,16 @@ export default function HistorialPreciosPage() {
 
         {/* Chart */}
         {chartData.length > 1 && (
-          <div className="bg-card border border-border rounded-2xl p-5 shadow-xl">
-            <h2 className="text-sm font-bold text-foreground mb-4 uppercase tracking-wider">
-              Tendencia de precios — 8 productos más recientes
-            </h2>
-            <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="fecha" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis
-                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-                  tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                />
-                <Tooltip
-                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "12px", fontSize: 12 }}
-                  formatter={(v: number) => formatCurrency(v)}
-                />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                {chartKeys.map((key, i) => (
-                  <Line
-                    key={key}
-                    type="monotone"
-                    dataKey={key}
-                    stroke={COLORS[i % COLORS.length]}
-                    dot={{ r: 3 }}
-                    strokeWidth={2}
-                    connectNulls
-                  />
-                ))}
-              </LineChart>
+          <div className="bg-card border border-border rounded-2xl p-5 shadow-lg">
+            <h3 className="text-sm font-bold text-foreground mb-4">Promedio diario de compras — últimos 6 meses</h3>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={datosGrafica} margin={{ top: 5, right: 10, left: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatCurrency(v)} width={90} />
+                <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                <Bar dataKey="promedio" fill="var(--primary)" radius={[6, 6, 0, 0]} />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         )}

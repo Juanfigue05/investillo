@@ -247,15 +247,15 @@ export default function VentasDiarias() {
 
   const handleProductoSelect = (id: string) => {
     if (id === SPECIAL_MANOOBRA) {
-      setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0, precioManoObra: 0, valorAbono: 0, trabajadoresSeleccionados: [] }));
+      setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "X", cantidad: "1", precioCompra: 0, precioVenta: 0, precioManoObra: 0, valorAbono: 0, trabajadoresSeleccionados: [] }));
       setStockAlerta(null);
     } else if (id === SPECIAL_ABONO) {
-      setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0, precioManoObra: 0, valorAbono: 0, productoNombreManual: "" }));
+      setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "X", cantidad: "1", precioCompra: 0, precioVenta: 0, precioManoObra: 0, valorAbono: 0, productoNombreManual: "" }));
       setStockAlerta(null);
     } else {
       const prod = productos?.find((p) => String(p.id) === id);
       if (prod) {
-        setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: prod.marca || "", precioCompra: prod.precioCompra, precioVenta: prod.precioVentaSinIva, trabajadoresSeleccionados: [] }));
+        setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: prod.marca || "X", precioCompra: prod.precioCompra, precioVenta: prod.precioVentaSinIva, trabajadoresSeleccionados: [] }));
         const stock = parseFloat(String(prod.stockActual ?? 0)) || 0;
         const minimo = parseFloat(String(prod.stockMinimo ?? 0)) || 0;
         setStockAlerta({ stock, minimo });
@@ -392,6 +392,8 @@ export default function VentasDiarias() {
          {
           onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
             setNewRow((prev) => ({ ...prev, productoSeleccionado: "", productoNombreManual: "", valorAbono: 0 }));
           },
           onError: async () => {
@@ -430,6 +432,7 @@ export default function VentasDiarias() {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
           queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
           setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0 }));
           setStockAlerta(null);
         },
@@ -455,6 +458,7 @@ export default function VentasDiarias() {
           onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
             queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
           },
         }
       );
@@ -604,7 +608,7 @@ export default function VentasDiarias() {
                   </td>
                   <td className="p-2">
                     {modoActual === "normal" && (
-                      <input type="text" value={newRow.marca} onChange={(e) => setNewRow({ ...newRow, marca: e.target.value })} className="w-20 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="Marca" />
+                      <input type="text" value={newRow.marca || "X"} readOnly disabled className="w-20 bg-muted border border-border px-2 py-2 rounded-lg text-sm text-muted-foreground cursor-not-allowed" />
                     )}
                     {modoActual === "manoobra" && (
                       <div className="max-w-[160px]">

@@ -7,11 +7,13 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatCurrency(value: number | undefined | null) {
   if (value === undefined || value === null) return "$0";
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(value);
+  const negativo = value < 0;
+  const entero = Math.round(Math.abs(value));
+  let str = entero.toLocaleString("es-CO", { maximumFractionDigits: 0 }); // ej: "1.234.567"
+  if (entero >= 1_000_000) {
+    str = str.replace(".", "'"); // solo el primer punto (el de millones) se cambia por comilla
+  }
+  return `${negativo ? "-" : ""}$ ${str}`;
 }
 
 export function parseNumberCO(value: string): number {

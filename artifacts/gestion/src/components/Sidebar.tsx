@@ -26,7 +26,6 @@ const NAV_ITEMS = [
   { href: "/inventario", label: "Inventario", icon: Package },
   { href: "/cierre-diario", label: "Cierre Diario", icon: Calculator },
   { href: "/clientes", label: "Clientes", icon: Users },
-  { href: "/facturacion", label: "Facturación DIAN", icon: Receipt, dian: true },
   { href: "/historial", label: "Historial de Ventas", icon: BookOpen },
   { href: "/historial-cierres", label: "Historial Cierres", icon: History },
   { href: "/historial-precios", label: "Historial de Precios", icon: TrendingUp },

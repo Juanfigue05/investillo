@@ -12,7 +12,6 @@ import Inventario from "@/pages/inventario";
 import VentasDiarias from "@/pages/ventas";
 import Creditos from "@/pages/creditos";
 import Compras from "@/pages/compras";
-import Facturacion from "@/pages/facturacion";
 import Historial from "@/pages/historial";
 import NosDebePage from "@/pages/nos-debe";
 import HistorialPrecios from "@/pages/historial-precios";
@@ -32,7 +31,6 @@ function Router() {
       <Route path="/ventas" component={VentasDiarias} />
       <Route path="/creditos" component={Creditos} />
       <Route path="/compras" component={Compras} />
-      <Route path="/facturacion" component={Facturacion} />
       <Route path="/historial" component={Historial} />
       <Route path="/nos-debe" component={NosDebePage} />
       <Route path="/historial-precios" component={HistorialPrecios} />

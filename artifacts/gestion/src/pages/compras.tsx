@@ -13,6 +13,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { esFalloDeRed } from "@/lib/offline-db";
+import {Pencil} from "lucide-react";
 
 interface LlegadaForm {
   cantidad: string;
@@ -177,6 +178,14 @@ export default function Compras() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [productoSeleccionado, setProductoSeleccionado] = useState<number | null>(null);
   const [precioConfirm, setPrecioConfirm] = useState<PrecioConfirmModal | null>(null);
+  const [seleccionadas, setSeleccionadas] = useState<number[]>([]);
+  const [loteOpen, setLoteOpen] = useState(false);
+  const [loteProveedor, setLoteProveedor] = useState("");
+  const [loteDatos, setLoteDatos] = useState<Record<number, { cantidadRecibida: string; nuevoPrecioCompra: string; nuevoPrecioVentaSinIva: string }>>({});
+  const [procesandoLote, setProcesandoLote] = useState(false);
+  const [editandoLlegadaId, setEditandoLlegadaId] = useState<number | null>(null);
+  const [editCantidad, setEditCantidad] = useState("");
+  const [editPrecioCompra, setEditPrecioCompra] = useState("");
 
   const openLlegada = (compra: any) => {
     setLlegadaOpen(compra.id);
@@ -303,6 +312,76 @@ export default function Compras() {
   return (
     <Layout>
       {/* Price change confirmation modal */}
+      {loteOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4" onClick={() => setLoteOpen(false)}>
+          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 space-y-4">
+              <h2 className="text-lg font-bold text-foreground">Registrar llegada en lote</h2>
+
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Proveedor (aplica a todos)</label>
+                <input value={loteProveedor} onChange={(e) => setLoteProveedor(e.target.value)}
+                  className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+              </div>
+
+              <div className="space-y-3">
+                {seleccionadas.map((id) => {
+                  const compra = pendientes.find((c: any) => c.id === id);
+                  const datos = loteDatos[id] || { cantidadRecibida: "", nuevoPrecioCompra: "", nuevoPrecioVentaSinIva: "" };
+                  return (
+                    <div key={id} className="bg-background border border-border rounded-xl p-3">
+                      <p className="text-sm font-medium text-foreground mb-2">{compra?.productoNombre}</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        <input type="number" placeholder="Cantidad" value={datos.cantidadRecibida}
+                          onChange={(e) => setLoteDatos((prev) => ({ ...prev, [id]: { ...prev[id], cantidadRecibida: e.target.value } }))}
+                          className="bg-card border border-border px-2 py-1.5 rounded-lg text-xs" />
+                        <input type="number" placeholder="Precio compra" value={datos.nuevoPrecioCompra}
+                          onChange={(e) => setLoteDatos((prev) => ({ ...prev, [id]: { ...prev[id], nuevoPrecioCompra: e.target.value } }))}
+                          className="bg-card border border-border px-2 py-1.5 rounded-lg text-xs" />
+                        <input type="number" placeholder="Precio venta (sin IVA)" value={datos.nuevoPrecioVentaSinIva}
+                          onChange={(e) => setLoteDatos((prev) => ({ ...prev, [id]: { ...prev[id], nuevoPrecioVentaSinIva: e.target.value } }))}
+                          className="bg-card border border-border px-2 py-1.5 rounded-lg text-xs" />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  disabled={procesandoLote || !loteProveedor.trim()}
+                  onClick={async () => {
+                    setProcesandoLote(true);
+                    try {
+                      const res = await fetch(`${API}/compras/lote-llegada`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          proveedor: loteProveedor,
+                          items: seleccionadas.map((id) => ({ id, ...loteDatos[id] })),
+                        }),
+                      });
+                      if (res.ok) {
+                        queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+                        queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+                        setLoteOpen(false);
+                        setSeleccionadas([]);
+                        setLoteProveedor("");
+                      }
+                    } finally {
+                      setProcesandoLote(false);
+                    }
+                  }}
+                  className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 disabled:opacity-40 text-sm"
+                >
+                  {procesandoLote ? "Procesando..." : "Confirmar llegada de todos"}
+                </button>
+                <button onClick={() => setLoteOpen(false)} className="px-4 py-2.5 bg-muted text-foreground rounded-xl font-medium border border-border text-sm">Cancelar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {precioConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95">
@@ -387,6 +466,17 @@ export default function Compras() {
                 </div>
               )}
             </div>
+            {seleccionadas.length > 0 && (
+              <button
+                onClick={() => {
+                  setLoteDatos(Object.fromEntries(seleccionadas.map((id) => [id, { cantidadRecibida: "1", nuevoPrecioCompra: "", nuevoPrecioVentaSinIva: "" }])));
+                  setLoteOpen(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm"
+              >
+                Registrar llegada en lote ({seleccionadas.length})
+              </button>
+            )}
             <button
               onClick={() => { setShowAddForm(!showAddForm); setProductoSeleccionado(null); }}
               className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-md text-sm"
@@ -397,6 +487,40 @@ export default function Compras() {
           </div>
         </div>
 
+
+        {editandoLlegadaId !== null && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4" onClick={() => setEditandoLlegadaId(null)}>
+            <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-3" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-bold text-foreground">Corregir llegada</h3>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Cantidad correcta</label>
+                <input type="number" value={editCantidad} onChange={(e) => setEditCantidad(e.target.value)} className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Precio de compra correcto</label>
+                <input type="number" value={editPrecioCompra} onChange={(e) => setEditPrecioCompra(e.target.value)} className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={async () => {
+                    await fetch(`${API}/compras/${editandoLlegadaId}/corregir`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ cantidadRecibida: editCantidad, precioCompraRegistrado: editPrecioCompra }),
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+                    queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+                    setEditandoLlegadaId(null);
+                  }}
+                  className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm"
+                >
+                  Guardar corrección
+                </button>
+                <button onClick={() => setEditandoLlegadaId(null)} className="px-4 py-2 bg-muted text-foreground rounded-xl font-medium border border-border text-sm">Cancelar</button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Autocomplete add form */}
         {showAddForm && (
           <div className="no-print bg-card border border-border rounded-2xl p-5 animate-in fade-in slide-in-from-top-3 shadow-xl">
@@ -444,6 +568,12 @@ export default function Compras() {
                     <div key={compra.id} className="bg-card rounded-xl border border-destructive/40 shadow-md overflow-hidden">
                       <div className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                         <div className="flex items-center gap-4 flex-1 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={seleccionadas.includes(compra.id)}
+                            onChange={(e) => setSeleccionadas((prev) => e.target.checked ? [...prev, compra.id] : prev.filter((id) => id !== compra.id))}
+                            className="accent-primary w-4 h-4 flex-shrink-0"
+                          />
                           <div className="w-10 h-10 rounded-full flex items-center justify-center bg-destructive/10 flex-shrink-0">
                             <Truck className="w-5 h-5 text-destructive" />
                           </div>
@@ -571,9 +701,17 @@ export default function Compras() {
                               <td className="px-4 py-3 font-bold text-primary">{totalCompra > 0 ? formatCurrency(totalCompra) : "—"}</td>
                               <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{compra.proveedor || <span className="italic text-xs">Sin registrar</span>}</td>
                               <td className="px-4 py-3 no-print">
-                                <button onClick={() => handleEliminar(compra.id)} className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors">
-                                  <X className="w-4 h-4" />
-                                </button>
+                                <div className="flex gap-1 justify-end">
+                                  <button
+                                    onClick={() => { setEditandoLlegadaId(compra.id); setEditCantidad(String(cantRec)); setEditPrecioCompra(String(precioC)); }}
+                                    className="p-1 text-muted-foreground hover:text-primary rounded transition-colors"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button onClick={() => handleEliminar(compra.id)} className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors">
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );

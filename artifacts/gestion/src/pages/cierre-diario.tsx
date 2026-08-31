@@ -28,7 +28,7 @@ interface CierreTrabajador {
 interface GrupoTrabajoDia {
   id: string;
   trabajadorIds: number[];
-  valor: string; // miles shorthand
+  moEntradas: string[]; // varias manos de obra, en miles — se suman todas
 }
 
 interface GrupoDefault {
@@ -69,22 +69,26 @@ function shareDeGrupos(trabajadorId: number | null, grupos: GrupoTrabajoDia[]): 
   return grupos
     .filter((g) => g.trabajadorIds.includes(trabajadorId))
     .reduce((s, g) => {
-      const valorTotal = parseMiles(g.valor);
+      const valorTotal = g.moEntradas.reduce((sum, v) => sum + parseMiles(v), 0);
       const n = g.trabajadorIds.length || 1;
       return s + valorTotal / n;
     }, 0);
 }
 
-function calcTrabajador(t: CierreTrabajador, grupos: GrupoTrabajoDia[]) {
+function calcTrabajador(t: CierreTrabajador, grupos: GrupoTrabajoDia[], trabajadores: any[]) {
   const moPropia = t.moEntradas.reduce((s, v) => s + parseMiles(v), 0);
   const moGrupo = shareDeGrupos(t.trabajadorId, grupos);
   const mo = moPropia + moGrupo;
   const descuento = mo > 0 ? roundUp1000(mo * 0.3) : 0;
-  const seguro = parseMiles(t.seguro);
+
+  const trabInfo = trabajadores.find((w) => w.id === t.trabajadorId);
+  const aplicaSeguro = trabInfo ? Boolean(trabInfo.aplicaSeguro) : false;
+  const seguro = aplicaSeguro ? parseMiles(t.seguro) : 0;
+
   const leDamos = sumaConceptos(t.leDamos);
   const nosDebe = sumaConceptos(t.nosDebe);
   const total = mo - descuento - seguro + leDamos - nosDebe;
-  return { mo, moPropia, moGrupo, descuento, seguro, leDamos, nosDebe, total };
+  return { mo, moPropia, moGrupo, descuento, seguro, aplicaSeguro, leDamos, nosDebe, total };
 }
 
 // ---------- sub-components ----------
@@ -162,8 +166,7 @@ function GruposTrabajoPanel({
       recargarGruposDefault();
     }
 
-    setGruposDia((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, trabajadorIds: nuevoGrupoIds, valor: "" }]);
-    setNuevoGrupoIds([]);
+    setGruposDia((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, trabajadorIds: nuevoGrupoIds, moEntradas: Array.from({ length: 10 }, () => "") }]);setNuevoGrupoIds([]);
     setNuevoEsPermanente(false);
   };
 
@@ -178,7 +181,7 @@ function GruposTrabajoPanel({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 bg-card border-b border-border px-6 py-3.5 flex items-center justify-between z-10">
           <h2 className="text-lg font-display font-bold text-foreground flex items-center gap-2">
             <Users className="w-5 h-5 text-primary" /> Grupos de trabajo (mano de obra en compañía)
@@ -187,56 +190,78 @@ function GruposTrabajoPanel({
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Grupos del día de hoy */}
-          <div>
-            <h3 className="text-sm font-bold text-foreground mb-2">Grupos de hoy</h3>
-            {gruposDia.length === 0 && <p className="text-sm text-muted-foreground">Ningún grupo armado todavía para este día.</p>}
-            <div className="space-y-2">
-              {gruposDia.map((g) => (
-                <div key={g.id} className="flex items-center gap-2 bg-background border border-border rounded-xl p-3">
-                  <div className="flex-1 flex flex-wrap gap-1">
-                    {g.trabajadorIds.map((id) => (
-                      <span key={id} className="text-xs font-medium bg-primary/10 text-primary px-2 py-1 rounded-md">{nombrePorId(id)}</span>
-                    ))}
-                  </div>
-                  <MilesInput
-                    value={g.valor}
-                    onChange={(v) => setGruposDia((prev) => prev.map((x) => x.id === g.id ? { ...x, valor: v } : x))}
-                    placeholder="Valor total"
-                    className="w-28"
-                  />
-                  <button onClick={() => setGruposDia((prev) => prev.filter((x) => x.id !== g.id))} className="p-1.5 text-muted-foreground hover:text-destructive">
-                    <Trash2 className="w-4 h-4" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            {/* ── Columna izquierda: Grupos de hoy ── */}
+            <div>
+              <h3 className="text-sm font-bold text-foreground mb-2">Grupos de hoy</h3>
+              {gruposDia.length === 0 && <p className="text-sm text-muted-foreground">Ningún grupo armado todavía para este día.</p>}
+              <div className="space-y-2">
+                {gruposDia.map((g) => {
+                  const totalGrupo = g.moEntradas.reduce((s, v) => s + parseMiles(v), 0);
+                  return (
+                    <div key={g.id} className="bg-background border border-border rounded-xl p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex flex-wrap gap-1">
+                          {g.trabajadorIds.map((id) => (
+                            <span key={id} className="text-xs font-medium bg-primary/10 text-primary px-2 py-1 rounded-md">{nombrePorId(id)}</span>
+                          ))}
+                        </div>
+                        <button onClick={() => setGruposDia((prev) => prev.filter((x) => x.id !== g.id))} className="p-1.5 text-muted-foreground hover:text-destructive">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {g.moEntradas.map((v, idx) => (
+                          <MilesInput
+                            key={idx}
+                            value={v}
+                            onChange={(val) => setGruposDia((prev) => prev.map((x) => {
+                              if (x.id !== g.id) return x;
+                              const arr = [...x.moEntradas];
+                              arr[idx] = val;
+                              return { ...x, moEntradas: arr };
+                            }))}
+                            placeholder={`MO ${idx + 1}`}
+                          />
+                        ))}
+                      </div>
+
+                      <div className="flex justify-between text-xs pt-1 border-t border-border">
+                        <span className="text-muted-foreground">Total: <span className="font-bold text-foreground">{formatCurrency(totalGrupo)}</span></span>
+                        <span className="text-muted-foreground">c/u: <span className="font-bold text-primary">{formatCurrency(totalGrupo / (g.trabajadorIds.length || 1))}</span></span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ── Columna derecha: Armar grupo ── */}
+            <div className="bg-background border border-border rounded-xl p-4 space-y-3">
+              <p className="text-sm font-medium text-foreground">Armar grupo</p>
+              <div className="flex flex-wrap gap-2">
+                {trabajadores.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => toggleSeleccion(t.id)}
+                    className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${nuevoGrupoIds.includes(t.id) ? "bg-primary/20 border-primary text-primary" : "bg-muted border-border text-muted-foreground hover:border-primary/50"}`}
+                  >
+                    {t.nombre}
                   </button>
-                </div>
-              ))}
+                ))}
+              </div>
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input type="checkbox" checked={nuevoEsPermanente} onChange={(e) => setNuevoEsPermanente(e.target.checked)} className="accent-primary" />
+                Dejarlo activo todos los días (hasta que yo lo desactive)
+              </label>
+              <button onClick={crearGrupo} disabled={nuevoGrupoIds.length < 2} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 disabled:opacity-40 text-sm">
+                <Plus className="w-4 h-4" /> Agregar a hoy
+              </button>
             </div>
           </div>
 
-          {/* Armar nuevo grupo */}
-          <div className="bg-background border border-border rounded-xl p-4 space-y-3">
-            <p className="text-sm font-medium text-foreground">Armar grupo</p>
-            <div className="flex flex-wrap gap-2">
-              {trabajadores.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => toggleSeleccion(t.id)}
-                  className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${nuevoGrupoIds.includes(t.id) ? "bg-primary/20 border-primary text-primary" : "bg-muted border-border text-muted-foreground hover:border-primary/50"}`}
-                >
-                  {t.nombre}
-                </button>
-              ))}
-            </div>
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <input type="checkbox" checked={nuevoEsPermanente} onChange={(e) => setNuevoEsPermanente(e.target.checked)} className="accent-primary" />
-              Dejarlo activo todos los días (hasta que yo lo desactive)
-            </label>
-            <button onClick={crearGrupo} disabled={nuevoGrupoIds.length < 2} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 disabled:opacity-40 text-sm">
-              <Plus className="w-4 h-4" /> Agregar a hoy
-            </button>
-          </div>
-
-          {/* Grupos permanentes existentes */}
+          {/* ── Abajo, ancho completo: Grupos permanentes ── */}
           <div>
             <h3 className="text-sm font-bold text-foreground mb-2">Grupos permanentes activos</h3>
             {gruposDefault.length === 0 && <p className="text-sm text-muted-foreground">No hay ninguno activo.</p>}
@@ -331,7 +356,11 @@ export default function CierreDiario() {
     if (gruposDefault.length === 0) return;
     setGruposDia((prev) => {
       if (prev.length > 0) return prev; // no duplicar si el usuario ya armó algo
-      return gruposDefault.map((g) => ({ id: `${Date.now()}-${g.id}-${Math.random()}`, trabajadorIds: g.trabajadorIds, valor: "" }));
+      return gruposDefault.map((g) => ({
+        id: `${Date.now()}-${g.id}-${Math.random()}`,
+        trabajadorIds: g.trabajadorIds,
+        moEntradas: Array.from({ length: 10 }, () => ""),
+      }));
     });
   }, [gruposDefault, editFecha]);
 
@@ -384,8 +413,8 @@ export default function CierreDiario() {
     }));
 
   const grandTotal = useMemo(
-    () => items.reduce((s, t) => s + calcTrabajador(t, gruposDia).total, 0),
-    [items, gruposDia]
+    () => items.reduce((s, t, i) => s + calcTrabajador(t, gruposDia, trabajadores || []).total, 0),
+    [items, gruposDia, trabajadores]
   );
 
   const handleGuardar = async () => {
@@ -394,7 +423,7 @@ export default function CierreDiario() {
     setGuardadoOk(false);
 
     const datosTrabajadores = items.map((t) => {
-      const calc = calcTrabajador(t, gruposDia);
+      const calc = calcTrabajador(t, gruposDia, trabajadores || []);
       return { ...t, calc };
     });
     const datos = { trabajadores: datosTrabajadores, gruposTrabajo: gruposDia };
@@ -506,7 +535,7 @@ export default function CierreDiario() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {items.map((t) => {
-            const { mo, moPropia, moGrupo, descuento, seguro, leDamos, nosDebe, total } = calcTrabajador(t, gruposDia);
+            const { mo, moPropia, moGrupo, descuento, seguro, aplicaSeguro, leDamos, nosDebe, total } = calcTrabajador(t, gruposDia, trabajadores || []);
 
             return (
               <div key={t.id} className="bg-card border border-border rounded-2xl shadow-lg overflow-hidden flex flex-col">
@@ -539,10 +568,12 @@ export default function CierreDiario() {
                           className={`w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-foreground ${t.trabajadorId !== null ? "opacity-70 cursor-not-allowed" : ""}`}
                         />
                       </div>
+                      {calcTrabajador(t, gruposDia, trabajadores || []).aplicaSeguro && (
                       <div>
                         <label className="block text-xs font-medium text-muted-foreground mb-1">Seguro <span className="text-[10px] text-muted-foreground/60">(en miles)</span></label>
                         <MilesInput value={t.seguro} onChange={(v) => updateItem(t.id, { seguro: v })} className="!text-sm !px-3 !py-2 !pr-8" />
                       </div>
+                    )}
                     </div>
 
                     <div>
@@ -571,7 +602,7 @@ export default function CierreDiario() {
                       <div className="space-y-1 text-xs">
                         <div className="flex justify-between"><span className="text-muted-foreground">Total MO (propia + grupo)</span><span className="font-semibold">{formatCurrency(mo)}</span></div>
                         <div className="flex justify-between"><span className="text-muted-foreground">Desc. 30%</span><span className="font-semibold text-destructive">− {formatCurrency(descuento)}</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">Seguro</span><span className="font-semibold text-destructive">− {formatCurrency(seguro)}</span></div>
+                        {aplicaSeguro && <div className="flex justify-between"><span className="text-muted-foreground">Seguro</span><span className="font-semibold text-destructive">− {formatCurrency(seguro)}</span></div>}
                         {leDamos > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Le damos</span><span className="font-semibold text-green-400">+ {formatCurrency(leDamos)}</span></div>}
                         {nosDebe > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Nos debe</span><span className="font-semibold text-destructive">− {formatCurrency(nosDebe)}</span></div>}
                       </div>

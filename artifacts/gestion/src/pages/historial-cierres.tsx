@@ -50,6 +50,10 @@ const fmtFecha = (iso: string) =>
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 
+function trabajadoresDe(datos: any): any[] {
+  return Array.isArray(datos) ? datos : (datos?.trabajadores || []);
+}
+
 // ---------- main ----------
 export default function HistorialCierres() {
   const [, navigate] = useLocation();
@@ -152,7 +156,7 @@ export default function HistorialCierres() {
                     <div>
                       <p className="font-semibold text-foreground capitalize">{fechaLabel}</p>
                       <p className="text-xs text-muted-foreground">
-                        {c.datos.length} trabajador{c.datos.length !== 1 ? "es" : ""}
+                        {trabajadoresDe(c.datos).length} trabajador{trabajadoresDe(c.datos).length !== 1 ? "es" : ""}
                       </p>
                     </div>
                   </div>
@@ -182,7 +186,7 @@ export default function HistorialCierres() {
                 {isExpanded && (
                   <div className="border-t border-border px-5 pb-5 pt-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                      {c.datos.map((t) => (
+                      {trabajadoresDe(c.datos).map((t) => (
                         <div key={t.id} className="bg-muted/30 border border-border rounded-xl p-4">
                           <p className="font-semibold text-foreground mb-3">{t.nombre}</p>
                           <div className="space-y-1 text-xs">
@@ -211,14 +215,14 @@ export default function HistorialCierres() {
                               </div>
                             )}
                             {/* Le damos details */}
-                            {t.leDamos.filter((e) => e.valor).map((e, i) => (
+                            {t.leDamos.filter((e: { descripcion: string; valor: string }) => e.valor).map((e: { descripcion: string; valor: string }, i: number) => (
                               <div key={i} className="flex justify-between pl-3 text-muted-foreground/70">
                                 <span>{e.descripcion || "—"}</span>
                                 <span>{formatCurrency(parseFloat(e.valor.replace(",", ".")) * 1000)}</span>
                               </div>
                             ))}
                             {/* Nos debe details */}
-                            {t.nosDebe.filter((e) => e.valor).map((e, i) => (
+                            {t.nosDebe.filter((e: { descripcion: string; valor: string }) => e.valor).map((e: { descripcion: string; valor: string }, i: number) => (
                               <div key={i} className="flex justify-between pl-3 text-muted-foreground/70">
                                 <span>{e.descripcion || "—"}</span>
                                 <span>{formatCurrency(parseFloat(e.valor.replace(",", ".")) * 1000)}</span>
