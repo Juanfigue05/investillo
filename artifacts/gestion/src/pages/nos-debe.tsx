@@ -75,6 +75,7 @@ export default function NosDebePage() {
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [showPay, setShowPay] = useState<number | null>(null);
   const [abono, setAbono] = useState("");
+  const [abonoFormaPago, setAbonoFormaPago] = useState("efectivo");
   const [lineasSeleccionadas, setLineasSeleccionadas] = useState<number[]>([]);
   const [busqueda, setBusqueda] = useState("");
   const [expandedAbonos, setExpandedAbonos] = useState<Set<number>>(new Set());
@@ -324,7 +325,7 @@ export default function NosDebePage() {
     }
   };
 
-  const resetPay = () => { setShowPay(null); setAbono(""); setLineasSeleccionadas([]); setEditingAbonoId(null); };
+  const resetPay = () => { setShowPay(null); setAbono(""); setLineasSeleccionadas([]); setEditingAbonoId(null); setAbonoFormaPago("efectivo"); };
 
   const handleAbono = (c: any) => {
     const abonoNum = parseFloat(abono);
@@ -361,6 +362,7 @@ export default function NosDebePage() {
 
     const data: any = { valor: abonoNum, lineas: lineasAbono };
     if (refTexto.trim()) data.customRef = refTexto.trim();
+    if (abonoFormaPago) data.formaPago = abonoFormaPago;
 
     if (editingAbonoId !== null) {
       editarAbonoMutation.mutate({ id: c.id, abonoId: editingAbonoId, data }, { onSuccess });
@@ -747,6 +749,13 @@ export default function NosDebePage() {
                             value={abono}
                             onChange={(e) => setAbono(e.target.value)}
                             className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm mb-2 focus:ring-1 focus:ring-primary outline-none" />
+                          <select value={abonoFormaPago} onChange={(e) => setAbonoFormaPago(e.target.value)}
+                            className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm mb-2 focus:ring-1 focus:ring-primary outline-none">
+                            <option value="efectivo">Efectivo</option>
+                            <option value="cuenta_ernesto">Cuenta Ernesto</option>
+                            <option value="cuenta_olga">Cuenta Olga</option>
+                            <option value="cuenta_juan">Cuenta Juan</option>
+                          </select>
                           {c.lineas.length > 0 && (
                             <div className="space-y-1 mb-2">
                               {c.lineas.map((l: any) => {

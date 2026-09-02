@@ -368,7 +368,7 @@ export default function Creditos() {
     const payload: any = { valor: abonoNum, lineas: lineasAbono, formaPago: abonoFormaPago };
 
     if (editingAbonoId !== null) {
-      editarAbonoMutation.mutate({ id: c.id, abonoId: editingAbonoId, data: payload }, { onSuccess });
+      editarAbonoMutation.mutate({ id: c.id, abonoId: editingAbonoId, data: payload as any }, { onSuccess });
     } else {
       abonarMutation.mutate(
         { id: c.id, data: payload },
@@ -379,7 +379,7 @@ export default function Creditos() {
               toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
               return;
             }
-            await encolarOperacion({ tipo: "credito", metodo: "POST", endpoint: `/creditos/${c.id}/abono`, payload });
+            await encolarOperacion({ tipo: "credito", metodo: "POST", endpoint: `/creditos/${c.id}/abono`, payload: { valor: abonoNum, lineas: lineasAbono, formaPago: abonoFormaPago } });
             toast({ title: "Guardado sin conexión", description: "Este abono se sincronizará automáticamente cuando vuelva internet." });
             onSuccess();
           },
