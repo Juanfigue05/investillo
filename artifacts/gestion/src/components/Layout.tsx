@@ -114,7 +114,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <button onClick={() => setCalcCierreOpen(true)} className="p-2 rounded-full hover:bg-muted transition-colors" aria-label="Calculadora de cierre">
               <CalcIcon className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground hover:text-foreground transition-colors" />
             </button>
-            <CalculadoraCierre open={calcCierreOpen} onClose={() => setCalcCierreOpen(false)} />
+            
               
             <button
               type="button"
@@ -252,6 +252,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </header>
+
+        <CalculadoraCierre open={calcCierreOpen} onClose={() => setCalcCierreOpen(false)} />
 
         {/* Main Content */}
         <main className="p-4 lg:p-8 flex-1 overflow-x-hidden">
