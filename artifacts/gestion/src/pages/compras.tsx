@@ -336,6 +336,13 @@ export default function Compras() {
   const llegados = compras?.filter((c) => c.estado === "llegado") || [];
   const [aniosAbiertos, setAniosAbiertos] = useState<Set<string>>(new Set());
   const [mesesAbiertos, setMesesAbiertos] = useState<Set<string>>(new Set());
+  const [mesImprimir, setMesImprimir] = useState<string>("");
+
+useEffect(() => {
+  if (mesImprimir || !llegados.length) return;
+  const claves = llegados.filter((c: any) => c.fechaLlegada).map((c: any) => c.fechaLlegada.slice(0, 7));
+  if (claves.length) setMesImprimir([...claves].sort().reverse()[0]);
+}, [llegados, mesImprimir]);
 
   return (
     <Layout>
@@ -702,7 +709,16 @@ export default function Compras() {
                   <strong>Historial de Llegadas — Compras</strong>
                   <span style={{ float: "right" }}>{new Date().toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })}</span>
                 </div>
-
+                <div className="no-print flex items-center gap-2 mb-3">
+                  <label className="text-xs font-medium text-muted-foreground">Mes a imprimir:</label>
+                  <select value={mesImprimir} onChange={(e) => setMesImprimir(e.target.value)} className="bg-background border border-border px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none">
+                    {[...new Set(llegados.filter((c: any) => c.fechaLlegada).map((c: any) => c.fechaLlegada.slice(0, 7)))]
+                      .sort().reverse()
+                      .map((clave) => (
+                        <option key={clave} value={clave}>{NOMBRES_MES[parseInt(clave.split("-")[1])]} {clave.split("-")[0]}</option>
+                      ))}
+                  </select>
+                </div>
                 {agruparPorAnioMes(llegados).map(({ anio, meses }) => {
                   const totalAnio = meses.reduce((s, [, items]) => s + items.reduce((s2, c) => s2 + (c.cantidadRecibida ?? 0) * (c.precioCompraRegistrado ?? 0), 0), 0);
                   const anioAbierto = aniosAbiertos.has(anio);
@@ -720,14 +736,14 @@ export default function Compras() {
                       </button>
 
                       {(anioAbierto || true) && (
-                        <div className="pl-3 mt-2 space-y-2 print:block">
+                        <div className={`pl-3 mt-2 space-y-2 ${anioAbierto ? "" : "hidden"} ${mesImprimir.startsWith(anio + "-") ? "print:block" : "print:hidden"}`}>
                           {meses.map(([mes, items]) => {
                             const claveMes = `${anio}-${mes}`;
                             const mesAbierto = mesesAbiertos.has(claveMes);
                             const totalMes = items.reduce((s, c) => s + (c.cantidadRecibida ?? 0) * (c.precioCompraRegistrado ?? 0), 0);
 
                             return (
-                              <div key={claveMes} className={!anioAbierto ? "hidden print:block" : ""}>
+                              <div key={claveMes} className={`${anioAbierto ? "" : "hidden"} ${claveMes === mesImprimir ? "print:block" : "print:hidden"}`}>
                                 <button
                                   onClick={() => setMesesAbiertos((prev) => { const s = new Set(prev); s.has(claveMes) ? s.delete(claveMes) : s.add(claveMes); return s; })}
                                   className="no-print w-full flex items-center justify-between bg-background px-4 py-2 rounded-lg border border-border"
@@ -738,11 +754,11 @@ export default function Compras() {
                                   <span className="text-sm font-bold text-foreground">{formatCurrency(totalMes)}</span>
                                 </button>
 
-                                <div className={`print-only print-date-header ${mesAbierto ? "hidden" : ""}`}>
+                                <div className="print-only print-date-header">
                                   <strong>{NOMBRES_MES[parseInt(mes)]} {anio}</strong>
                                 </div>
 
-                                <div className={`overflow-x-auto mt-2 bg-card border border-border rounded-2xl ${!mesAbierto ? "hidden print:block" : ""}`}>
+                                <div className={`overflow-x-auto mt-2 bg-card border border-border rounded-2xl ${mesAbierto ? "" : "hidden"} ${claveMes === mesImprimir ? "print:block" : "print:hidden"}`}>
                                   <table className="w-full text-sm text-left">
                                     <thead>
                                       <tr className="bg-muted text-muted-foreground border-b border-border">
