@@ -1138,6 +1138,10 @@ components:
           type: string
           nullable: true
           description: Descripcion adicional (para manoobra o credito)
+        formaPago:
+          type: string
+          nullable: true
+          description: "Forma de pago: efectivo, cuenta_ernesto, cuenta_olga, cuenta_juan"
         creadoEn:
           type: string
           format: date-time
@@ -1186,6 +1190,9 @@ components:
         beneficio:
           type: number
         descripcion:
+          type: string
+          nullable: true
+        formaPago:
           type: string
           nullable: true
       required:

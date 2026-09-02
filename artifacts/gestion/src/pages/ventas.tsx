@@ -41,6 +41,7 @@ interface EditValues {
   precioVentaUnidad: string;
   precioVentaTotal: string;
   beneficio: string;
+  formaPago: string;
 }
 
 function SearchableSelect({
@@ -200,12 +201,13 @@ export default function VentasDiarias() {
     valorAbono: 0,
     trabajadoresSeleccionados: [] as number[],
     valoresFijados: {} as Record<number, number>,
+    formaPago: "efectivo",
   });
 
   const [stockAlerta, setStockAlerta] = useState<{ stock: number; minimo: number } | null>(null);
 
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editValues, setEditValues] = useState<EditValues>({
+    const [editValues, setEditValues] = useState<EditValues>({
     referencia: "",
     productoNombre: "",
     productoMarca: "",
@@ -214,6 +216,7 @@ export default function VentasDiarias() {
     precioVentaUnidad: "0",
     precioVentaTotal: "0",
     beneficio: "0",
+    formaPago: "efectivo",
   });
 
   const diaYaGuardado = historial?.some((d) => d.fecha === fecha);
@@ -286,6 +289,7 @@ export default function VentasDiarias() {
       precioVentaUnidad: String(venta.precioVentaUnidad),
       precioVentaTotal: String(venta.precioVentaTotal),
       beneficio: String(venta.beneficio),
+      formaPago: (venta as { formaPago?: string }).formaPago || "efectivo",
     });
   };
 
@@ -311,6 +315,7 @@ export default function VentasDiarias() {
           precioVentaUnidad: pvU,
           precioVentaTotal: total,
           beneficio,
+          formaPago: editValues.formaPago,
         },
       },
       {
@@ -397,9 +402,9 @@ export default function VentasDiarias() {
             queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
             setNewRow((prev) => ({ ...prev, productoSeleccionado: "", productoNombreManual: "", valorAbono: 0 }));
           },
-          onError: async () => {
-            if (!esFalloDeRed(Error)) {
-              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+          onError: async (error) => {
+            if (!esFalloDeRed(error)) {
+              toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
               return;
             }
             await encolarOperacion({ tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadAbono });
@@ -425,6 +430,7 @@ export default function VentasDiarias() {
       productoCodigo: prod?.codigo, productoMarca: newRow.marca || prod?.marca || undefined,
       cantidad: cantNumNueva, precioCompraUnidad: newRow.precioCompra,
       precioVentaUnidad: newRow.precioVenta, precioVentaTotal: total, beneficio,
+      formaPago: newRow.formaPago,
     };
 
     crearMutation.mutate(
@@ -437,11 +443,11 @@ export default function VentasDiarias() {
           setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0 }));
           setStockAlerta(null);
         },
-        onError: async () => {
-          if (!esFalloDeRed(Error)) {
-              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
-              return;
-            }
+        onError: async (error) => {
+          if (!esFalloDeRed(error)) {
+            toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+            return;
+          }
           await encolarOperacion({ tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadVenta });
           toast({ title: "Guardado sin conexión", description: "Esta venta se sincronizará automáticamente cuando vuelva internet." });
           setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0 }));
@@ -559,6 +565,7 @@ export default function VentasDiarias() {
                   <th className="px-3 py-3 font-medium whitespace-nowrap">P. Venta</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">Total Venta</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">Beneficio/Ganancia</th>
+                  <th className="px-3 py-3 font-medium no-print whitespace-nowrap">Forma de Pago</th>
                   <th className="px-3 py-3 font-medium no-print w-20"></th>
                 </tr>
               </thead>
@@ -654,13 +661,22 @@ export default function VentasDiarias() {
                   <td className="p-2 font-medium text-green-500 whitespace-nowrap">
                     {modoActual === "normal" ? formatCurrency(previewBeneficio) : "—"}
                   </td>
+                  <td className="p-2 no-print">
+                    <select value={newRow.formaPago} onChange={(e) => setNewRow({ ...newRow, formaPago: e.target.value })}
+                      className="w-full bg-background border border-border px-2 py-2 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none">
+                      <option value="efectivo">Efectivo</option>
+                      <option value="cuenta_ernesto">Cuenta Ernesto</option>
+                      <option value="cuenta_olga">Cuenta Olga</option>
+                      <option value="cuenta_juan">Cuenta Juan</option>
+                    </select>
+                  </td>
                   <td className="p-2 no-print"></td>
                 </tr>
 
                 {isLoading ? (
-                  <tr><td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">Cargando ventas...</td></tr>
+                  <tr><td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">Cargando ventas...</td></tr>
                 ) : ventas?.length === 0 ? (
-                  <tr><td colSpan={10} className="px-4 py-6 text-center text-muted-foreground text-sm">Sin registros para esta fecha.</td></tr>
+                  <tr><td colSpan={11} className="px-4 py-6 text-center text-muted-foreground text-sm">Sin registros para esta fecha.</td></tr>
                 ) : (
                   ventas?.map((venta) => {
                     const rowCls = venta.tipoLinea === "manoobra" ? "row-manoobra" : venta.tipoLinea === "credito" ? "row-credito" : "row-venta";
@@ -684,6 +700,15 @@ export default function VentasDiarias() {
                           <td className="p-2 font-bold text-primary whitespace-nowrap">{formatCurrency(editTotal)}</td>
                           <td className="p-2 font-medium text-green-500 whitespace-nowrap">{venta.tipoLinea === "venta" ? formatCurrency(editBen) : "—"}</td>
                           <td className="p-2 no-print">
+                            <select value={editValues.formaPago || (venta as { formaPago?: string }).formaPago || "efectivo"} onChange={(e) => setEditValues((v) => ({ ...v, formaPago: e.target.value }))}
+                              className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-xs outline-none focus:ring-1 focus:ring-primary">
+                              <option value="efectivo">Efectivo</option>
+                              <option value="cuenta_ernesto">Cta. Ernesto</option>
+                              <option value="cuenta_olga">Cta. Olga</option>
+                              <option value="cuenta_juan">Cta. Juan</option>
+                            </select>
+                          </td>
+                          <td className="p-2 no-print">
                             <div className="flex gap-1">
                               <button onClick={() => handleSaveEdit(venta)} disabled={actualizarMutation.isPending} className="p-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors border border-primary/30"><Check className="w-3.5 h-3.5" /></button>
                               <button onClick={() => setEditingId(null)} className="p-1.5 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors border border-border"><X className="w-3.5 h-3.5" /></button>
@@ -704,6 +729,9 @@ export default function VentasDiarias() {
                         <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioVentaUnidad)}</td>
                         <td className="px-3 py-3 font-bold text-primary">{formatCurrency(venta.precioVentaTotal)}</td>
                         <td className="px-3 py-3 font-medium text-green-500">{venta.tipoLinea === "venta" ? formatCurrency(venta.beneficio) : "—"}</td>
+                        <td className="px-3 py-3 no-print text-xs text-muted-foreground">
+                          {({ efectivo: "Efectivo", cuenta_ernesto: "Cta. Ernesto", cuenta_olga: "Cta. Olga", cuenta_juan: "Cta. Juan" } as Record<string, string>)[(venta as { formaPago?: string }).formaPago || "efectivo"]}
+                        </td>
                         <td className="px-3 py-3 no-print">
                           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
                             <button onClick={() => openEdit(venta)} className="p-1.5 text-muted-foreground hover:text-primary bg-background/50 rounded-lg transition-all border border-border">
@@ -731,6 +759,7 @@ export default function VentasDiarias() {
                     <td className="px-3 py-2.5 font-bold text-foreground whitespace-nowrap text-xs">{formatCurrency(totalPVenta)}</td>
                     <td className="px-3 py-2.5 font-display font-bold text-lg text-primary whitespace-nowrap">{formatCurrency(totalVentaTotal)}</td>
                     <td className="px-3 py-2.5 font-bold text-green-500 whitespace-nowrap">{formatCurrency(totalBeneficio)}</td>
+                    <td className="no-print"></td>
                     <td className="no-print"></td>
                   </tr>
                 )}

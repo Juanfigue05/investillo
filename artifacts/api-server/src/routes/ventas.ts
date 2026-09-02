@@ -87,7 +87,7 @@ router.post("/", async (req, res) => {
     fecha, referencia, tipoLinea, productoId,
     productoNombre, productoCodigo, productoMarca,
     cantidad, precioCompraUnidad, precioVentaUnidad,
-    precioVentaTotal, beneficio, descripcion,
+    precioVentaTotal, beneficio, descripcion, formaPago,
   } = req.body;
 
   try {
@@ -106,6 +106,7 @@ router.post("/", async (req, res) => {
         precioVentaTotal: String(parseFloat(precioVentaTotal)),
         beneficio: String(parseFloat(beneficio || 0)),
         descripcion: descripcion || null,
+        formaPago: formaPago || null,
       }).returning();
 
       // Resta atómica de stock -- así una venta encolada offline nunca desface el inventario al sincronizar.
@@ -192,7 +193,7 @@ router.put("/:id", async (req, res) => {
     fecha, referencia, tipoLinea, productoId,
     productoNombre, productoCodigo, productoMarca,
     cantidad, precioCompraUnidad, precioVentaUnidad,
-    precioVentaTotal, beneficio, descripcion,
+    precioVentaTotal, beneficio, descripcion, formaPago
   } = req.body;
 
   // Leer fila actual antes de modificar — necesario para el delta de stock y preservar descripción
@@ -215,6 +216,7 @@ router.put("/:id", async (req, res) => {
     precioVentaUnidad: String(parseFloat(precioVentaUnidad)),
     precioVentaTotal: String(parseFloat(precioVentaTotal)),
     beneficio: String(parseFloat(beneficio || 0)),
+    formaPago: formaPago || null,
   };
   // Solo sobreescribir descripción si viene explícitamente en el payload;
   // si el frontend no la envía (undefined), se preserva la existente.

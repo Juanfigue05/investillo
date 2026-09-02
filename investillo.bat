@@ -1,11 +1,6 @@
 @echo off
-cd /d "C:\Users\TuUsuario\Documents\investillo"  
+:: Navega a la carpeta del proyecto (asegúrate de poner tu usuario real)
+cd /d "C:\Users\talle\Music\INVESTILLO\investillo"  
 
-:: Abre el navegador en la dirección local
-start http://localhost:8080
-
-:: Inicia el servidor en segundo plano dentro de la misma sesión
-start /b pnpm run start:prod
-
-:: Cierra la ventana actual de CMD de inmediato
-exit
+:: Ejecuta el servidor de producción directamente
+pnpm run start:prod

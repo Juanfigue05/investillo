@@ -17,6 +17,7 @@ export const ventasDiariasTable = pgTable("ventas_diarias", {
   precioVentaTotal: numeric("precio_venta_total", { precision: 15, scale: 2 }).notNull(),
   beneficio: numeric("beneficio", { precision: 15, scale: 2 }).notNull().default("0"),
   descripcion: text("descripcion"),
+   formaPago: text("forma_pago"),
   /** FK al abono que generó esta fila — para poder revertirla al eliminar/editar el abono */
   creditoAbonoId: integer("credito_abono_id"),
   creadoEn: timestamp("creado_en").defaultNow(),
