@@ -489,7 +489,7 @@ router.post("/:id/abono", async (req, res) => {
     if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   }
   const creditoId = parseInt(req.params.id);
-  const { valor, lineas, customRef } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string };
+  const { valor, lineas, customRef, formaPago } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string; formaPago?: string };
   const abonoTotal = parseFloat(String(valor));
 
   if (!Number.isFinite(abonoTotal) || abonoTotal <= 0 || !Array.isArray(lineas) || lineas.length === 0) {
@@ -549,9 +549,11 @@ router.post("/:id/abono", async (req, res) => {
       .returning();
 
     // Insertar el nuevo registro de abono con detalle por línea
-    const lineaDetalle = customRef
-      ? JSON.stringify({ ref: customRef, lineas: applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })) })
-      : JSON.stringify(applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })));
+    const lineaDetalle = JSON.stringify({
+      ref: customRef || undefined,
+      formaPago: formaPago || undefined,
+      lineas: applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })),
+    });
     const [newAbono] = await tx
       .insert(abonosCreditosTable)
       .values({ creditoId, valorTotal: String(appliedTotal), fecha: hoy, lineaDetalle })
@@ -563,7 +565,7 @@ router.post("/:id/abono", async (req, res) => {
       const antes = toNum(linea.valorAbonado); // valor antes de este abono
       const restante = Math.max(0, total - antes);
       const pagaCompleto = Math.abs(av - restante) < 1;
-      await crearFilaVentaPago(tx, updatedCredito, linea, av, pagaCompleto, newAbono.id, hoy, customRef);
+      await crearFilaVentaPago(tx, updatedCredito, linea, av, pagaCompleto, newAbono.id, hoy, customRef, formaPago);
     }
 
     return updatedCredito;
@@ -640,7 +642,7 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
   }
   const creditoId = parseInt(req.params.id);
   const abonoId = parseInt(req.params.abonoId);
-  const { valor, lineas, customRef } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string };
+  const { valor, lineas, customRef, formaPago } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string; formaPago?: string };
   const abonoTotal = parseFloat(String(valor));
 
   if (!Number.isFinite(abonoTotal) || abonoTotal <= 0 || !Array.isArray(lineas) || lineas.length === 0) {
@@ -701,9 +703,11 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
 
     // Actualizar el registro del abono con el nuevo valor y detalle
     const hoy = new Date().toISOString().split("T")[0];
-    const lineaDetalle = customRef
-      ? JSON.stringify({ ref: customRef, lineas: applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })) })
-      : JSON.stringify(applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })));
+    const lineaDetalle = JSON.stringify({
+      ref: customRef || undefined,
+      formaPago: formaPago || undefined,
+      lineas: applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })),
+    });
     await tx
       .update(abonosCreditosTable)
       .set({ valorTotal: String(appliedTotal), fecha: hoy, lineaDetalle })
@@ -779,6 +783,7 @@ async function crearFilaVentaPago(
   abonoId: number,
   fecha: string,
   customRef?: string,
+  formaPago?: string,
 ) {
   const referencia = refCredito(credito, customRef);
   const etiqueta = credito.tipo === "nosdebe" ? "Nos Debe" : "crédito";
@@ -799,6 +804,7 @@ async function crearFilaVentaPago(
       beneficio: String(valor),
       descripcion: detalle || `Pago ${etiqueta}${credito.concepto ? ` ${credito.concepto}` : ""}`,
       creditoAbonoId: abonoId,
+      formaPago: formaPago || null,
     });
     return;
   }
@@ -819,6 +825,7 @@ async function crearFilaVentaPago(
       beneficio: "0",
       descripcion: `IVA ${etiqueta} - ${credito.nombreCliente}`,
       creditoAbonoId: abonoId,
+      formaPago: formaPago || null,
     });
     return;
   }
@@ -842,6 +849,7 @@ async function crearFilaVentaPago(
       beneficio: String((pvUnidad - pcUnidad) * cant),
       descripcion: `Pago ${etiqueta}${credito.concepto ? ` ${credito.concepto}` : ""}`,
       creditoAbonoId: abonoId,
+      formaPago: formaPago || null,
     });
     return;
   }
@@ -859,6 +867,7 @@ async function crearFilaVentaPago(
     beneficio: "0",
     descripcion: `Abono a ${etiqueta} - ${credito.nombreCliente}`,
     creditoAbonoId: abonoId,
+    formaPago: formaPago || null,
   });
 }
 
@@ -901,6 +910,7 @@ async function rebuildVentasCredito(tx: Tx, credito: typeof creditosTable.$infer
     const _raw = JSON.parse(abono.lineaDetalle!);
     const det: { lineaId: number; valor: number }[] = Array.isArray(_raw) ? _raw : (_raw.lineas ?? []);
     const abonoCustomRef: string | undefined = Array.isArray(_raw) ? undefined : (_raw.ref ?? undefined);
+    const abonoFormaPago: string | undefined = Array.isArray(_raw) ? undefined : (_raw.formaPago ?? undefined);
     for (const { lineaId, valor } of det) {
       const linea = byId.get(lineaId);
       if (!linea || valor <= 0) continue;
@@ -908,7 +918,7 @@ async function rebuildVentasCredito(tx: Tx, credito: typeof creditosTable.$infer
       const antes = running.get(lineaId) ?? 0;
       const restante = Math.max(0, total - antes);
       const pagaCompleto = Math.abs(valor - restante) < 1;
-      await crearFilaVentaPago(tx, credito, linea, valor, pagaCompleto, abono.id, abono.fecha, abonoCustomRef);
+      await crearFilaVentaPago(tx, credito, linea, valor, pagaCompleto, abono.id, abono.fecha, abonoCustomRef, abonoFormaPago);
       running.set(lineaId, antes + valor);
     }
   }

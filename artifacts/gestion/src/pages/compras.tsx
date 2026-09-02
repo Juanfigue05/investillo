@@ -246,11 +246,11 @@ export default function Compras() {
           setLlegadaOpen(null);
           setPrecioConfirm(null);
         },
-        onError: async () => {
-            if (!esFalloDeRed(Error)) {
-              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
-              return;
-            }
+        onError: async (error) => {
+          if (!esFalloDeRed(error)) {
+            toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+            return;
+          }
           await encolarOperacion({ tipo: "compra", metodo: "PUT", endpoint: `/compras/${compra.id}`, payload: payloadLlegada });
           toast({ title: "Guardado sin conexión", description: "Esta llegada de mercancía se sincronizará automáticamente cuando vuelva internet." });
           setLlegadaOpen(null);
@@ -309,11 +309,11 @@ export default function Compras() {
           setShowAddForm(false);
           setProductoSeleccionado(null);
         },
-        onError: async () => {
-            if (!esFalloDeRed(Error)) {
-              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
-              return;
-            }
+        onError: async (error) => {
+          if (!esFalloDeRed(error)) {
+            toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+            return;
+          }
           await encolarOperacion({ tipo: "compra", metodo: "POST", endpoint: "/compras", payload: payloadCompra });
           toast({ title: "Guardado sin conexión", description: "Esta orden de compra se sincronizará automáticamente cuando vuelva internet." });
           setShowAddForm(false);

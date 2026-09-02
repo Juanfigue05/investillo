@@ -26,6 +26,7 @@ function mapVenta(v: typeof ventasDiariasTable.$inferSelect) {
     precioVentaTotal: toNum(v.precioVentaTotal),
     beneficio: toNum(v.beneficio),
     descripcion: v.descripcion,
+    formaPago: v.formaPago,
     creadoEn: v.creadoEn,
   };
 }
@@ -138,7 +139,7 @@ router.post("/manoobra", async (req, res) => {
     if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   }
 
-  const { fecha, referencia, valorTotal, distribuciones, productoMarca, descripcion } = req.body;
+  const { fecha, referencia, valorTotal, distribuciones, productoMarca, descripcion, formaPago } = req.body;
 
   try {
     const resultado = await db.transaction(async (tx) => {
@@ -172,6 +173,7 @@ router.post("/manoobra", async (req, res) => {
         precioVentaUnidad: String(parseFloat(valorTotal)), precioVentaTotal: String(parseFloat(valorTotal)),
         beneficio: String(parseFloat(valorTotal)),
         descripcion: descripcion || null,
+        formaPago: formaPago || null,
       }).returning();
 
       if (operationId) {

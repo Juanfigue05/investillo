@@ -93,6 +93,7 @@ export default function Creditos() {
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [showPay, setShowPay] = useState<number | null>(null);
   const [abono, setAbono] = useState("");
+  const [abonoFormaPago, setAbonoFormaPago] = useState("efectivo");
   const [lineasSeleccionadas, setLineasSeleccionadas] = useState<number[]>([]);
   const [busqueda, setBusqueda] = useState("");
   const [filtroDesde, setFiltroDesde] = useState("");
@@ -314,11 +315,11 @@ export default function Creditos() {
     if (editingId) {
       actualizarMutation.mutate({ id: editingId, data }, {
         ...options,
-        onError: async () => {
-            if (!esFalloDeRed(Error)) {
-              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
-              return;
-            }
+        onError: async (error) => {
+          if (!esFalloDeRed(error)) {
+            toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+            return;
+          }
           await encolarOperacion({ tipo: "credito", metodo: "PUT", endpoint: `/creditos/${editingId}`, payload: data });
             toast({ title: "Guardado sin conexión", description: "Este cambio se sincronizará automáticamente cuando vuelva internet." });
             options.onSuccess?.();
@@ -327,9 +328,9 @@ export default function Creditos() {
       } else {
         crearMutation.mutate({ data }, {
           ...options,
-          onError: async () => {
-            if (!esFalloDeRed(Error)) {
-              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+          onError: async (error) => {
+            if (!esFalloDeRed(error)) {
+              toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
               return;
             }
             await encolarOperacion({ tipo: "credito", metodo: "POST", endpoint: "/creditos", payload: data });
@@ -340,7 +341,7 @@ export default function Creditos() {
       }
   };
 
-  const resetPay = () => { setShowPay(null); setAbono(""); setLineasSeleccionadas([]); setEditingAbonoId(null); };
+  const resetPay = () => { setShowPay(null); setAbono(""); setLineasSeleccionadas([]); setEditingAbonoId(null); setAbonoFormaPago("efectivo"); };
 
   const handleAbono = (c: any) => {
     const abonoNum = parseFloat(abono);
@@ -364,19 +365,21 @@ export default function Creditos() {
       resetPay();
     };
 
+    const payload: any = { valor: abonoNum, lineas: lineasAbono, formaPago: abonoFormaPago };
+
     if (editingAbonoId !== null) {
-      editarAbonoMutation.mutate({ id: c.id, abonoId: editingAbonoId, data: { valor: abonoNum, lineas: lineasAbono } }, { onSuccess });
+      editarAbonoMutation.mutate({ id: c.id, abonoId: editingAbonoId, data: payload }, { onSuccess });
     } else {
       abonarMutation.mutate(
-        { id: c.id, data: { valor: abonoNum, lineas: lineasAbono } },
+        { id: c.id, data: payload },
         {
           onSuccess,
-          onError: async () => {
-            if (!esFalloDeRed(Error)) {
-              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+          onError: async (error) => {
+            if (!esFalloDeRed(error)) {
+              toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
               return;
             }
-            await encolarOperacion({ tipo: "credito", metodo: "POST", endpoint: `/creditos/${c.id}/abono`, payload: { valor: abonoNum, lineas: lineasAbono } });
+            await encolarOperacion({ tipo: "credito", metodo: "POST", endpoint: `/creditos/${c.id}/abono`, payload });
             toast({ title: "Guardado sin conexión", description: "Este abono se sincronizará automáticamente cuando vuelva internet." });
             onSuccess();
           },
@@ -916,6 +919,13 @@ export default function Creditos() {
                             value={abono}
                             onChange={(e) => setAbono(e.target.value)}
                             className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm mb-2 focus:ring-1 focus:ring-primary outline-none" />
+                          <select value={abonoFormaPago} onChange={(e) => setAbonoFormaPago(e.target.value)}
+                            className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm mb-2 focus:ring-1 focus:ring-primary outline-none">
+                            <option value="efectivo">Efectivo</option>
+                            <option value="cuenta_ernesto">Cuenta Ernesto</option>
+                            <option value="cuenta_olga">Cuenta Olga</option>
+                            <option value="cuenta_juan">Cuenta Juan</option>
+                          </select>
                           <p className="text-[10px] text-muted-foreground mb-2">Selecciona el/los producto(s) a pagar:</p>
                           {c.lineas.length > 0 ? c.lineas.map((l: any) => {
                             const disponible = editingAbonoId !== null
@@ -1022,6 +1032,13 @@ export default function Creditos() {
                         value={abono}
                         onChange={(e) => setAbono(e.target.value)}
                         className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm mb-2 focus:ring-1 focus:ring-primary outline-none" />
+                      <select value={abonoFormaPago} onChange={(e) => setAbonoFormaPago(e.target.value)}
+                        className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm mb-2 focus:ring-1 focus:ring-primary outline-none">
+                        <option value="efectivo">Efectivo</option>
+                        <option value="cuenta_ernesto">Cuenta Ernesto</option>
+                        <option value="cuenta_olga">Cuenta Olga</option>
+                        <option value="cuenta_juan">Cuenta Juan</option>
+                      </select>
                       <p className="text-[10px] text-muted-foreground mb-2">Selecciona los productos:</p>
                       {c.lineas.map((l: any) => {
                         const tope = parseFloat(l.cantidad) * parseFloat(l.precioVenta);

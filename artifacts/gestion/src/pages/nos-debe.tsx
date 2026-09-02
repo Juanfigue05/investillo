@@ -298,9 +298,9 @@ export default function NosDebePage() {
     if (editingId) {
       actualizarMutation.mutate({ id: editingId, data }, {
         ...options,
-        onError: async () => {
-          if (!esFalloDeRed(Error)) {
-            toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+        onError: async (error) => {
+          if (!esFalloDeRed(error)) {
+            toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
             return;
           }
           await encolarOperacion({ tipo: "credito", metodo: "PUT", endpoint: `/creditos/${editingId}`, payload: data });
@@ -311,11 +311,11 @@ export default function NosDebePage() {
     } else {
       crearMutation.mutate({ data }, {
         ...options,
-        onError: async () => {
-            if (!esFalloDeRed(Error)) {
-              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
-              return;
-            }
+        onError: async (error) => {
+          if (!esFalloDeRed(error)) {
+            toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+            return;
+          }
           await encolarOperacion({ tipo: "credito", metodo: "POST", endpoint: "/creditos", payload: data });
           toast({ title: "Guardado sin conexión", description: "Este registro se sincronizará automáticamente cuando vuelva internet." });
           options.onSuccess?.();
@@ -369,9 +369,9 @@ export default function NosDebePage() {
         { id: c.id, data },
         {
           onSuccess,
-          onError: async () => {
-            if (!esFalloDeRed(Error)) {
-              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+          onError: async (error) => {
+            if (!esFalloDeRed(error)) {
+              toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
               return;
             }
             await encolarOperacion({ tipo: "credito", metodo: "POST", endpoint: `/creditos/${c.id}/abono`, payload: data });

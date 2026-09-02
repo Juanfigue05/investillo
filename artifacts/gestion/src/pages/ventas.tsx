@@ -23,6 +23,14 @@ import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
 const SPECIAL_MANOOBRA = "__manoobra__";
 const SPECIAL_ABONO = "__abono__";
 
+function agregarFilaOptimista(queryClient: any, fecha: string, fila: any) {
+  const idTemporal = -Date.now() - Math.random();
+  queryClient.setQueryData(["/api/ventas", { fecha }], (old: any[] = []) => [
+    ...(old || []),
+    { id: idTemporal, ...fila, _pendiente: true },
+  ]);
+}
+
 interface ProductoOpcion {
   id: string;
   nombre: string;
@@ -315,7 +323,6 @@ export default function VentasDiarias() {
           precioVentaUnidad: pvU,
           precioVentaTotal: total,
           beneficio,
-          formaPago: editValues.formaPago,
         },
       },
       {
@@ -350,6 +357,12 @@ export default function VentasDiarias() {
 
       const limpiarFilaManoObra = () =>
         setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioManoObra: 0, trabajadoresSeleccionados: [], valoresFijados: {} }));
+
+      agregarFilaOptimista(queryClient, fecha, {
+        referencia: newRow.referencia, tipoLinea: "manoobra",
+        productoNombre: "Mano de Obra", productoMarca: payloadManoObra.productoMarca,
+        cantidad: 1, precioCompraUnidad: 0, precioVentaUnidad: valor, precioVentaTotal: valor, beneficio: valor,
+      });
 
       (async () => {
         if (navigator.onLine) {
@@ -393,6 +406,8 @@ export default function VentasDiarias() {
         precioVentaTotal: newRow.valorAbono, beneficio: 0, descripcion: "Abono a crédito",
       };
 
+      agregarFilaOptimista(queryClient, fecha, payloadAbono);
+
       crearMutation.mutate(
         { data: payloadAbono },
          {
@@ -432,6 +447,8 @@ export default function VentasDiarias() {
       precioVentaUnidad: newRow.precioVenta, precioVentaTotal: total, beneficio,
       formaPago: newRow.formaPago,
     };
+
+    agregarFilaOptimista(queryClient, fecha, payloadVenta);
 
     crearMutation.mutate(
       { data: payloadVenta },
@@ -729,18 +746,22 @@ export default function VentasDiarias() {
                         <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioVentaUnidad)}</td>
                         <td className="px-3 py-3 font-bold text-primary">{formatCurrency(venta.precioVentaTotal)}</td>
                         <td className="px-3 py-3 font-medium text-green-500">{venta.tipoLinea === "venta" ? formatCurrency(venta.beneficio) : "—"}</td>
-                        <td className="px-3 py-3 no-print text-xs text-muted-foreground">
+                                                <td className="px-3 py-3 no-print text-xs text-muted-foreground">
                           {({ efectivo: "Efectivo", cuenta_ernesto: "Cta. Ernesto", cuenta_olga: "Cta. Olga", cuenta_juan: "Cta. Juan" } as Record<string, string>)[(venta as { formaPago?: string }).formaPago || "efectivo"]}
                         </td>
                         <td className="px-3 py-3 no-print">
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                            <button onClick={() => openEdit(venta)} className="p-1.5 text-muted-foreground hover:text-primary bg-background/50 rounded-lg transition-all border border-border">
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => handleDelete(venta.id)} className="p-1.5 text-muted-foreground hover:text-destructive bg-background/50 rounded-lg transition-all border border-border">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                          {(venta as any)._pendiente ? (
+                            <span className="text-[10px] text-amber-400 font-medium whitespace-nowrap" title="Guardado local, esperando sincronizar">⏳ Pendiente</span>
+                          ) : (
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                              <button onClick={() => openEdit(venta)} className="p-1.5 text-muted-foreground hover:text-primary bg-background/50 rounded-lg transition-all border border-border">
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => handleDelete(venta.id)} className="p-1.5 text-muted-foreground hover:text-destructive bg-background/50 rounded-lg transition-all border border-border">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
