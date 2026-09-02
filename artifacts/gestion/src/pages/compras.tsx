@@ -15,6 +15,11 @@ import { toast } from "@/hooks/use-toast";
 import { esFalloDeRed } from "@/lib/offline-db";
 import {Pencil} from "lucide-react";
 
+function agregarFilaOptimista(queryClient: any, queryKey: readonly unknown[], fila: any) {
+  const idTemporal = -Date.now() - Math.random();
+  queryClient.setQueryData(queryKey, (old: any[] = []) => [...(old || []), { id: idTemporal, ...fila, _pendiente: true }]);
+}
+
 interface LlegadaForm {
   cantidad: string;
   nuevoPrecioCompra: string;
@@ -301,6 +306,18 @@ export default function Compras() {
       return;
     }
     const payloadCompra = { productoId: productoSeleccionado };
+    const prod = productos?.find((p: any) => p.id === productoSeleccionado);
+
+    agregarFilaOptimista(queryClient, ["/api/compras"], {
+      estado: "pendiente",
+      productoId: productoSeleccionado,
+      productoNombre: prod?.nombre || "Producto",
+      productoCodigo: prod?.codigo || "",
+      productoMarca: prod?.marca || null,
+      stockMinimo: prod?.stockMinimo ?? 0,
+      stockActual: prod?.stockActual ?? 0,
+    });
+
     crearMutation.mutate(
       { data: payloadCompra },
       {
@@ -631,20 +648,24 @@ useEffect(() => {
                               {compra.stockActual}
                             </p>
                           </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => openLlegada(compra)}
-                              className="px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all text-sm whitespace-nowrap"
-                            >
-                              Ingresar Inventario
-                            </button>
-                            <button
-                              onClick={() => handleEliminar(compra.id)}
-                              className="p-2 text-muted-foreground hover:text-destructive bg-muted rounded-xl transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
+                          {(compra as any)._pendiente ? (
+                            <span className="text-xs text-amber-400 font-medium whitespace-nowrap px-3" title="Guardado local, esperando sincronizar">⏳ Sincronizando...</span>
+                          ) : (
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => openLlegada(compra)}
+                                className="px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all text-sm whitespace-nowrap"
+                              >
+                                Ingresar Inventario
+                              </button>
+                              <button
+                                onClick={() => handleEliminar(compra.id)}
+                                className="p-2 text-muted-foreground hover:text-destructive bg-muted rounded-xl transition-colors"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
 

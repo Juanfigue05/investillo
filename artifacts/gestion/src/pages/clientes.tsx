@@ -18,6 +18,11 @@ import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { esFalloDeRed } from "@/lib/offline-db";
 
+function agregarFilaOptimista(queryClient: any, queryKey: readonly unknown[], fila: any) {
+  const idTemporal = -Date.now() - Math.random();
+  queryClient.setQueryData(queryKey, (old: any[] = []) => [...(old || []), { id: idTemporal, ...fila, _pendiente: true }]);
+}
+
 interface VehiculoForm {
   id?: number;
   placa: string;
@@ -144,13 +149,16 @@ export default function Clientes() {
       );
     } else {
       const payload = { nombre: form.nombre.trim(), telefono: form.telefono || null, correo: form.correo || null, notas: form.notas || null, vehiculos: vehs.map((v) => ({ placa: v.placa.trim(), descripcion: v.descripcion || null })) };
+
+      agregarFilaOptimista(queryClient, ["/api/clientes", {}], { nombre: payload.nombre, telefono: payload.telefono, correo: payload.correo, notas: payload.notas });
+
       crearMutation.mutate(
         { data: payload },
         {
           onSuccess: onGuardadoExitoso,
-          onError: async () => {
-                      if (!esFalloDeRed(Error)) {
-                        toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+          onError: async (error) => {
+                      if (!esFalloDeRed(error)) {
+                        toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
                         return;
                       }
             await encolarOperacion({ tipo: "cliente", metodo: "POST", endpoint: "/clientes", payload });
@@ -458,13 +466,19 @@ const handleImportClientes = async (e: React.ChangeEvent<HTMLInputElement>) => {
                       )}
                     </div>
                   </div>
-                  <div className="flex gap-1 flex-shrink-0">
-                    <button onClick={() => openEdit(c)} className="p-1.5 text-muted-foreground hover:text-primary rounded-lg transition-colors">
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => handleEliminar(c.id, c.nombre)} className="p-1.5 text-muted-foreground hover:text-destructive rounded-lg transition-colors">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex gap-1 flex-shrink-0">
+                    {(c as any)._pendiente ? (
+                      <span className="text-[10px] text-amber-400 font-medium whitespace-nowrap" title="Guardado local, esperando sincronizar">⏳ Pendiente</span>
+                    ) : (
+                      <>
+                        <button onClick={() => openEdit(c)} className="p-1.5 text-muted-foreground hover:text-primary rounded-lg transition-colors">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => handleEliminar(c.id, c.nombre)} className="p-1.5 text-muted-foreground hover:text-destructive rounded-lg transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 

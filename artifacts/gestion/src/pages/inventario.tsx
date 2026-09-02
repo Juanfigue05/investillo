@@ -11,6 +11,11 @@ import { esFalloDeRed } from "@/lib/offline-db";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
+function agregarFilaOptimista(queryClient: any, queryKey: readonly unknown[], fila: any) {
+  const idTemporal = -Date.now() - Math.random();
+  queryClient.setQueryData(queryKey, (old: any[] = []) => [...(old || []), { id: idTemporal, ...fila, _pendiente: true }]);
+}
+
 interface ParsedRow {
   codigo: string;
   nombre: string;
@@ -281,13 +286,16 @@ export default function Inventario() {
         }
       );
     } else {
+
+      agregarFilaOptimista(queryClient, ["/api/inventario"], formData);
+
       crearMutation.mutate(
         { data: formData },
         {
           onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventario"] }); setShowForm(false); },
-          onError: async () => {
-            if (!esFalloDeRed(Error)) {
-              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+          onError: async (error) => {
+            if (!esFalloDeRed(error)) {
+              toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
               return;
             }
             await encolarOperacion({ tipo: "producto", metodo: "POST", endpoint: "/inventario", payload: formData });
@@ -788,15 +796,19 @@ export default function Inventario() {
                       <td className="px-3 py-3 text-muted-foreground">{formatCurrency(prod.precioCompra)}</td>
                       <td className="px-3 py-3 text-muted-foreground">{formatCurrency(prod.precioVentaSinIva)}</td>
                       <td className="px-3 py-3 text-primary font-bold">{formatCurrency(prod.precioVentaConIva)}</td>
-                      <td className="px-3 py-3 text-right">
-                        <div className="flex justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => openEdit(prod)} className="p-1.5 text-muted-foreground hover:text-primary bg-muted rounded-lg transition-colors">
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => handleDelete(prod.id)} className="p-1.5 text-muted-foreground hover:text-destructive bg-muted rounded-lg transition-colors">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                                            <td className="px-3 py-3 text-right">
+                        {(prod as any)._pendiente ? (
+                          <span className="text-[10px] text-amber-400 font-medium whitespace-nowrap" title="Guardado local, esperando sincronizar">⏳ Pendiente</span>
+                        ) : (
+                          <div className="flex justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => openEdit(prod)} className="p-1.5 text-muted-foreground hover:text-primary bg-muted rounded-lg transition-colors">
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => handleDelete(prod.id)} className="p-1.5 text-muted-foreground hover:text-destructive bg-muted rounded-lg transition-colors">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))
