@@ -7,7 +7,6 @@ import {
   Truck, 
   Receipt,
   BookOpen,
-  LogOut,
   HandCoins,
   TrendingUp,
   Calculator,
@@ -16,6 +15,7 @@ import {
   Wrench
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { RelojColombia } from "./RelojColombia";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -38,19 +38,19 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   return (
     <div className="flex flex-col w-64 h-screen bg-card border-r border-border"
       style={{ minHeight: "100dvh" }}>
-      <div className="p-6">
+      <div className="pt-6 px-6 pb-3">
         <div>
           <h1 className="text-2xl font-display font-bold text-primary flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-lg">
               I
             </div>
-            Investi<span className="text-foreground">llo</span>
+            Investillo
           </h1>
           <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight pl-10">Gestión con estilo y sencillo</p>
         </div>
       </div>
       
-      <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-2 px-4">
+      <div className="flex-1 overflow-y-auto pt-2 pb-4 flex flex-col gap-2 px-4">
         {NAV_ITEMS.map((item) => {
           const isActive = location === item.href;
           const Icon = item.icon;
@@ -77,13 +77,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           );
         })}
       </div>
-      
-      <div className="p-4 border-t border-border">
-        <button className="flex items-center gap-3 px-4 py-3 w-full rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors">
-          <LogOut className="w-5 h-5" />
-          <span>Cerrar Sesión</span>
-        </button>
-      </div>
+      <RelojColombia />
     </div>
   );
 }

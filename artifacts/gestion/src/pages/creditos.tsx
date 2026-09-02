@@ -19,6 +19,7 @@ import { ManoObraSelector, calcularDistribucion } from "@/components/ManoObraSel
 import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { esFalloDeRed } from "@/lib/offline-db";
+import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
@@ -53,7 +54,7 @@ interface LineaInput {
 }
 
 const emptyForm = {
-  fechaFactura: new Date().toISOString().split("T")[0],
+  fechaFactura: fechaHoyColombia(),
   concepto: "",
   placaVehiculo: "",
   nombreCliente: "",

@@ -7,6 +7,7 @@ import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { CalculadoraCierre } from "@/components/CalculadoraCierre";
 import { Calculator as CalcIcon } from "lucide-react";
+import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
 
 // ---------- types ----------
 interface ConceptoEntrada {
@@ -332,7 +333,7 @@ export default function CierreDiario() {
   const [gruposDefault, setGruposDefault] = useState<GrupoDefault[]>([]);
   const [gruposDia, setGruposDia] = useState<GrupoTrabajoDia[]>([]);
 
-  const fechaHoy = new Date().toLocaleDateString("sv-SE");
+  const fechaHoy = fechaHoyColombia();
   const hoyLabel = new Date().toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const hoyStr = hoyLabel.charAt(0).toUpperCase() + hoyLabel.slice(1);
 

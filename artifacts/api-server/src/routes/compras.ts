@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { comprasTable, historialPreciosTable, productosTable } from "@workspace/db/schema";
 import { eq,sql,and, gte } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
+import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
 
 const router: IRouter = Router();
 
@@ -78,10 +79,11 @@ interface LlegadaInput {
   proveedor?: string;
   actualizarPrecioInventario?: boolean;
   estado?: string;
+  fechaLlegada?: string;
 }
 
 async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
-  const { estado, cantidadRecibida, nuevoPrecioCompra, nuevoPrecioVentaSinIva, tieneIva, proveedor, actualizarPrecioInventario } = datos;
+  const { estado, cantidadRecibida, nuevoPrecioCompra, nuevoPrecioVentaSinIva, tieneIva, proveedor, actualizarPrecioInventario, fechaLlegada } = datos;
 
   const [existing] = await db.select().from(comprasTable).where(eq(comprasTable.id, id));
   if (!existing) throw new Error(`Compra ${id} no encontrada`);
@@ -123,7 +125,7 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
 
       await db.update(productosTable).set(updateProd).where(eq(productosTable.id, existing.productoId));
 
-      const hoy = new Date().toISOString().split("T")[0];
+      const hoy = fechaHoyColombia();
       await db.insert(historialPreciosTable).values({
         productoId: existing.productoId,
         productoNombre: existing.productoNombre,
@@ -141,7 +143,7 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
 
   const updateData: Partial<typeof comprasTable.$inferInsert> = { estado, actualizadoEn: new Date() };
   if (cantidadRecibida) updateData.cantidadRecibida = String(parseFloat(String(cantidadRecibida)));
-  if (estado === "llegado") updateData.fechaLlegada = new Date().toISOString().split("T")[0];
+  if (estado === "llegado") updateData.fechaLlegada = fechaLlegada || fechaHoyColombia();
   if (proveedor !== undefined) updateData.proveedor = proveedor || null;
   if (precioCompraFinal !== null) updateData.precioCompraRegistrado = String(precioCompraFinal);
   if (precioVentaFinal !== null) updateData.precioVentaRegistrado = String(precioVentaFinal);
@@ -170,16 +172,13 @@ router.put("/:id", async (req, res) => {
 });
 
 router.post("/lote-llegada", async (req, res) => {
-  const { proveedor, items } = req.body as {
-    proveedor: string;
-    items: { id: number; cantidadRecibida: string | number; nuevoPrecioCompra?: string | number; nuevoPrecioVentaSinIva?: string | number; tieneIva?: boolean; actualizarPrecioInventario?: boolean }[];
-  };
+  const { proveedor, fechaLlegada, items } = req.body as { proveedor: string; fechaLlegada?: string; items: Array<{ id: number; cantidadRecibida: number; nuevoPrecioCompra: number; nuevoPrecioVentaSinIva: number; tieneIva: boolean; actualizarPrecioInventario: boolean }> };
 
   if (!Array.isArray(items) || items.length === 0) {
     res.status(400).json({ error: "Selecciona al menos un producto" });
     return;
   }
-
+  
   const resultados = [];
   for (const item of items) {
     const { compra, preciosModificados } = await procesarLlegadaCompra(item.id, {
@@ -189,6 +188,7 @@ router.post("/lote-llegada", async (req, res) => {
       nuevoPrecioVentaSinIva: item.nuevoPrecioVentaSinIva,
       tieneIva: item.tieneIva,
       proveedor,
+      fechaLlegada,
       actualizarPrecioInventario: item.actualizarPrecioInventario,
     });
     resultados.push({ ...mapCompra(compra), preciosModificados });
@@ -257,7 +257,7 @@ router.patch("/:id/corregir", async (req, res) => {
 router.get("/resumen-mensual", async (_req, res) => {
   const seisAtras = new Date();
   seisAtras.setMonth(seisAtras.getMonth() - 6);
-  const fechaLimite = seisAtras.toISOString().split("T")[0];
+  const fechaLimite = fechaColombia(seisAtras);
 
   const llegadas = await db
     .select()

@@ -7,8 +7,8 @@ import {
   useEliminarCompra,
   useGetInventario,
 } from "@workspace/api-client-react";
-import { formatCurrency } from "@/lib/utils";
-import { PackageCheck, Truck, Plus, X, Printer } from "lucide-react";
+import { fechaHoyColombia, formatCurrency } from "@/lib/utils";
+import { PackageCheck, Truck, Plus, X, Printer, ChevronDown, ChevronUp } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
@@ -21,6 +21,7 @@ interface LlegadaForm {
   nuevoPrecioVentaSinIva: string;
   tieneIva: boolean;
   proveedor: string;
+  fechaLlegada: string;
 }
 
 interface PrecioConfirmModal {
@@ -33,6 +34,26 @@ interface PrecioConfirmModal {
 }
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
+
+function agruparPorAnioMes(llegadas: any[]) {
+  const porAnio = new Map<string, Map<string, any[]>>();
+  for (const c of llegadas) {
+    if (!c.fechaLlegada) continue;
+    const [anio, mes] = c.fechaLlegada.split("-");
+    if (!porAnio.has(anio)) porAnio.set(anio, new Map());
+    const meses = porAnio.get(anio)!;
+    if (!meses.has(mes)) meses.set(mes, []);
+    meses.get(mes)!.push(c);
+  }
+  return [...porAnio.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([anio, meses]) => ({
+      anio,
+      meses: [...meses.entries()].sort((a, b) => b[0].localeCompare(a[0])),
+    }));
+}
+
+const NOMBRES_MES = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
 function ProductoAutocomplete({
   productos,
@@ -47,6 +68,7 @@ function ProductoAutocomplete({
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<any | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [loteFecha, setLoteFecha] = useState(fechaHoyColombia());
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -173,6 +195,7 @@ export default function Compras() {
     nuevoPrecioVentaSinIva: "",
     tieneIva: false,
     proveedor: "",
+    fechaLlegada: fechaHoyColombia(),
   });
 
   const [showAddForm, setShowAddForm] = useState(false);
@@ -181,6 +204,7 @@ export default function Compras() {
   const [seleccionadas, setSeleccionadas] = useState<number[]>([]);
   const [loteOpen, setLoteOpen] = useState(false);
   const [loteProveedor, setLoteProveedor] = useState("");
+  const [loteFecha, setLoteFecha] = useState(fechaHoyColombia());
   const [loteDatos, setLoteDatos] = useState<Record<number, { cantidadRecibida: string; nuevoPrecioCompra: string; nuevoPrecioVentaSinIva: string }>>({});
   const [procesandoLote, setProcesandoLote] = useState(false);
   const [editandoLlegadaId, setEditandoLlegadaId] = useState<number | null>(null);
@@ -196,11 +220,13 @@ export default function Compras() {
       nuevoPrecioVentaSinIva: prod ? String(prod.precioVentaSinIva) : "",
       tieneIva: prod ? prod.tieneIva : false,
       proveedor: "",
+      fechaLlegada: fechaHoyColombia(),
     });
   };
 
   const ejecutarLlegada = (compra: any, form: LlegadaForm, actualizarPrecioInventario: boolean) => {
     const payloadLlegada = {
+      fechaLlegada: form.fechaLlegada,
       estado: "llegado" as const,
       cantidadRecibida: parseFloat(form.cantidad),
       nuevoPrecioCompra: form.nuevoPrecioCompra ? parseFloat(form.nuevoPrecioCompra) : undefined,
@@ -308,6 +334,8 @@ export default function Compras() {
 
   const pendientes = compras?.filter((c) => c.estado === "pendiente") || [];
   const llegados = compras?.filter((c) => c.estado === "llegado") || [];
+  const [aniosAbiertos, setAniosAbiertos] = useState<Set<string>>(new Set());
+  const [mesesAbiertos, setMesesAbiertos] = useState<Set<string>>(new Set());
 
   return (
     <Layout>
@@ -323,7 +351,10 @@ export default function Compras() {
                 <input value={loteProveedor} onChange={(e) => setLoteProveedor(e.target.value)}
                   className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
               </div>
-
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Fecha de llegada (aplica a todos)</label>
+                <input type="date" value={loteFecha} onChange={(e) => setLoteFecha(e.target.value)} className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+              </div>
               <div className="space-y-3">
                 {seleccionadas.map((id) => {
                   const compra = pendientes.find((c: any) => c.id === id);
@@ -358,6 +389,7 @@ export default function Compras() {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                           proveedor: loteProveedor,
+                          fechaLlegada: loteFecha,
                           items: seleccionadas.map((id) => ({ id, ...loteDatos[id] })),
                         }),
                       });
@@ -640,7 +672,11 @@ export default function Compras() {
                             <div className="sm:col-span-2">
                               <label className="block text-xs text-muted-foreground mb-1">Proveedor</label>
                               <input type="text" placeholder="Nombre del proveedor..." value={llegadaForm.proveedor} onChange={(e) => setLlegadaForm({ ...llegadaForm, proveedor: e.target.value })} className="w-full bg-card border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
-                            </div>
+                              <div>
+                                <label className="block text-xs font-medium text-muted-foreground mb-1">Fecha de llegada</label>
+                                <input type="date" value={llegadaForm.fechaLlegada} onChange={(e) => setLlegadaForm({ ...llegadaForm, fechaLlegada: e.target.value })} className="w-full bg-card border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                              </div>
+                            </div> 
                           </div>
                           <div className="flex gap-3 mt-4 justify-end">
                             <button onClick={() => setLlegadaOpen(null)} className="px-4 py-2 bg-muted text-foreground rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors">Cancelar</button>
@@ -662,79 +698,115 @@ export default function Compras() {
                   <span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
                   Historial de Llegadas ({llegados.length})
                 </h3>
-                <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-lg">
-                  <div className="print-only print-date-header">
-                    <strong>Historial de Llegadas — Compras</strong>
-                    <span style={{ float: "right" }}>{new Date().toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })}</span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                      <thead>
-                        <tr className="bg-muted text-muted-foreground border-b border-border">
-                          <th className="px-4 py-3 font-medium whitespace-nowrap">Fecha Llegada</th>
-                          <th className="px-4 py-3 font-medium whitespace-nowrap">Producto</th>
-                          <th className="px-4 py-3 font-medium whitespace-nowrap hidden sm:table-cell">Marca</th>
-                          <th className="px-4 py-3 font-medium whitespace-nowrap">Cant.</th>
-                          <th className="px-4 py-3 font-medium whitespace-nowrap hidden md:table-cell">P. Compra</th>
-                          <th className="px-4 py-3 font-medium whitespace-nowrap hidden md:table-cell">P. Venta</th>
-                          <th className="px-4 py-3 font-medium whitespace-nowrap">Total Compra</th>
-                          <th className="px-4 py-3 font-medium whitespace-nowrap hidden lg:table-cell">Proveedor</th>
-                          <th className="px-4 py-3 font-medium no-print"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {llegados.map((compra) => {
-                          const cantRec = compra.cantidadRecibida ?? 0;
-                          const precioC = compra.precioCompraRegistrado ?? 0;
-                          const precioV = compra.precioVentaRegistrado ?? 0;
-                          const totalCompra = cantRec * precioC;
-                          return (
-                            <tr key={compra.id} className="hover:bg-muted/30 transition-colors">
-                              <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-xs">
-                                {compra.fechaLlegada ? new Date(compra.fechaLlegada + "T12:00:00").toLocaleDateString("es-CO") : "—"}
-                              </td>
-                              <td className="px-4 py-3 font-medium text-foreground">{compra.productoNombre}</td>
-                              <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">{compra.productoMarca || "—"}</td>
-                              <td className="px-4 py-3 font-medium">{cantRec > 0 ? cantRec : "—"}</td>
-                              <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{precioC > 0 ? formatCurrency(precioC) : "—"}</td>
-                              <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{precioV > 0 ? formatCurrency(precioV) : "—"}</td>
-                              <td className="px-4 py-3 font-bold text-primary">{totalCompra > 0 ? formatCurrency(totalCompra) : "—"}</td>
-                              <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{compra.proveedor || <span className="italic text-xs">Sin registrar</span>}</td>
-                              <td className="px-4 py-3 no-print">
-                                <div className="flex gap-1 justify-end">
-                                  <button
-                                    onClick={() => { setEditandoLlegadaId(compra.id); setEditCantidad(String(cantRec)); setEditPrecioCompra(String(precioC)); }}
-                                    className="p-1 text-muted-foreground hover:text-primary rounded transition-colors"
-                                  >
-                                    <Pencil className="w-4 h-4" />
-                                  </button>
-                                  <button onClick={() => handleEliminar(compra.id)} className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors">
-                                    <X className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot className="bg-muted/50 border-t border-border">
-                        <tr>
-                          <td colSpan={6} className="px-4 py-3 text-right text-xs text-muted-foreground font-medium uppercase tracking-wider hidden md:table-cell">Total invertido en compras</td>
-                          <td colSpan={3} className="px-4 py-3 text-right text-xs text-muted-foreground font-medium uppercase tracking-wider md:hidden">Total invertido</td>
-                          <td className="px-4 py-3 font-bold text-primary">
-                            {formatCurrency(llegados.reduce((sum, c) => sum + (c.cantidadRecibida ?? 0) * (c.precioCompraRegistrado ?? 0), 0))}
-                          </td>
-                          <td colSpan={2}></td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
+                <div className="print-only print-date-header">
+                  <strong>Historial de Llegadas — Compras</strong>
+                  <span style={{ float: "right" }}>{new Date().toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })}</span>
                 </div>
+
+                {agruparPorAnioMes(llegados).map(({ anio, meses }) => {
+                  const totalAnio = meses.reduce((s, [, items]) => s + items.reduce((s2, c) => s2 + (c.cantidadRecibida ?? 0) * (c.precioCompraRegistrado ?? 0), 0), 0);
+                  const anioAbierto = aniosAbiertos.has(anio);
+
+                  return (
+                    <div key={anio} className="mb-3">
+                      <button
+                        onClick={() => setAniosAbiertos((prev) => { const s = new Set(prev); s.has(anio) ? s.delete(anio) : s.add(anio); return s; })}
+                        className="no-print w-full flex items-center justify-between bg-muted px-4 py-2.5 rounded-xl border border-border"
+                      >
+                        <span className="font-bold text-foreground flex items-center gap-2">
+                          {anioAbierto ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />} {anio}
+                        </span>
+                        <span className="text-sm font-bold text-primary">Total invertido en el año: {formatCurrency(totalAnio)}</span>
+                      </button>
+
+                      {(anioAbierto || true) && (
+                        <div className="pl-3 mt-2 space-y-2 print:block">
+                          {meses.map(([mes, items]) => {
+                            const claveMes = `${anio}-${mes}`;
+                            const mesAbierto = mesesAbiertos.has(claveMes);
+                            const totalMes = items.reduce((s, c) => s + (c.cantidadRecibida ?? 0) * (c.precioCompraRegistrado ?? 0), 0);
+
+                            return (
+                              <div key={claveMes} className={!anioAbierto ? "hidden print:block" : ""}>
+                                <button
+                                  onClick={() => setMesesAbiertos((prev) => { const s = new Set(prev); s.has(claveMes) ? s.delete(claveMes) : s.add(claveMes); return s; })}
+                                  className="no-print w-full flex items-center justify-between bg-background px-4 py-2 rounded-lg border border-border"
+                                >
+                                  <span className="font-medium text-foreground text-sm flex items-center gap-2">
+                                    {mesAbierto ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />} {NOMBRES_MES[parseInt(mes)]}
+                                  </span>
+                                  <span className="text-sm font-bold text-foreground">{formatCurrency(totalMes)}</span>
+                                </button>
+
+                                <div className={`print-only print-date-header ${mesAbierto ? "hidden" : ""}`}>
+                                  <strong>{NOMBRES_MES[parseInt(mes)]} {anio}</strong>
+                                </div>
+
+                                <div className={`overflow-x-auto mt-2 bg-card border border-border rounded-2xl ${!mesAbierto ? "hidden print:block" : ""}`}>
+                                  <table className="w-full text-sm text-left">
+                                    <thead>
+                                      <tr className="bg-muted text-muted-foreground border-b border-border">
+                                        <th className="px-4 py-3 font-medium whitespace-nowrap">Fecha Llegada</th>
+                                        <th className="px-4 py-3 font-medium whitespace-nowrap">Producto</th>
+                                        <th className="px-4 py-3 font-medium whitespace-nowrap hidden sm:table-cell print:table-cell">Marca</th>
+                                        <th className="px-4 py-3 font-medium whitespace-nowrap">Cant.</th>
+                                        <th className="px-4 py-3 font-medium whitespace-nowrap hidden md:table-cell print:table-cell">P. Compra</th>
+                                        <th className="px-4 py-3 font-medium whitespace-nowrap hidden md:table-cell print:table-cell">P. Venta</th>
+                                        <th className="px-4 py-3 font-medium whitespace-nowrap">Total Compra</th>
+                                        <th className="px-4 py-3 font-medium whitespace-nowrap hidden lg:table-cell print:table-cell">Proveedor</th>
+                                        <th className="px-4 py-3 font-medium no-print"></th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                      {items.map((compra) => {
+                                        const cantRec = compra.cantidadRecibida ?? 0;
+                                        const precioC = compra.precioCompraRegistrado ?? 0;
+                                        const precioV = compra.precioVentaRegistrado ?? 0;
+                                        const totalCompra = cantRec * precioC;
+                                        return (
+                                          <tr key={compra.id} className="hover:bg-muted/30 transition-colors">
+                                            <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-xs">
+                                              {compra.fechaLlegada ? new Date(compra.fechaLlegada + "T12:00:00").toLocaleDateString("es-CO") : "—"}
+                                            </td>
+                                            <td className="px-4 py-3 font-medium text-foreground">{compra.productoNombre}</td>
+                                            <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell print:table-cell">{compra.productoMarca || "—"}</td>
+                                            <td className="px-4 py-3 font-medium">{cantRec > 0 ? cantRec : "—"}</td>
+                                            <td className="px-4 py-3 text-muted-foreground hidden md:table-cell print:table-cell">{precioC > 0 ? formatCurrency(precioC) : "—"}</td>
+                                            <td className="px-4 py-3 text-muted-foreground hidden md:table-cell print:table-cell">{precioV > 0 ? formatCurrency(precioV) : "—"}</td>
+                                            <td className="px-4 py-3 font-bold text-primary">{totalCompra > 0 ? formatCurrency(totalCompra) : "—"}</td>
+                                            <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell print:table-cell">{compra.proveedor || "—"}</td>
+                                            <td className="px-4 py-3 no-print">
+                                              <div className="flex gap-1 justify-end">
+                                                <button
+                                                  onClick={() => { setEditandoLlegadaId(compra.id); setEditCantidad(String(cantRec)); setEditPrecioCompra(String(precioC)); }}
+                                                  className="p-1 text-muted-foreground hover:text-primary rounded transition-colors"
+                                                >
+                                                  <Pencil className="w-4 h-4" />
+                                                </button>
+                                                <button onClick={() => handleEliminar(compra.id)} className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors">
+                                                  <X className="w-4 h-4" />
+                                                </button>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
-          </div>
-        )}
-      </div>
-    </Layout>
-  );
+            </div>
+          )}
+        </div>
+      </Layout>
+    );
 }

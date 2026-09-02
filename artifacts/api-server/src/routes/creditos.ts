@@ -12,6 +12,7 @@ import {
 } from "@workspace/db/schema";
 import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
+import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
 
 const router: IRouter = Router();
 
@@ -529,7 +530,7 @@ router.post("/:id/abono", async (req, res) => {
     return;
   }
 
-  const hoy = new Date().toISOString().split("T")[0];
+  const hoy = fechaHoyColombia();
   const updated = await db.transaction(async (tx) => {
     // Aplicar el abono a las líneas del crédito
     for (const { linea, valor: av } of applied) {

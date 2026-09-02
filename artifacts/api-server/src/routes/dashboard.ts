@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { ventasDiariasTable, creditosTable, productosTable, comprasTable } from "@workspace/db/schema";
 import { eq, lte, sql, and } from "drizzle-orm";
-
+import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
 const router: IRouter = Router();
 
 function toNum(v: unknown): number {
@@ -10,10 +10,10 @@ function toNum(v: unknown): number {
 }
 
 router.get("/", async (req, res) => {
-  const today = new Date().toISOString().split("T")[0];
+  const hoy = fechaHoyColombia();
 
   const [ventasHoy, creditosRows, noDebeRows, productosAlerta, productosAgotados, comprasLlegadas] = await Promise.all([
-    db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.fecha, today)),
+    db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.fecha, hoy)),
     db.select().from(creditosTable).where(eq(creditosTable.tipo, "credito")),
     db.select().from(creditosTable).where(eq(creditosTable.tipo, "nosdebe")),
     db.select().from(productosTable).where(lte(productosTable.stockActual, sql`${productosTable.stockMinimo} + 1`)),

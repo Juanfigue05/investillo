@@ -5,6 +5,17 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function fechaColombia(fecha: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(fecha);
+}
+
+export function fechaHoyColombia(): string {
+  return fechaColombia(new Date());
+}
+
 export function formatCurrency(value: number | undefined | null) {
   if (value === undefined || value === null) return "$0";
   const negativo = value < 0;

@@ -23,13 +23,14 @@ import {
 } from "recharts";
 import { format, subDays, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
+import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
 
 function buildRange(days: number) {
   const hasta = new Date();
   const desde = subDays(hasta, days - 1);
   return {
-    desde: desde.toISOString().split("T")[0],
-    hasta: hasta.toISOString().split("T")[0],
+    desde: fechaColombia(desde),
+    hasta: fechaColombia(hasta),
   };
 }
 
@@ -38,8 +39,8 @@ function buildMonthRange() {
   const desde = startOfMonth(subMonths(hoy, 1));
   const hasta = endOfMonth(subMonths(hoy, 1));
   return {
-    desde: desde.toISOString().split("T")[0],
-    hasta: hasta.toISOString().split("T")[0],
+    desde: fechaColombia(desde),
+    hasta: fechaColombia(hasta),
   };
 }
 

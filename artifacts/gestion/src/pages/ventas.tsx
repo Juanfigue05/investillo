@@ -18,6 +18,7 @@ import { ManoObraSelector, calcularDistribucion } from "@/components/ManoObraSel
 import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { esFalloDeRed } from "@/lib/offline-db";
+import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
 
 const SPECIAL_MANOOBRA = "__manoobra__";
 const SPECIAL_ABONO = "__abono__";
@@ -175,7 +176,7 @@ function SearchableSelect({
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
 export default function VentasDiarias() {
-  const [fecha, setFecha] = useState(new Date().toISOString().split("T")[0]);
+  const [fecha, setFecha] = useState(fechaHoyColombia());
   const { data: ventas, isLoading } = useGetVentas({ fecha });
   const { data: productos } = useGetInventario();
   const { data: trabajadores } = useGetTrabajadores();
