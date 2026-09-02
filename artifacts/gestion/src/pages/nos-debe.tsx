@@ -66,6 +66,7 @@ export default function NosDebePage() {
   const { data: clientes } = useGetClientes({});
   const queryClient = useQueryClient();
 
+  const [confirmarCancelarPago, setConfirmarCancelarPago] = useState<{ creditoId: number; abonoId: number; monto: number; fecha: string } | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
@@ -385,8 +386,10 @@ export default function NosDebePage() {
     }
   };
 
-  const handleEliminarAbono = (creditoId: number, abonoId: number) => {
-    if (!confirm("¿Eliminar este pago? Se revertirá en Ventas Diarias.")) return;
+  const confirmarYEliminarAbono = () => {
+  if (!confirmarCancelarPago) return;
+  const { creditoId, abonoId } = confirmarCancelarPago;
+  setConfirmarCancelarPago(null);
     eliminarAbonoMutation.mutate({ id: creditoId, abonoId }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
@@ -726,7 +729,7 @@ export default function NosDebePage() {
                                     </button>
                                     <button
                                       title="Eliminar pago"
-                                      onClick={() => handleEliminarAbono(c.id, a.id)}
+                                      onClick={() => setConfirmarCancelarPago({ creditoId: c.id, abonoId: a.id, monto: a.valorTotal, fecha: a.fecha })}
                                       disabled={eliminarAbonoMutation.isPending}
                                       className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors">
                                       <Trash2 className="w-3 h-3" />
@@ -799,6 +802,22 @@ export default function NosDebePage() {
           </div>
         )}
 
+        {confirmarCancelarPago && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4" onClick={() => setConfirmarCancelarPago(null)}>
+            <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-bold text-foreground">Cancelar este pago</h3>
+              <p className="text-sm text-muted-foreground">
+                Vas a cancelar el pago de <strong className="text-foreground">{formatCurrency(confirmarCancelarPago.monto)}</strong> registrado el {confirmarCancelarPago.fecha}.
+                La línea correspondiente <strong className="text-foreground">volverá a aparecer como pendiente de pago</strong>, y esta venta se eliminará de Ventas Diarias.
+              </p>
+              <div className="flex gap-2">
+                <button onClick={confirmarYEliminarAbono} className="flex-1 px-4 py-2 bg-destructive text-destructive-foreground rounded-xl font-medium text-sm">Sí, cancelar pago</button>
+                <button onClick={() => setConfirmarCancelarPago(null)} className="px-4 py-2 bg-muted text-foreground rounded-xl font-medium border border-border text-sm">No, mantener</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Pagados */}
         {pagados.length > 0 && (
           <div>
@@ -841,7 +860,7 @@ export default function NosDebePage() {
                                 </button>
                                 <button
                                   title="Eliminar pago"
-                                  onClick={() => handleEliminarAbono(c.id, a.id)}
+                                  onClick={() => setConfirmarCancelarPago({ creditoId: c.id, abonoId: a.id, monto: a.valorTotal, fecha: a.fecha })}
                                   disabled={eliminarAbonoMutation.isPending}
                                   className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors">
                                   <Trash2 className="w-3 h-3" />

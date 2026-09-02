@@ -10,7 +10,7 @@ import {
   trabajadoresTable,
   ventasDiariasTable,
 } from "@workspace/db/schema";
-import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
 import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
 
@@ -43,12 +43,9 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  */
 async function ajustarStock(tx: Tx, productoId: number, delta: number) {
   if (delta === 0) return;
-  const [prod] = await tx.select().from(productosTable).where(eq(productosTable.id, productoId));
-  if (!prod) return;
-  const nuevoStock = toNum(prod.stockActual) - delta;
   await tx
     .update(productosTable)
-    .set({ stockActual: String(nuevoStock), actualizadoEn: new Date() })
+    .set({ stockActual: sql`GREATEST(0, ${productosTable.stockActual} - ${delta})`, actualizadoEn: new Date() })
     .where(eq(productosTable.id, productoId));
 }
 
@@ -628,9 +625,26 @@ router.delete("/:id/abono/:abonoId", async (req, res) => {
 
   if (!abono) { res.status(404).json({ error: "Abono no encontrado" }); return; }
 
-  const [credito] = await db.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
-  if (!credito) { res.json({ ok: true }); return; }
-  res.json(await mapCredito(credito));
+  try {
+    const credito = await db.transaction(async (tx) => {
+      // 1. Revertir el valorAbonado de las líneas y del crédito — vuelven a quedar "sin pagar"
+      await revertirAbono(tx, abono);
+
+      // 2. Borrar la(s) fila(s) que este abono había creado automáticamente en Ventas Diarias
+      await tx.delete(ventasDiariasTable).where(eq(ventasDiariasTable.creditoAbonoId, abonoId));
+
+      // 3. Borrar el registro del abono en sí
+      await tx.delete(abonosCreditosTable).where(eq(abonosCreditosTable.id, abonoId));
+
+      const [creditoActualizado] = await tx.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
+      return creditoActualizado;
+    });
+
+    if (!credito) { res.json({ ok: true }); return; }
+    res.json(await mapCredito(credito));
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // PUT /creditos/:id/abono/:abonoId — edita un pago (revierte el anterior y aplica el nuevo)
@@ -742,6 +756,11 @@ router.delete("/:id", async (req, res) => {
       if (linea.productoId) {
         await ajustarStock(tx, linea.productoId, -toNum(linea.cantidad)); // negativo = restaurar
       }
+    }
+        const abonosAEliminar = await tx.select({ id: abonosCreditosTable.id }).from(abonosCreditosTable).where(eq(abonosCreditosTable.creditoId, id));
+    const abonoIds = abonosAEliminar.map((a) => a.id);
+    if (abonoIds.length > 0) {
+      await tx.delete(ventasDiariasTable).where(inArray(ventasDiariasTable.creditoAbonoId, abonoIds));
     }
     await tx.delete(creditoLineasTable).where(eq(creditoLineasTable.creditoId, id));
     await tx.delete(abonosCreditosTable).where(eq(abonosCreditosTable.creditoId, id));

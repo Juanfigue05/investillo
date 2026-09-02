@@ -153,11 +153,15 @@ export default function HistorialPreciosPage() {
             <h3 className="text-sm font-bold text-foreground mb-4">Promedio diario de compras — últimos 6 meses</h3>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={datosGrafica} margin={{ top: 5, right: 10, left: 5, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatCurrency(v)} width={90} />
-                <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                <Bar dataKey="promedio" fill="var(--primary)" radius={[6, 6, 0, 0]} />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(217 20% 25%)" />
+                <XAxis dataKey="mes" tick={{ fontSize: 12, fill: "hsl(215 15% 65%)" }} axisLine={{ stroke: "hsl(217 20% 25%)" }} />
+                <YAxis tick={{ fontSize: 11, fill: "hsl(215 15% 65%)" }} tickFormatter={(v) => formatCurrency(v)} width={90} axisLine={{ stroke: "hsl(217 20% 25%)" }} />
+                <Tooltip
+                  formatter={(v: number) => formatCurrency(v)}
+                  contentStyle={{ background: "hsl(222 25% 12%)", border: "1px solid hsl(217 20% 25%)", borderRadius: 8, color: "#fff" }}
+                  cursor={{ fill: "hsl(217 91% 60% / 0.1)" }}
+                />
+                <Bar dataKey="promedio" fill="hsl(217 91% 60%)" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

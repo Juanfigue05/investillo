@@ -29,6 +29,8 @@ export function CalculadoraCierre({ open, onClose }: { open: boolean; onClose: (
 
   const [monedas, setMonedas] = useState<Record<number, string>>({});
   const [billetes, setBilletes] = useState<Record<number, string>>({});
+  const [bolsa, setBolsa] = useState("");
+  const [caja, setCaja] = useState("");
 
   // ── Remachadas: solo consulta (la administración vive en Inventario) ──
   const [remachadas, setRemachadas] = useState<RemachadaRow[]>([]);
@@ -44,6 +46,24 @@ export function CalculadoraCierre({ open, onClose }: { open: boolean; onClose: (
       setCargandoRemachadas(false);
     }
   };
+
+  useEffect(() => {
+    if (!open) return;
+    fetch(`${API}/conteo-monedas`).then((r) => r.json()).then((d) => {
+      setBolsa(String(d.bolsa || 0));
+      setCaja(String(d.caja || 0));
+    });
+  }, [open]);
+
+  const guardarConteoMonedas = async (nuevaBolsa: string, nuevaCaja: string) => {
+    await fetch(`${API}/conteo-monedas`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bolsa: parseFloat(nuevaBolsa) || 0, caja: parseFloat(nuevaCaja) || 0 }),
+    });
+  };
+
+  const totalBolsaCaja = (parseFloat(bolsa) || 0) + (parseFloat(caja) || 0);
 
   useEffect(() => { if (open && remachadas.length === 0) cargarRemachadas(); }, [open]);
 
@@ -67,7 +87,11 @@ export function CalculadoraCierre({ open, onClose }: { open: boolean; onClose: (
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4" onClick={onClose}>
+    <div
+      className="bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }}
+      onClick={onClose}
+    >
       <div
         className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-[1600px] max-h-[94vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
@@ -214,46 +238,77 @@ export function CalculadoraCierre({ open, onClose }: { open: boolean; onClose: (
             );
           })()}
 
-          {/* ── Remachadas — solo consulta ── */}
-          <div>
-            <h3 className="text-sm font-bold text-foreground mb-2">Consulta — Remachadas</h3>
-            <div className="max-w-sm">
-              <input
-                placeholder="Escribe el número de banda..."
-                value={bandaBuscada}
-                onChange={(e) => setBandaBuscada(e.target.value)}
-                className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
-              />
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] gap-6">
+            {/* ── Remachadas ── */}
+            <div>
+              <h3 className="text-sm font-bold text-foreground mb-2">Consulta — Remachadas</h3>
+              <div className="max-w-sm">
+                <input
+                  placeholder="Escribe el número de banda..."
+                  value={bandaBuscada}
+                  onChange={(e) => setBandaBuscada(e.target.value)}
+                  className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
+                />
+              </div>
+
+              {cargandoRemachadas && <p className="text-sm text-muted-foreground mt-3">Cargando bandas...</p>}
+
+              {!cargandoRemachadas && bandaBuscada.trim() && (
+                resultadoBanda ? (
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-border max-w-2xl">
+                    <table className="w-full text-sm border-collapse">
+                      <thead>
+                        <tr className="bg-muted text-muted-foreground">
+                          <th className="px-3 py-2 text-left">Banda</th>
+                          <th className="px-3 py-2 text-right">Juego (1)</th>
+                          <th className="px-3 py-2 text-right">Medio juego (0.5)</th>
+                          <th className="px-3 py-2 text-right">Una banda (0.25)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="px-3 py-2 font-medium">{resultadoBanda.numeroBanda}</td>
+                          <td className="px-3 py-2 text-right font-bold text-primary">{formatCurrency(resultadoBanda.valorJuego)}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(aproximarMiles(resultadoBanda.valorJuego * 0.5))}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(aproximarMiles(resultadoBanda.valorJuego * 0.25))}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground mt-3">No se encontró esa banda. Agrégala desde Inventario → pestaña Remachadas.</p>
+                )
+              )}
             </div>
 
-            {cargandoRemachadas && <p className="text-sm text-muted-foreground mt-3">Cargando bandas...</p>}
-
-            {!cargandoRemachadas && bandaBuscada.trim() && (
-              resultadoBanda ? (
-                <div className="mt-3 overflow-x-auto rounded-xl border border-border max-w-2xl">
-                  <table className="w-full text-sm border-collapse">
-                    <thead>
-                      <tr className="bg-muted text-muted-foreground">
-                        <th className="px-3 py-2 text-left">Banda</th>
-                        <th className="px-3 py-2 text-right">Juego (1)</th>
-                        <th className="px-3 py-2 text-right">Medio juego (0.5)</th>
-                        <th className="px-3 py-2 text-right">Una banda (0.25)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="px-3 py-2 font-medium">{resultadoBanda.numeroBanda}</td>
-                        <td className="px-3 py-2 text-right font-bold text-primary">{formatCurrency(resultadoBanda.valorJuego)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(aproximarMiles(resultadoBanda.valorJuego * 0.5))}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(aproximarMiles(resultadoBanda.valorJuego * 0.25))}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+            {/* ── Total Monedas (Bolsa/Caja) — persistente ── */}
+            <div>
+              <h3 className="text-sm font-bold text-foreground mb-2">Total Monedas</h3>
+              <div className="rounded-xl border border-border overflow-hidden">
+                <div className="grid grid-cols-2 bg-sky-500/10 border-b border-border">
+                  <div className="px-3 py-2 text-sm font-bold text-sky-400">BOLSA</div>
+                  <input
+                    type="number" value={bolsa}
+                    onChange={(e) => setBolsa(e.target.value)}
+                    onBlur={() => guardarConteoMonedas(bolsa, caja)}
+                    className="bg-background px-3 py-2 text-right text-sm font-bold outline-none focus:ring-1 focus:ring-primary"
+                  />
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground mt-3">No se encontró esa banda. Agrégala desde Inventario → pestaña Remachadas.</p>
-              )
-            )}
+                <div className="grid grid-cols-2 bg-background border-b border-border">
+                  <div className="px-3 py-2 text-sm font-bold text-foreground">CAJA</div>
+                  <input
+                    type="number" value={caja}
+                    onChange={(e) => setCaja(e.target.value)}
+                    onBlur={() => guardarConteoMonedas(bolsa, caja)}
+                    className="bg-background px-3 py-2 text-right text-sm font-bold outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div className="grid grid-cols-2 bg-primary/20">
+                  <div className="px-3 py-2 text-sm font-bold text-primary">TOTAL</div>
+                  <div className="px-3 py-2 text-right text-sm font-bold text-primary">{formatCurrency(totalBolsaCaja)}</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -273,9 +273,8 @@ router.delete("/:id", async (req, res) => {
   if (venta && (venta.tipoLinea === "venta" || !venta.tipoLinea) && venta.productoId && !venta.creditoAbonoId) {
     const [prod] = await db.select().from(productosTable).where(eq(productosTable.id, venta.productoId));
     if (prod) {
-      const nuevoStock = toNum(prod.stockActual) + toNum(venta.cantidad);
-      await db.update(productosTable)
-        .set({ stockActual: String(nuevoStock), actualizadoEn: new Date() })
+        await db.update(productosTable)
+        .set({ stockActual: sql`${productosTable.stockActual} + ${toNum(venta.cantidad)}`, actualizadoEn: new Date() })
         .where(eq(productosTable.id, venta.productoId));
     }
   }
