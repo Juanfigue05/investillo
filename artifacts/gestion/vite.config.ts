@@ -6,6 +6,7 @@ import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { cartographer } from "@replit/vite-plugin-cartographer";
 import { devBanner } from "@replit/vite-plugin-dev-banner";
 import type { UserConfig, ConfigEnv } from "vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig(async ({ command }: ConfigEnv): Promise<UserConfig> => {
   const isBuild = command === "build";
@@ -30,6 +31,29 @@ export default defineConfig(async ({ command }: ConfigEnv): Promise<UserConfig> 
       react(),
       tailwindcss(),
       runtimeErrorOverlay(),
+      VitePWA({
+        registerType: "autoUpdate",
+        devOptions: { enabled: true },
+        manifest: {
+          name: "Investillo",
+          short_name: "Investillo",
+          description: "Gestión con estilo y sencillo",
+          theme_color: "#03070f",
+          background_color: "#03070f",
+          display: "standalone",
+          start_url: "/",
+          icons: [
+            { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
+            { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+            { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          ],
+        },
+        workbox: {
+          globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
+          navigateFallback: "/index.html",
+          navigateFallbackDenylist: [/^\/api/],
+        },
+      }),
       ...(process.env.NODE_ENV !== "production" && process.env.REPL_ID !== undefined
         ? [
             await import("@replit/vite-plugin-cartographer").then((m) => m.cartographer({ root: path.resolve(import.meta.dirname, "..") })),

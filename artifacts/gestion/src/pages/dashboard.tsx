@@ -24,6 +24,7 @@ import {
 import { format, subDays, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
 import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
+import { InstallAppCard } from "@/components/InstallAppCard";
 
 function buildRange(days: number) {
   const hasta = new Date();
@@ -177,6 +178,7 @@ export default function Dashboard() {
               </div>
             );
           })}
+          <InstallAppCard />
         </div>
 
         {/* Charts Section */}
