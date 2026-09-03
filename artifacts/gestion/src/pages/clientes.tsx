@@ -136,9 +136,9 @@ export default function Clientes() {
         { id: editingId, data: payload },
         {
           onSuccess: onGuardadoExitoso,
-          onError: async () => {
-            if (!esFalloDeRed(Error)) {
-              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+          onError: async (error) => {
+            if (!esFalloDeRed(error)) {
+              toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
               return;
             }
             await encolarOperacion({ tipo: "cliente", metodo: "PUT", endpoint: `/clientes/${editingId}`, payload });

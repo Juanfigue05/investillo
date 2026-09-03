@@ -342,8 +342,6 @@ jobs:
     steps:
       - name: Ping Render
         run: curl -sf https://investillo.onrender.com || echo "Render no respondió"
-      - name: Ping Railway
-        run: curl -sf https://investillo-production.up.railway.app || echo "Railway no respondió"
 ```
 (cambia las 2 direcciones por las tuyas reales)
 
