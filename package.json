@@ -10,8 +10,8 @@
     "db:push": "dotenv -e .env.api -- pnpm --filter db run push",
     "backup": "dotenv -e .env.backup -- pnpm --filter @workspace/scripts run backup",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "verificar": "dotenv -e .env.api -- tsx scripts/src/verificar-consistencia.ts",
-    "limpiar-operaciones": "dotenv -e .env.api -- tsx scripts/src/limpiar-operaciones-viejas.ts"
+    "verificar": "dotenv -e .env.api -- pnpm --filter @workspace/scripts run verificar",
+    "limpiar-operaciones-123456789": "dotenv -e .env.api -- pnpm --filter @workspace/scripts run limpiar-operaciones"
   },
   "private": true,
   "devDependencies": {

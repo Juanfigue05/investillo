@@ -479,6 +479,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.1114.0
         version: 3.1114.0
+      pg:
+        specifier: ^8.13.1
+        version: 8.20.0
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

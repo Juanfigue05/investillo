@@ -6,6 +6,8 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "backup": "tsx ./src/backup.ts",
+    "verificar": "tsx ./src/verificar-consistencia.ts",
+    "limpiar-operaciones": "tsx ./src/limpiar-operaciones-viejas.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
@@ -13,6 +15,7 @@
     "tsx": "catalog:"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1114.0"
+    "@aws-sdk/client-s3": "^3.1114.0",
+    "pg": "^8.13.1"
   }
 }

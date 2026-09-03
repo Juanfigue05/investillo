@@ -1,9 +1,13 @@
-const pg = require("pg") as any;
+// pg no incluye declaraciones de tipos en esta instalación; se mantiene el
+// import tipado de forma implícita hasta que @types/pg esté disponible.
+// @ts-expect-error El paquete pg no expone tipos para esta configuración.
+import pg from "pg";
+const { Pool } = pg;
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("Falta DATABASE_URL en el .env");
 
-const pool = new pg.Pool({ connectionString: DATABASE_URL });
+const pool = new Pool({ connectionString: DATABASE_URL });
 
 interface Problema { categoria: string; detalle: string; }
 
