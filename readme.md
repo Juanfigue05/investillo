@@ -75,6 +75,23 @@ Todo el código está escrito en **TypeScript** (una versión de JavaScript que 
 
 **La base de datos es PostgreSQL**, alojada en 3 lugares distintos por seguridad (ver sección 6).
 
+### Tareas automáticas recomendadas (Programador de Tareas de Windows)
+
+| Tarea | Frecuencia | Comando (en "Acción" → "Iniciar un programa") |
+|---|---|---|
+| Respaldo + verificación | Semanal | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run backup >> backups\log.txt 2>&1` |
+| Revisión de consistencia | Diaria | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run verificar >> logs\consistencia.txt 2>&1` |
+| Limpieza de operaciones viejas | Mensual | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run limpiar-operaciones >> logs\limpieza.txt 2>&1` |
+| Inicio automático del sistema local | Al iniciar sesión | Ver abajo — versión más confiable que un simple acceso directo |
+
+**Inicio automático más confiable (en vez de solo la carpeta de Inicio):**
+1. Abre **Programador de tareas** → **Crear tarea básica** → nombre `Iniciar Investillo`.
+2. Desencadenador: **Al iniciar sesión**.
+3. Acción → Programa: `cmd.exe` → Argumentos: `/c cd /d "C:\ruta\investillo" && pnpm run start:prod >> logs\sistema.txt 2>&1`
+4. En **Propiedades** de la tarea (después de crearla) → pestaña **General** → marca **"Ejecutar tanto si el usuario inició sesión como si no"** — así arranca incluso si nadie ha entrado a Windows todavía.
+
+Esto es más confiable que un acceso directo en la carpeta de Inicio porque **queda registrado en un log** si algo falla al arrancar, en vez de fallar en silencio.
+
 ---
 
 ## 4. 💻 Instalar el sistema desde cero

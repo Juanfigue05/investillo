@@ -20,12 +20,18 @@ import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { esFalloDeRed } from "@/lib/offline-db";
 import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
+import { SearchableSelect, type ProductoOpcion } from "@/components/SearchableSelect";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
 const TIPO = "credito";
 const MO_NOMBRE = "Mano de Obra";
 const IVA_NOMBRE = "IVA (19%)";
+
+function agregarFilaOptimista(queryClient: any, queryKey: readonly unknown[], fila: any) {
+  const idTemporal = -Date.now() - Math.random();
+  queryClient.setQueryData(queryKey, (old: any[] = []) => [...(old || []), { id: idTemporal, ...fila, _pendiente: true }]);
+}
 
 interface ManoObraState {
   activo: boolean;
@@ -122,8 +128,8 @@ export default function Creditos() {
   const updateLinea = (id: number, field: keyof LineaInput, value: string) =>
     setLineas((prev) => prev.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
 
-  const handleProductoSelect = (lineaId: number, prodNombre: string) => {
-    const prod = productos?.find((p) => p.nombre === prodNombre);
+  const handleProductoSelect = (lineaId: number, prodId: string) => {
+    const prod = productos?.find((p) => String(p.id) === prodId);
     if (prod) {
       const stock = parseFloat(String(prod.stockActual ?? 0)) || 0;
       const minimo = parseFloat(String(prod.stockMinimo ?? 0)) || 0;
@@ -328,6 +334,16 @@ export default function Creditos() {
           },
         });
       } else {
+        const lineasOptimistas = payloadLineas.map((l: any, i: number) => {
+          const total = (parseFloat(l.cantidad) || 0) * (parseFloat(l.precioVenta) || 0);
+          return { ...l, id: -Date.now() - i, total, valorRestante: total - (l.valorAbonado || 0) };
+        });
+        agregarFilaOptimista(queryClient, ["/api/creditos", { tipo: TIPO }], {
+          ...data,
+          lineas: lineasOptimistas,
+          valorRestante: data.valorCredito - data.valorAbonado,
+        });
+
         crearMutation.mutate({ data }, {
           ...options,
           onError: async (error) => {
@@ -685,14 +701,16 @@ export default function Creditos() {
                       {lineas.map((linea) => (
                         <tr key={linea.id}>
                           <td className="px-3 py-2">
-                            <input type="text" placeholder="Nombre del producto..."
-                              value={linea.productoNombre}
-                              onChange={(e) => { updateLinea(linea.id, "productoNombre", e.target.value); handleProductoSelect(linea.id, e.target.value); }}
-                              list={`prod-list-cr-${linea.id}`}
-                              className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" />
-                            <datalist id={`prod-list-cr-${linea.id}`}>
-                              {productos?.map((p) => <option key={p.id} value={p.nombre} />)}
-                            </datalist>
+                            <SearchableSelect
+                              opciones={(productos || []).map((p): ProductoOpcion => ({
+                                id: String(p.id), nombre: p.nombre, codigo: p.codigo,
+                                marca: p.marca || undefined, precioVenta: p.precioVentaSinIva,
+                                stockActual: p.stockActual, stockMinimo: p.stockMinimo,
+                              }))}
+                              value={linea.productoId ? String(linea.productoId) : ""}
+                              onChange={(id) => handleProductoSelect(linea.id, id)}
+                              placeholder="Buscar producto..."
+                            />
                             {linea.stockActual !== null && linea.stockActual !== undefined && (
                               linea.stockActual === 0
                                 ? <p className="text-red-500 dark:text-red-400 text-[10px] mt-0.5 leading-tight font-medium">⚠ Sin existencias — stock en 0</p>
@@ -842,8 +860,14 @@ export default function Creditos() {
                           <p className="text-xs text-muted-foreground">{new Date(c.fechaFactura + "T12:00:00").toLocaleDateString("es-CO")}{c.placaVehiculo ? ` · ${c.placaVehiculo}` : ""}</p>
                         </div>
                         <div className="flex gap-1.5 flex-shrink-0 ml-2">
-                          <button onClick={() => openEdit(c)} className="p-1 text-muted-foreground hover:text-primary rounded-lg"><Pencil className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => handleEliminar(c.id)} className="p-1 text-muted-foreground hover:text-destructive rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
+                          {(c as any)._pendiente ? (
+                            <span className="text-[10px] text-amber-400 font-medium whitespace-nowrap" title="Guardado local, esperando sincronizar">⏳ Pendiente</span>
+                          ) : (
+                            <>
+                              <button onClick={() => openEdit(c)} className="p-1 text-muted-foreground hover:text-primary rounded-lg"><Pencil className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => handleEliminar(c.id)} className="p-1 text-muted-foreground hover:text-destructive rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
+                            </>
+                          )}
                         </div>
                       </div>
 
@@ -1004,8 +1028,14 @@ export default function Creditos() {
                     </div>
                     <div className="flex gap-1 flex-shrink-0 items-center">
                       <span className="text-xs text-green-500 font-bold bg-green-500/10 px-2 py-0.5 rounded-full">Pagado ✓</span>
-                      <button onClick={() => openEdit(c)} className="p-1 text-muted-foreground hover:text-primary rounded"><Pencil className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => handleEliminar(c.id)} className="p-1 text-muted-foreground hover:text-destructive rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                      {(c as any)._pendiente ? (
+                        <span className="text-[10px] text-amber-400 font-medium whitespace-nowrap" title="Guardado local, esperando sincronizar">⏳ Pendiente</span>
+                      ) : (
+                        <>
+                          <button onClick={() => openEdit(c)} className="p-1 text-muted-foreground hover:text-primary rounded-lg"><Pencil className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleEliminar(c.id)} className="p-1 text-muted-foreground hover:text-destructive rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </>
+                      )}
                     </div>
                   </div>
                   {c.abonos && c.abonos.length > 0 && (

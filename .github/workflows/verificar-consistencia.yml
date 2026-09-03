@@ -1,0 +1,29 @@
+name: Verificar Consistencia
+
+on:
+  schedule:
+    - cron: "0 13 * * *"   # todos los días a las 8:00 a.m. hora Colombia (13:00 UTC)
+  workflow_dispatch: {}
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Instalar pnpm
+        run: corepack enable && corepack prepare pnpm@latest --activate
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Correr la revisión de consistencia
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm run verificar

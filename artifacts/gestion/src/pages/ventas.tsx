@@ -19,6 +19,7 @@ import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { esFalloDeRed } from "@/lib/offline-db";
 import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
+import { SearchableSelect, type ProductoOpcion } from "@/components/SearchableSelect";
 
 const SPECIAL_MANOOBRA = "__manoobra__";
 const SPECIAL_ABONO = "__abono__";
@@ -31,15 +32,6 @@ function agregarFilaOptimista(queryClient: any, fecha: string, fila: any) {
   ]);
 }
 
-interface ProductoOpcion {
-  id: string;
-  nombre: string;
-  marca?: string;
-  precioCompra?: number;
-  precioVenta?: number;
-  special?: "manoobra" | "abono";
-}
-
 interface EditValues {
   referencia: string;
   productoNombre: string;
@@ -50,136 +42,6 @@ interface EditValues {
   precioVentaTotal: string;
   beneficio: string;
   formaPago: string;
-}
-
-function SearchableSelect({
-  opciones,
-  value,
-  onChange,
-  placeholder,
-}: {
-  opciones: ProductoOpcion[];
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [busqueda, setBusqueda] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const portalRef = useRef<HTMLDivElement | null>(null);
-  const [dropdownRect, setDropdownRect] = useState<DOMRect | null>(null);
-
-  const selected = opciones.find((o) => o.id === value);
-
-  const filtered = busqueda.trim()
-    ? opciones.filter(
-        (o) =>
-          o.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-          (o.marca || "").toLowerCase().includes(busqueda.toLowerCase())
-      )
-    : opciones;
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      const target = e.target as Node;
-      if (
-        containerRef.current && !containerRef.current.contains(target) &&
-        !(portalRef.current && portalRef.current.contains(target))
-      ) {
-        setOpen(false);
-        setBusqueda("");
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: Event) => {
-      if (portalRef.current && portalRef.current.contains(e.target as Node)) return;
-      setOpen(false); setBusqueda("");
-    };
-    window.addEventListener("scroll", close, true);
-    return () => window.removeEventListener("scroll", close, true);
-  }, [open]);
-
-  const handleSelect = (id: string) => {
-    onChange(id);
-    setOpen(false);
-    setBusqueda("");
-  };
-
-  const handleToggle = () => {
-    if (!open && triggerRef.current) {
-      setDropdownRect(triggerRef.current.getBoundingClientRect());
-    }
-    setOpen((prev) => !prev);
-    if (!open) setBusqueda("");
-  };
-
-  return (
-    <div ref={containerRef} className="relative w-full min-w-[160px]">
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={handleToggle}
-        className="w-full flex items-center justify-between bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none text-left"
-      >
-        <span className={selected ? "text-foreground" : "text-muted-foreground"}>
-          {selected ? selected.nombre : placeholder || "Seleccionar..."}
-        </span>
-        <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0 ml-2" />
-      </button>
-
-      {open && dropdownRect && createPortal(
-        <div
-          ref={(el) => { portalRef.current = el; }}
-          style={{
-            position: "fixed",
-            top: dropdownRect.bottom + 4,
-            left: dropdownRect.left,
-            width: dropdownRect.width,
-            zIndex: 9999,
-          }}
-          className="bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
-        >
-          <div className="p-2 border-b border-border">
-            <input
-              autoFocus
-              type="text"
-              placeholder="Buscar producto..."
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              className="w-full bg-background border border-border px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
-            />
-          </div>
-          <div className="max-h-52 overflow-y-auto">
-            {filtered.length === 0 ? (
-              <p className="text-center py-4 text-muted-foreground text-sm">Sin resultados</p>
-            ) : (
-              filtered.map((o) => (
-                <button
-                  key={o.id}
-                  type="button"
-                  onClick={() => handleSelect(o.id)}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-center gap-2 ${
-                    o.special === "manoobra" ? "text-yellow-400 font-medium" :
-                    o.special === "abono" ? "text-blue-400 font-medium" : "text-foreground"
-                  }`}
-                >
-                  {o.nombre}
-                  {o.marca && <span className="text-muted-foreground text-xs">— {o.marca}</span>}
-                </button>
-              ))
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
-    </div>
-  );
 }
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");

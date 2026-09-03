@@ -39,6 +39,14 @@ execFileSync(
 );
 console.log(`Respaldo local guardado en ${filePath}`);
 
+const { statSync } = await import("node:fs");
+const stats = statSync(filePath);
+const TAMANO_MINIMO_ESPERADO = 10 * 1024; // 10 KB — un respaldo real de tu base de datos siempre pesa más que esto
+if (stats.size < TAMANO_MINIMO_ESPERADO) {
+  throw new Error(`⚠️ El archivo de respaldo se ve sospechosamente pequeño (${stats.size} bytes) — puede estar vacío o corrupto. Revisa manualmente antes de confiar en este respaldo.`);
+}
+console.log(`✅ Verificado: el archivo pesa ${(stats.size / 1024 / 1024).toFixed(2)} MB — tamaño razonable.`);
+
 if (AIVEN_URL) {
   console.log("[2/3] Restaurando respaldo en Aiven...");
   try {
