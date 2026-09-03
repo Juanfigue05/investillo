@@ -32,6 +32,13 @@ interface ParsedRow {
   precioCompra: string;
   precioVentaSinIva: string;
   precioVentaConIva: string;
+  cantidad: number | null; // null = no se especificó en la plantilla
+}
+
+function parseCantidad(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === "") return null;
+  const n = typeof raw === "number" ? raw : parseFloat(String(raw).replace(",", "."));
+  return isNaN(n) ? null : n;
 }
 
 function rowsEqual(a: ParsedRow, b: ParsedRow): boolean {
@@ -67,6 +74,7 @@ function parseExcel(buffer: Buffer): { rows: ParsedRow[]; skipped: number[] } {
     const marca = cleanStr(r[4]) || null;
     const pc = parsePrecio(r[5]);
     const pvs = parsePrecio(r[6]);
+    const cantidad = parseCantidad(r[7]);
 
     rows.push({
       codigo,
@@ -76,24 +84,61 @@ function parseExcel(buffer: Buffer): { rows: ParsedRow[]; skipped: number[] } {
       precioCompra: String(pc),
       precioVentaSinIva: String(pvs),
       precioVentaConIva: String(calcPrecioConIva(pvs)),
+      cantidad,
     });
   }
   return { rows, skipped };
 }
 
-/** Run a bulk UPSERT via UNNEST — fast single round-trip */
-async function upsertRows(items: ParsedRow[]) {
-  if (!items.length) return;
-  const n = items.map((x) => x.nombre);
-  const c = items.map((x) => x.codigo);
-  const m = items.map((x) => x.marca);
-  const r = items.map((x) => x.referencia);
-  const pc = items.map((x) => x.precioCompra);
-  const pvs = items.map((x) => x.precioVentaSinIva);
-  const pvc = items.map((x) => x.precioVentaConIva);
+interface ConflictoCantidad {
+  codigo: string;
+  nombre: string;
+  stockActual: number;
+  cantidadArchivo: number;
+}
+
+async function upsertRows(items: ParsedRow[]): Promise<{ conflictosCantidad: ConflictoCantidad[] }> {
+  if (!items.length) return { conflictosCantidad: [] };
 
   const client = await pool.connect();
   try {
+    // 1. Averiguar qué stock tiene HOY cada código que ya exista
+    const codigos = items.map((x) => x.codigo);
+    const existentes = await client.query(
+      `SELECT codigo, stock_actual FROM productos WHERE codigo = ANY($1::text[])`,
+      [codigos]
+    );
+    const stockPorCodigo = new Map<string, number>();
+    for (const row of existentes.rows) stockPorCodigo.set(row.codigo, parseFloat(row.stock_actual));
+
+    // 2. Decidir, fila por fila, qué stock final va a quedar guardado ahora mismo
+    const conflictosCantidad: ConflictoCantidad[] = [];
+    const cantidadFinal: string[] = [];
+
+    for (const item of items) {
+      const stockExistente = stockPorCodigo.get(item.codigo); // undefined = producto nuevo
+
+      if (item.cantidad === null) {
+        // No venía cantidad en la plantilla → no se toca el stock (o queda en 0 si es producto nuevo)
+        cantidadFinal.push(String(stockExistente ?? 0));
+      } else if (stockExistente === undefined || stockExistente === 0) {
+        // Producto nuevo, o ya existía pero estaba en 0 → se asigna directo, sin preguntar
+        cantidadFinal.push(String(item.cantidad));
+      } else {
+        // Ya tenía stock distinto de 0 → queda pendiente de que el usuario decida sumar o reemplazar
+        conflictosCantidad.push({ codigo: item.codigo, nombre: item.nombre, stockActual: stockExistente, cantidadArchivo: item.cantidad });
+        cantidadFinal.push(String(stockExistente)); // por ahora, se deja igual a como estaba
+      }
+    }
+
+    const n = items.map((x) => x.nombre);
+    const c = items.map((x) => x.codigo);
+    const m = items.map((x) => x.marca);
+    const r = items.map((x) => x.referencia);
+    const pc = items.map((x) => x.precioCompra);
+    const pvs = items.map((x) => x.precioVentaSinIva);
+    const pvc = items.map((x) => x.precioVentaConIva);
+
     await client.query(`
       INSERT INTO productos
         (nombre, codigo, marca, tipo, referencia, adicional,
@@ -101,9 +146,9 @@ async function upsertRows(items: ParsedRow[]) {
          tiene_iva, stock_actual, stock_minimo)
       SELECT u.nombre, u.codigo, u.marca, NULL, u.referencia, NULL,
              u.pc::numeric, u.pvs::numeric, u.pvc::numeric,
-             false, '0', '0'
-      FROM UNNEST($1::text[],$2::text[],$3::text[],$4::text[],$5::text[],$6::text[],$7::text[])
-           AS u(nombre,codigo,marca,referencia,pc,pvs,pvc)
+             false, u.cantidad_final::numeric, '0'
+      FROM UNNEST($1::text[],$2::text[],$3::text[],$4::text[],$5::text[],$6::text[],$7::text[],$8::text[])
+           AS u(nombre,codigo,marca,referencia,pc,pvs,pvc,cantidad_final)
       ON CONFLICT (codigo) DO UPDATE SET
         nombre              = EXCLUDED.nombre,
         referencia          = EXCLUDED.referencia,
@@ -111,8 +156,11 @@ async function upsertRows(items: ParsedRow[]) {
         precio_compra       = EXCLUDED.precio_compra,
         precio_venta_sin_iva= EXCLUDED.precio_venta_sin_iva,
         precio_venta_con_iva= EXCLUDED.precio_venta_con_iva,
+        stock_actual        = EXCLUDED.stock_actual,
         actualizado_en      = now()
-    `, [n, c, m, r, pc, pvs, pvc]);
+    `, [n, c, m, r, pc, pvs, pvc, cantidadFinal]);
+
+    return { conflictosCantidad };
   } finally {
     client.release();
   }
@@ -123,9 +171,9 @@ async function upsertRows(items: ParsedRow[]) {
 router.get("/template", (_req, res) => {
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([
-    ["CODIGO", "REFERENCIA", "REFERENCIA", "REFERENCIA 2", "MARCA", "SE COMPRA", "SE VENDE A"],
+    ["CODIGO", "REFERENCIA", "REFERENCIA", "REFERENCIA 2", "MARCA", "SE COMPRA", "SE VENDE A", "CANTIDAD (opcional)"],
   ]);
-  ws["!cols"] = [16, 40, 30, 20, 20, 14, 14].map((w) => ({ wch: w }));
+  ws["!cols"] = [16, 40, 30, 20, 20, 14, 14, 20].map((w) => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws, "Productos");
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -172,7 +220,7 @@ router.post("/", upload.single("archivo"), async (req, res) => {
       }
     }
 
-    await upsertRows(toImport);
+    const { conflictosCantidad } = await upsertRows(toImport);
 
     res.json({
       ok: true,
@@ -180,6 +228,7 @@ router.post("/", upload.single("archivo"), async (req, res) => {
       procesados: toImport.length,
       omitidos: skipped.length,
       conflictos: conflictos.length > 0 ? conflictos : undefined,
+      conflictosCantidad: conflictosCantidad.length > 0 ? conflictosCantidad : undefined,
     });
   } catch (err: any) {
     console.error("Error importando Excel:", err?.message ?? err);
@@ -202,6 +251,36 @@ router.post("/resolver", async (req, res) => {
     res.json({ ok: true, procesados: items.length });
   } catch (err: any) {
     console.error("Error resolviendo conflictos:", err?.message ?? err);
+    res.status(500).json({ error: (err?.message ?? String(err)).split("\n")[0].substring(0, 400) });
+  }
+});
+
+// ─── POST /resolver-cantidades — aplica "sumar" o "reemplazar" a los conflictos de stock ──
+router.post("/resolver-cantidades", async (req, res) => {
+  try {
+    const { modo, items } = req.body as { modo: "sumar" | "reemplazar"; items: { codigo: string; cantidadArchivo: number }[] };
+    if (!Array.isArray(items) || !items.length) { res.status(400).json({ error: "items requerido" }); return; }
+
+    const client = await pool.connect();
+    try {
+      for (const item of items) {
+        if (modo === "sumar") {
+          await client.query(
+            `UPDATE productos SET stock_actual = stock_actual + $1::numeric, actualizado_en = now() WHERE codigo = $2`,
+            [item.cantidadArchivo, item.codigo]
+          );
+        } else {
+          await client.query(
+            `UPDATE productos SET stock_actual = $1::numeric, actualizado_en = now() WHERE codigo = $2`,
+            [item.cantidadArchivo, item.codigo]
+          );
+        }
+      }
+      res.json({ ok: true, procesados: items.length });
+    } finally {
+      client.release();
+    }
+  } catch (err: any) {
     res.status(500).json({ error: (err?.message ?? String(err)).split("\n")[0].substring(0, 400) });
   }
 });

@@ -41,6 +41,13 @@ interface ImportResult {
   error?: string;
 }
 
+interface ConflictoCantidad {
+  codigo: string;
+  nombre: string;
+  stockActual: number;
+  cantidadArchivo: number;
+}
+
 const fmtP = (v: string) => {
   const n = parseFloat(v);
   return isNaN(n) ? "—" : `$${n.toLocaleString("es-CO")}`;
@@ -62,6 +69,9 @@ interface FilterPanel {
 }
 
 export default function Inventario() {
+  const [conflictosCantidad, setConflictosCantidad] = useState<ConflictoCantidad[]>([]);
+  const [resolviendoCantidad, setResolviendoCantidad] = useState(false);
+  const [cantidadResueltaOk, setCantidadResueltaOk] = useState(false);
   const { data: productos, isLoading } = useGetInventario();
   const queryClient = useQueryClient();
   const crearMutation = useCrearProducto();
@@ -110,6 +120,7 @@ export default function Inventario() {
     setChoices({});
     setNewCodes({});
     setResolvedOk(false);
+    setConflictosCantidad([]);
     try {
       const form = new FormData();
       form.append("archivo", file);
@@ -123,11 +134,37 @@ export default function Inventario() {
         data.conflictos.forEach((c) => { init[c.codigo] = "A"; });
         setChoices(init);
       }
+      if ((data as any).conflictosCantidad?.length) {
+        setConflictosCantidad((data as any).conflictosCantidad);
+        setCantidadResueltaOk(false);
+      }
       queryClient.invalidateQueries({ queryKey: ["inventario"] });
     } catch (err) {
       setImportResult({ ok: false, total: 0, procesados: 0, omitidos: 0, error: String(err) });
     } finally {
       setImportando(false);
+    }
+  };
+
+  const handleResolverCantidad = async (modo: "sumar" | "reemplazar") => {
+    setResolviendoCantidad(true);
+    try {
+      const res = await fetch(`${API}/inventario-import/resolver-cantidades`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modo,
+          items: conflictosCantidad.map((c) => ({ codigo: c.codigo, cantidadArchivo: c.cantidadArchivo })),
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      setCantidadResueltaOk(true);
+      setConflictosCantidad([]);
+      queryClient.invalidateQueries({ queryKey: ["inventario"] });
+    } catch (err) {
+      alert("Error al aplicar la decisión: " + err);
+    } finally {
+      setResolviendoCantidad(false);
     }
   };
 
@@ -274,9 +311,9 @@ export default function Inventario() {
         { id: editingId, data: formData },
         {
           onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventario"] }); setShowForm(false); },
-          onError: async () => {
-            if (!esFalloDeRed(Error)) {
-              toast({ title: "No se pudo guardar", description: Error instanceof Error ? Error.message : String(Error), variant: "destructive" });
+          onError: async (error) => {
+            if (!esFalloDeRed(error)) {
+              toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
               return;
             }
             await encolarOperacion({ tipo: "producto", metodo: "PUT", endpoint: `/inventario/${editingId}`, payload: formData });
@@ -415,6 +452,57 @@ export default function Inventario() {
               className="flex-shrink-0 text-current opacity-60 hover:opacity-100">
               <X className="w-4 h-4" />
             </button>
+          </div>
+        )}
+
+        {conflictosCantidad.length > 0 && !cantidadResueltaOk && (
+          <div className="bg-card border border-amber-500/40 rounded-2xl p-5 shadow-xl space-y-4">
+            <div>
+              <h3 className="font-bold text-foreground flex items-center gap-2">
+                ⚠️ {conflictosCantidad.length} producto{conflictosCantidad.length !== 1 ? "s" : ""} ya tienen existencias
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Estos productos ya tenían unidades en el inventario, y la plantilla también trae una cantidad para ellos. ¿Qué quieres hacer?
+              </p>
+            </div>
+
+            <div className="max-h-48 overflow-y-auto border border-border rounded-xl">
+              <table className="w-full text-xs">
+                <thead className="bg-muted sticky top-0">
+                  <tr>
+                    <th className="text-left px-3 py-2">Producto</th>
+                    <th className="text-right px-3 py-2">Ya tiene</th>
+                    <th className="text-right px-3 py-2">Plantilla trae</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {conflictosCantidad.map((c) => (
+                    <tr key={c.codigo}>
+                      <td className="px-3 py-1.5">{c.nombre}</td>
+                      <td className="px-3 py-1.5 text-right">{c.stockActual}</td>
+                      <td className="px-3 py-1.5 text-right">{c.cantidadArchivo}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                disabled={resolviendoCantidad}
+                onClick={() => handleResolverCantidad("sumar")}
+                className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium text-sm disabled:opacity-50"
+              >
+                Sumar a lo que ya hay
+              </button>
+              <button
+                disabled={resolviendoCantidad}
+                onClick={() => handleResolverCantidad("reemplazar")}
+                className="flex-1 px-4 py-2.5 bg-muted text-foreground rounded-xl font-medium text-sm border border-border disabled:opacity-50"
+              >
+                Reemplazar por el valor de la plantilla
+              </button>
+            </div>
           </div>
         )}
 
