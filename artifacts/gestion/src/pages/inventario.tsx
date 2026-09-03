@@ -66,6 +66,7 @@ interface FilterPanel {
   tipos: string[];
   marcaBusqueda: string;
   tipoBusqueda: string;
+  estadoStock: "todos" | "bajo" | "sin";
 }
 
 export default function Inventario() {
@@ -91,6 +92,7 @@ export default function Inventario() {
     tipos: [],
     marcaBusqueda: "",
     tipoBusqueda: "",
+    estadoStock: "todos",
   });
 
   // Pagination
@@ -247,7 +249,7 @@ export default function Inventario() {
     setFilters(f => ({ ...f, marcas: f.marcas.includes(m) ? f.marcas.filter(x => x !== m) : [...f.marcas, m] }));
   const toggleTipo = (t: string) =>
     setFilters(f => ({ ...f, tipos: f.tipos.includes(t) ? f.tipos.filter(x => x !== t) : [...f.tipos, t] }));
-  const clearFilters = () => setFilters({ marcas: [], tipos: [], marcaBusqueda: "", tipoBusqueda: "" });
+  const clearFilters = () => setFilters({ marcas: [], tipos: [], marcaBusqueda: "", tipoBusqueda: "", estadoStock: "todos" });
 
   const activeFilterCount = filters.marcas.length + filters.tipos.length;
 
@@ -268,7 +270,11 @@ export default function Inventario() {
           (p.referencia || "").toLowerCase().includes(q);
         const matchMarca = filters.marcas.length === 0 || filters.marcas.includes(p.marca || "");
         const matchTipo = filters.tipos.length === 0 || filters.tipos.includes((p as any).tipo || "");
-        return matchSearch && matchMarca && matchTipo;
+        const matchStock =
+          filters.estadoStock === "todos" ? true :
+          filters.estadoStock === "sin" ? p.stockActual === 0 :
+          p.stockActual > 0 && p.stockActual <= p.stockMinimo;
+        return matchSearch && matchMarca && matchTipo && matchStock;
       })
       .sort((a, b) => {
         let av: any = (a as any)[sortCol];
@@ -744,7 +750,7 @@ export default function Inventario() {
                 </button>
               )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* Marca filter */}
               <div>
                 <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Marca</label>
@@ -798,6 +804,23 @@ export default function Inventario() {
                       <span className={`text-xs transition-colors ${filters.tipos.includes(t) ? "text-primary font-medium" : "text-foreground group-hover:text-primary"}`}>
                         {t}
                       </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Estado de stock</label>
+                <div className="space-y-1">
+                  {[
+                    { value: "todos", label: "Todos" },
+                    { value: "bajo", label: "⚠ Poco stock" },
+                    { value: "sin", label: "🔴 Sin existencias" },
+                  ].map((opt) => (
+                    <label key={opt.value} className="flex items-center gap-2 cursor-pointer group">
+                      <input type="radio" name="estadoStock" checked={filters.estadoStock === opt.value}
+                        onChange={() => setFilters((f) => ({ ...f, estadoStock: opt.value as any }))}
+                        className="w-4 h-4 accent-primary" />
+                      <span className={`text-xs transition-colors ${filters.estadoStock === opt.value ? "text-primary font-medium" : "text-foreground group-hover:text-primary"}`}>{opt.label}</span>
                     </label>
                   ))}
                 </div>
@@ -946,7 +969,7 @@ export default function Inventario() {
                   <button onClick={() => setShowForm(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">✕</button>
                 </div>
                 <form onSubmit={handleSave} className="p-6 space-y-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-muted-foreground mb-1">Código</label>
                       <input required type="text" value={formData.codigo} onChange={e => setFormData({ ...formData, codigo: e.target.value })} className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground" />

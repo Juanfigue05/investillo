@@ -8,7 +8,7 @@ import {
   useGetInventario,
 } from "@workspace/api-client-react";
 import { fechaHoyColombia, formatCurrency } from "@/lib/utils";
-import { PackageCheck, Truck, Plus, X, Printer, ChevronDown, ChevronUp } from "lucide-react";
+import { PackageCheck, Truck, Plus, X, Printer, ChevronDown, ChevronUp, Search } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
@@ -352,8 +352,16 @@ export default function Compras() {
   const pendientes = compras?.filter((c) => c.estado === "pendiente") || [];
   const llegados = compras?.filter((c) => c.estado === "llegado") || [];
   const [aniosAbiertos, setAniosAbiertos] = useState<Set<string>>(new Set());
+  const [buscarHistorial, setBuscarHistorial] = useState("");
   const [mesesAbiertos, setMesesAbiertos] = useState<Set<string>>(new Set());
   const [mesImprimir, setMesImprimir] = useState<string>("");
+
+  const llegadosFiltrados = buscarHistorial.trim()
+  ? llegados.filter((c: any) =>
+      c.productoNombre?.toLowerCase().includes(buscarHistorial.toLowerCase()) ||
+      c.productoCodigo?.toLowerCase().includes(buscarHistorial.toLowerCase())
+    )
+  : llegados;
 
 useEffect(() => {
   if (mesImprimir || !llegados.length) return;
@@ -730,6 +738,11 @@ useEffect(() => {
                   <strong>Historial de Llegadas — Compras</strong>
                   <span style={{ float: "right" }}>{new Date().toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })}</span>
                 </div>
+                <div className="no-print relative max-w-sm mb-3">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input type="text" placeholder="Buscar producto en el historial..." value={buscarHistorial} onChange={(e) => setBuscarHistorial(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-background border border-border rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                </div>
                 <div className="no-print flex items-center gap-2 mb-3">
                   <label className="text-xs font-medium text-muted-foreground">Mes a imprimir:</label>
                   <select value={mesImprimir} onChange={(e) => setMesImprimir(e.target.value)} className="bg-background border border-border px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none">
@@ -740,7 +753,7 @@ useEffect(() => {
                       ))}
                   </select>
                 </div>
-                {agruparPorAnioMes(llegados).map(({ anio, meses }) => {
+                {agruparPorAnioMes(llegadosFiltrados).map(({ anio, meses }) => {
                   const totalAnio = meses.reduce((s, [, items]) => s + items.reduce((s2, c) => s2 + (c.cantidadRecibida ?? 0) * (c.precioCompraRegistrado ?? 0), 0), 0);
                   const anioAbierto = aniosAbiertos.has(anio);
 

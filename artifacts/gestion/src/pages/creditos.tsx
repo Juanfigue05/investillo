@@ -578,12 +578,29 @@ export default function Creditos() {
         )}
 
         <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-3">
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input type="text" placeholder="Buscar por cliente, placa, concepto o teléfono..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+            <input type="text" placeholder="Buscar por nombre o teléfono..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
               className="w-full pl-9 pr-4 py-2.5 bg-card border border-border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm" />
             {busqueda && <button onClick={() => setBusqueda("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>}
           </div>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Desde</label>
+              <input type="date" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)}
+                className="bg-card border border-border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Hasta</label>
+              <input type="date" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)}
+                className="bg-card border border-border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none" />
+            </div>
+            {(filtroDesde || filtroHasta) && (
+              <button onClick={() => { setFiltroDesde(""); setFiltroHasta(""); }} className="text-xs text-muted-foreground hover:text-destructive underline">Limpiar fechas</button>
+            )}
+          </div>
+        </div>
           <div className="flex flex-wrap gap-3 items-end">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Desde</label>
