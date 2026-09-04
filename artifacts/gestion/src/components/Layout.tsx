@@ -8,6 +8,7 @@ import { BackupLocal } from "./BackupLocal";
 import { ConnectionStatus } from "./ConnectionStatus";
 import { CalculadoraCierre } from "./CalculadoraCierre";
 import { Calculator as CalcIcon } from "lucide-react";
+import { ThemeToggle } from "./ThemeToggle";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 function loadSet(key: string): Set<number> {
@@ -152,6 +153,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   >
                     <X className="h-4 w-4" />
                   </button>
+                  <ThemeToggle />
                 </div>
 
                 {/* Global action buttons */}
