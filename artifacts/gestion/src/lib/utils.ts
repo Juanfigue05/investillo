@@ -8,12 +8,46 @@ export function cn(...inputs: ClassValue[]) {
 export function fechaColombia(fecha: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Bogota",
-    year: "numeric", month: "2-digit", day: "2-digit",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   }).format(fecha);
 }
 
 export function fechaHoyColombia(): string {
   return fechaColombia(new Date());
+}
+
+/** Calcula la fecha de vencimiento sumando días calendario a una fecha YYYY-MM-DD. */
+export function sumarDiasFecha(fecha: string, dias: number): string {
+  const resultado = new Date(`${fecha}T12:00:00`);
+  resultado.setDate(resultado.getDate() + dias);
+  return resultado.toISOString().slice(0, 10);
+}
+
+/** Devuelve los días completos de mora respecto a la fecha actual de Colombia. */
+export function diasVencidos(
+  fechaFactura: string,
+  hoy: string = fechaHoyColombia(),
+): number {
+  const vencimiento = sumarDiasFecha(fechaFactura, 30);
+  const diferencia =
+    Date.parse(`${hoy}T12:00:00`) - Date.parse(`${vencimiento}T12:00:00`);
+  return Math.max(0, Math.floor(diferencia / 86_400_000));
+}
+
+/** Describe una mora usando años, meses de 30 días y días restantes. */
+export function formatearMora(dias: number): string {
+  if (dias <= 0) return "Sin mora";
+  const anos = Math.floor(dias / 360);
+  const meses = Math.floor((dias % 360) / 30);
+  const diasRestantes = dias % 30;
+  const partes: string[] = [];
+  if (anos) partes.push(`${anos} año${anos === 1 ? "" : "s"}`);
+  if (meses) partes.push(`${meses} mes${meses === 1 ? "" : "es"}`);
+  if (diasRestantes || partes.length === 0)
+    partes.push(`${diasRestantes} día${diasRestantes === 1 ? "" : "s"}`);
+  return partes.join(" y ");
 }
 
 export function formatCurrency(value: number | undefined | null) {

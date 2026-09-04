@@ -74,6 +74,8 @@ export default function Clientes() {
   const [vehiculos, setVehiculos] = useState<VehiculoForm[]>([]);
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [busqueda, setBusqueda] = useState("");
+  const [ordenNombre, setOrdenNombre] = useState<"az" | "za">("az");
+  const [soloSinTelefono, setSoloSinTelefono] = useState(false);
 
   // Expanded vehicle detail per client card
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -253,20 +255,33 @@ export default function Clientes() {
   const q = busqueda.toLowerCase();
   const filtered = useMemo(() => {
     if (!clientes) return [];
-    if (!q) return clientes;
-    return clientes.filter(
-      (c) =>
+    const resultados = clientes.filter((c) => {
+      const tieneTelefono = Boolean(
+        c.telefono?.trim() || (c as any).telefono2?.trim(),
+      );
+      const coincideBusqueda =
+        !q ||
         c.nombre.toLowerCase().includes(q) ||
         (soloDigitos(q).length > 0 &&
-          soloDigitos(c.telefono).includes(soloDigitos(q))) ||
+          (soloDigitos(c.telefono).includes(soloDigitos(q)) ||
+            soloDigitos((c as any).telefono2).includes(soloDigitos(q)))) ||
         (c.correo ?? "").toLowerCase().includes(q) ||
         c.vehiculos.some(
           (v) =>
             v.placa.toLowerCase().includes(q) ||
             (v.descripcion ?? "").toLowerCase().includes(q),
-        ),
-    );
-  }, [clientes, q]);
+        );
+
+      return coincideBusqueda && (!soloSinTelefono || !tieneTelefono);
+    });
+
+    return resultados.sort((a, b) => {
+      const comparacion = a.nombre.localeCompare(b.nombre, "es", {
+        sensitivity: "base",
+      });
+      return ordenNombre === "az" ? comparacion : -comparacion;
+    });
+  }, [clientes, q, ordenNombre, soloSinTelefono]);
 
   const isSaving = crearMutation.isPending || actualizarMutation.isPending;
 
@@ -408,133 +423,159 @@ export default function Clientes() {
           </div>
         </div>
 
-        {/* Search */}
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar por nombre, teléfono, correo o placa..."
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            className="w-full pl-9 pr-9 py-2.5 bg-card border border-border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
-          />
-          {conflictosTelefono.length > 0 && (
-            <div className="bg-card border border-amber-500/40 rounded-2xl p-5 shadow-xl space-y-4">
-              <div>
-                <h3 className="font-bold text-foreground flex items-center gap-2">
-                  ⚠️ {conflictosTelefono.length} cliente
-                  {conflictosTelefono.length !== 1 ? "s" : ""} con teléfono
-                  repetido
-                </h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Estos clientes del Excel tienen un número que ya está usado
-                  por otro cliente. Corrige o borra el número en conflicto, o
-                  quítalo de la lista.
-                </p>
-              </div>
+        {/* Search and filters */}
+        <div className="flex flex-col lg:flex-row gap-3 lg:items-start">
+          <div className="relative max-w-md lg:flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Buscar por nombre, teléfono, correo o placa..."
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              className="w-full pl-9 pr-9 py-2.5 bg-card border border-border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
+            />
+            {conflictosTelefono.length > 0 && (
+              <div className="bg-card border border-amber-500/40 rounded-2xl p-5 shadow-xl space-y-4">
+                <div>
+                  <h3 className="font-bold text-foreground flex items-center gap-2">
+                    ⚠️ {conflictosTelefono.length} cliente
+                    {conflictosTelefono.length !== 1 ? "s" : ""} con teléfono
+                    repetido
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Estos clientes del Excel tienen un número que ya está usado
+                    por otro cliente. Corrige o borra el número en conflicto, o
+                    quítalo de la lista.
+                  </p>
+                </div>
 
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {conflictosTelefono.map((c, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-background border border-border rounded-xl p-3 space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium text-foreground text-sm">
-                        {c.nombre}
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {conflictosTelefono.map((c, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-background border border-border rounded-xl p-3 space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium text-foreground text-sm">
+                          {c.nombre}
+                        </p>
+                        <button
+                          onClick={() => omitirConflicto(idx)}
+                          className="text-xs text-destructive hover:underline"
+                        >
+                          No importar este cliente
+                        </button>
+                      </div>
+                      <p className="text-xs text-amber-400">
+                        El número <strong>{c.conflictoTelefono}</strong> ya lo
+                        tiene registrado <strong>{c.conflictoCon}</strong>.
                       </p>
-                      <button
-                        onClick={() => omitirConflicto(idx)}
-                        className="text-xs text-destructive hover:underline"
-                      >
-                        No importar este cliente
-                      </button>
-                    </div>
-                    <p className="text-xs text-amber-400">
-                      El número <strong>{c.conflictoTelefono}</strong> ya lo
-                      tiene registrado <strong>{c.conflictoCon}</strong>.
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[11px] text-muted-foreground mb-1">
-                          Teléfono 1
-                        </label>
-                        <input
-                          type="text"
-                          value={c.telefono || ""}
-                          onChange={(e) =>
-                            actualizarConflictoTelefono(
-                              idx,
-                              "telefono",
-                              e.target.value,
-                            )
-                          }
-                          className="w-full bg-card border border-border px-2 py-1.5 rounded-lg text-xs"
-                          placeholder="Dejar vacío si no aplica"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] text-muted-foreground mb-1">
-                          Teléfono 2
-                        </label>
-                        <input
-                          type="text"
-                          value={c.telefono2 || ""}
-                          onChange={(e) =>
-                            actualizarConflictoTelefono(
-                              idx,
-                              "telefono2",
-                              e.target.value,
-                            )
-                          }
-                          className="w-full bg-card border border-border px-2 py-1.5 rounded-lg text-xs"
-                          placeholder="Dejar vacío si no aplica"
-                        />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] text-muted-foreground mb-1">
+                            Teléfono 1
+                          </label>
+                          <input
+                            type="text"
+                            value={c.telefono || ""}
+                            onChange={(e) =>
+                              actualizarConflictoTelefono(
+                                idx,
+                                "telefono",
+                                e.target.value,
+                              )
+                            }
+                            className="w-full bg-card border border-border px-2 py-1.5 rounded-lg text-xs"
+                            placeholder="Dejar vacío si no aplica"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-muted-foreground mb-1">
+                            Teléfono 2
+                          </label>
+                          <input
+                            type="text"
+                            value={c.telefono2 || ""}
+                            onChange={(e) =>
+                              actualizarConflictoTelefono(
+                                idx,
+                                "telefono2",
+                                e.target.value,
+                              )
+                            }
+                            className="w-full bg-card border border-border px-2 py-1.5 rounded-lg text-xs"
+                            placeholder="Dejar vacío si no aplica"
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
 
-              <button
-                onClick={aplicarResolucionTelefonos}
-                disabled={resolviendoTelefonos}
-                className="w-full px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium text-sm disabled:opacity-50"
+                <button
+                  onClick={aplicarResolucionTelefonos}
+                  disabled={resolviendoTelefonos}
+                  className="w-full px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium text-sm disabled:opacity-50"
+                >
+                  {resolviendoTelefonos
+                    ? "Aplicando..."
+                    : "Importar con estos ajustes"}
+                </button>
+              </div>
+            )}
+            {importResultClientes && (
+              <div
+                className={`rounded-xl p-4 border ${importResultClientes.ok ? "bg-emerald-500/10 border-emerald-500/20" : "bg-destructive/10 border-destructive/20"}`}
               >
-                {resolviendoTelefonos
-                  ? "Aplicando..."
-                  : "Importar con estos ajustes"}
+                {importResultClientes.ok ? (
+                  <p className="text-sm">
+                    <strong>{importResultClientes.procesados}</strong> clientes
+                    importados
+                    {importResultClientes.duplicados > 0 &&
+                      ` · ${importResultClientes.duplicados} duplicados omitidos`}
+                    {importResultClientes.omitidos > 0 &&
+                      ` · ${importResultClientes.omitidos} filas sin nombre omitidas`}
+                  </p>
+                ) : (
+                  <p className="text-sm text-destructive">
+                    {importResultClientes.error}
+                  </p>
+                )}
+              </div>
+            )}
+            {busqueda && (
+              <button
+                onClick={() => setBusqueda("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-4 h-4" />
               </button>
-            </div>
-          )}
-          {importResultClientes && (
-            <div
-              className={`rounded-xl p-4 border ${importResultClientes.ok ? "bg-emerald-500/10 border-emerald-500/20" : "bg-destructive/10 border-destructive/20"}`}
-            >
-              {importResultClientes.ok ? (
-                <p className="text-sm">
-                  <strong>{importResultClientes.procesados}</strong> clientes
-                  importados
-                  {importResultClientes.duplicados > 0 &&
-                    ` · ${importResultClientes.duplicados} duplicados omitidos`}
-                  {importResultClientes.omitidos > 0 &&
-                    ` · ${importResultClientes.omitidos} filas sin nombre omitidas`}
-                </p>
-              ) : (
-                <p className="text-sm text-destructive">
-                  {importResultClientes.error}
-                </p>
-              )}
-            </div>
-          )}
-          {busqueda && (
-            <button
-              onClick={() => setBusqueda("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-start gap-3 lg:justify-end">
+            <label className="flex flex-col gap-1 text-sm text-muted-foreground">
+              <span>Ordenar:</span>
+              <select
+                value={ordenNombre}
+                onChange={(e) => setOrdenNombre(e.target.value as "az" | "za")}
+                className="bg-card border border-border rounded-xl px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="az">Nombre A-Z</option>
+                <option value="za">Nombre Z-A</option>
+              </select>
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer mt-6">
+              <input
+                type="checkbox"
+                checked={soloSinTelefono}
+                onChange={(e) => setSoloSinTelefono(e.target.checked)}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+              />
+              Solo sin teléfono
+            </label>
+          </div>
         </div>
 
         {/* Create / Edit Form */}
@@ -732,9 +773,11 @@ export default function Clientes() {
             <p className="text-muted-foreground text-sm">
               {busqueda
                 ? "Sin resultados para la búsqueda."
-                : "No hay clientes registrados aún."}
+                : soloSinTelefono
+                  ? "No hay clientes sin teléfono registrado."
+                  : "No hay clientes registrados aún."}
             </p>
-            {!busqueda && (
+            {!busqueda && !soloSinTelefono && (
               <button
                 onClick={openNew}
                 className="mt-4 text-sm text-primary hover:underline"

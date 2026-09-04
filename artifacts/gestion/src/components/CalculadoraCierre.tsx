@@ -138,10 +138,10 @@ export function CalculadoraCierre({
       onClick={onClose}
     >
       <div
-        className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-[1600px] max-h-[94vh] overflow-y-auto"
+        className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-[1600px] max-h-[94vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-card border-b border-border px-6 py-3.5 flex items-center justify-between z-10">
+        <div className="bg-card border-b border-border px-6 py-3.5 flex items-center justify-between shrink-0 z-10">
           <h2 className="text-lg font-display font-bold text-foreground flex items-center gap-2">
             <CalcIcon className="w-5 h-5 text-primary" /> Calculadora de Cierre
           </h2>
@@ -153,15 +153,18 @@ export function CalculadoraCierre({
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-5 lg:p-6 space-y-5 overflow-hidden">
           {/* ── Fila principal: Suma | Resta+ManoObra+Esperado | Monedas | Billetes ── */}
-          <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_1.1fr_0.85fr_0.85fr] gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_1.1fr_0.85fr_0.85fr] gap-4">
             {/* Suma */}
-            <div>
-              <h3 className="text-sm font-bold text-emerald-400 mb-2">
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3">
+              <h3 className="text-sm font-bold text-emerald-400 mb-2 flex items-center justify-between">
                 Suma ({suma.length} conceptos)
+                <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-400/60">
+                  Ingresos
+                </span>
               </h3>
-              <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+              <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1 overscroll-contain">
                 {suma.map((c, i) => (
                   <div key={i} className="flex gap-2">
                     <input
@@ -198,9 +201,12 @@ export function CalculadoraCierre({
             </div>
 
             {/* Resta + Mano de obra + Total esperado */}
-            <div className="flex flex-col">
-              <h3 className="text-sm font-bold text-destructive mb-2">
+            <div className="rounded-xl border border-destructive/20 bg-destructive/[0.03] p-3 flex flex-col">
+              <h3 className="text-sm font-bold text-destructive mb-2 flex items-center justify-between">
                 Resta — pagado externamente ({resta.length} conceptos)
+                <span className="text-[10px] font-medium uppercase tracking-wider text-destructive/60">
+                  Egresos
+                </span>
               </h3>
               <div className="space-y-1.5">
                 {resta.map((c, i) => (
@@ -237,7 +243,7 @@ export function CalculadoraCierre({
                 Total resta: {formatCurrency(totalResta)}
               </p>
 
-              <div className="mt-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3">
+              <div className="mt-3 bg-yellow-500/[0.08] border border-yellow-500/30 rounded-xl p-3">
                 <label className="block text-xs font-bold text-yellow-400 mb-1">
                   Mano de obra (valor manual)
                 </label>
@@ -250,7 +256,7 @@ export function CalculadoraCierre({
                 />
               </div>
 
-              <div className="mt-3 bg-primary/10 border border-primary/30 rounded-xl p-3">
+              <div className="mt-3 bg-primary/[0.08] border border-primary/30 rounded-xl p-3">
                 <p className="text-xs text-muted-foreground">
                   Total esperado (suma − resta − mano de obra)
                 </p>
@@ -261,9 +267,12 @@ export function CalculadoraCierre({
             </div>
 
             {/* Monedas */}
-            <div>
-              <h3 className="text-sm font-bold text-foreground mb-2">
+            <div className="rounded-xl border border-border bg-background/20 p-3">
+              <h3 className="text-sm font-bold text-foreground mb-2 flex items-center justify-between">
                 Monedas
+                <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Conteo
+                </span>
               </h3>
               <table className="w-full text-xs border-separate border-spacing-y-1">
                 <thead>
@@ -303,9 +312,12 @@ export function CalculadoraCierre({
             </div>
 
             {/* Billetes */}
-            <div>
-              <h3 className="text-sm font-bold text-foreground mb-2">
+            <div className="rounded-xl border border-border bg-background/20 p-3">
+              <h3 className="text-sm font-bold text-foreground mb-2 flex items-center justify-between">
                 Billetes
+                <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Conteo
+                </span>
               </h3>
               <table className="w-full text-xs border-separate border-spacing-y-1">
                 <thead>
@@ -364,7 +376,7 @@ export function CalculadoraCierre({
               : `${esPositiva ? "+" : "-"}${formatCurrency(Math.abs(diferencia))}`;
 
             return (
-              <div className={`rounded-xl p-4 border ${estilos}`}>
+              <div className={`rounded-xl p-4 border shadow-sm ${estilos}`}>
                 <div className="flex justify-between items-center flex-wrap gap-4">
                   <div>
                     <p className="text-xs text-muted-foreground">
@@ -393,9 +405,9 @@ export function CalculadoraCierre({
             );
           })()}
 
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] gap-4">
             {/* ── Remachadas ── */}
-            <div>
+            <div className="rounded-xl border border-border bg-background/20 p-3">
               <h3 className="text-sm font-bold text-foreground mb-2">
                 Consulta — Remachadas
               </h3>
@@ -462,7 +474,7 @@ export function CalculadoraCierre({
             </div>
 
             {/* ── Total Monedas (Bolsa/Caja) — persistente ── */}
-            <div>
+            <div className="rounded-xl border border-border bg-background/20 p-3">
               <h3 className="text-sm font-bold text-foreground mb-2">
                 Total Monedas
               </h3>
