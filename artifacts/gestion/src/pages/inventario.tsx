@@ -124,7 +124,7 @@ interface FilterPanel {
   tipos: string[];
   marcaBusqueda: string;
   tipoBusqueda: string;
-  estadoStock: "todos" | "bajo" | "sin";
+  estadoStock: "todos" | "activos" | "inactivos" | "bajo" | "sin";
 }
 
 export default function Inventario() {
@@ -136,6 +136,7 @@ export default function Inventario() {
   const [resolviendoCantidad, setResolviendoCantidad] = useState(false);
   const [cantidadResueltaOk, setCantidadResueltaOk] = useState(false);
   const { data: productos, isLoading } = useGetInventario();
+  const [productosTodos, setProductosTodos] = useState<any[]>([]);
   const queryClient = useQueryClient();
   const crearMutation = useCrearProducto();
   const actualizarMutation = useActualizarProducto();
@@ -158,8 +159,15 @@ export default function Inventario() {
     tipos: [],
     marcaBusqueda: "",
     tipoBusqueda: "",
-    estadoStock: "todos",
+    estadoStock: "activos",
   });
+
+  useEffect(() => {
+    fetch(`${API}/inventario?incluirInactivos=true`)
+      .then((res) => res.json())
+      .then((data) => setProductosTodos(Array.isArray(data) ? data : []))
+      .catch(() => setProductosTodos(productos || []));
+  }, [productos]);
 
   // Pagination
   const PAGE_SIZES = [20, 50, 100, 150] as const;
@@ -386,21 +394,23 @@ export default function Inventario() {
     () =>
       [
         ...new Set(
-          (productos || []).map((p) => p.marca).filter(Boolean) as string[],
+          (productosTodos.length ? productosTodos : productos || [])
+            .map((p) => p.marca)
+            .filter(Boolean) as string[],
         ),
       ].sort(),
-    [productos],
+    [productos, productosTodos],
   );
   const allTipos = useMemo(
     () =>
       [
         ...new Set(
-          (productos || [])
+          (productosTodos.length ? productosTodos : productos || [])
             .map((p) => (p as any).tipo)
             .filter(Boolean) as string[],
         ),
       ].sort(),
-    [productos],
+    [productos, productosTodos],
   );
 
   const filteredMarcas = allMarcas.filter((m) =>
@@ -430,10 +440,13 @@ export default function Inventario() {
       tipos: [],
       marcaBusqueda: "",
       tipoBusqueda: "",
-      estadoStock: "todos",
+      estadoStock: "activos",
     });
 
-  const activeFilterCount = filters.marcas.length + filters.tipos.length;
+  const activeFilterCount =
+    filters.marcas.length +
+    filters.tipos.length +
+    (filters.estadoStock !== "todos" ? 1 : 0);
 
   const handleSort = (col: SortCol) => {
     if (sortCol === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -444,7 +457,7 @@ export default function Inventario() {
   };
 
   const filteredProductos = useMemo(() => {
-    return (productos || [])
+    return (productosTodos.length ? productosTodos : productos || [])
       .filter((p) => {
         const q = search.toLowerCase();
         const matchSearch =
@@ -462,9 +475,13 @@ export default function Inventario() {
         const matchStock =
           filters.estadoStock === "todos"
             ? true
-            : filters.estadoStock === "sin"
-              ? p.stockActual === 0
-              : p.stockActual > 0 && p.stockActual <= p.stockMinimo;
+            : filters.estadoStock === "activos"
+              ? (p as any).activo !== false
+              : filters.estadoStock === "inactivos"
+                ? (p as any).activo === false
+                : filters.estadoStock === "sin"
+                  ? p.stockActual === 0
+                  : p.stockActual > 0 && p.stockActual <= p.stockMinimo;
         return matchSearch && matchMarca && matchTipo && matchStock;
       })
       .sort((a, b) => {
@@ -478,7 +495,7 @@ export default function Inventario() {
         if (av > bv) return sortDir === "asc" ? 1 : -1;
         return 0;
       });
-  }, [productos, search, filters, sortCol, sortDir]);
+  }, [productos, productosTodos, search, filters, sortCol, sortDir]);
 
   const totalPages = Math.max(
     1,
@@ -581,7 +598,11 @@ export default function Inventario() {
   };
 
   const handleDelete = (id: number) => {
-    if (confirm("¿Estás seguro de eliminar este producto?")) {
+    if (
+      confirm(
+        "¿Quieres inactivar este producto? Dejará de aparecer en los selectores.",
+      )
+    ) {
       eliminarMutation.mutate(
         { id },
         {
@@ -589,6 +610,27 @@ export default function Inventario() {
             queryClient.invalidateQueries({ queryKey: ["/api/inventario"] }),
         },
       );
+    }
+  };
+
+  const handleReactivar = async (id: number) => {
+    try {
+      const res = await fetch(`${API}/inventario/${id}/reactivar`, {
+        method: "PUT",
+      });
+      if (!res.ok)
+        throw new Error((await res.json()).error || "No se pudo reactivar");
+      queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+      const todos = await fetch(`${API}/inventario?incluirInactivos=true`).then(
+        (r) => r.json(),
+      );
+      setProductosTodos(Array.isArray(todos) ? todos : []);
+    } catch (err) {
+      toast({
+        title: "No se pudo reactivar",
+        description: String(err),
+        variant: "destructive",
+      });
     }
   };
 
@@ -1480,6 +1522,8 @@ export default function Inventario() {
                       <div className="space-y-1">
                         {[
                           { value: "todos", label: "Todos" },
+                          { value: "activos", label: "🟢 Activos" },
+                          { value: "inactivos", label: "⚫ Inactivos" },
                           { value: "bajo", label: "⚠ Poco stock" },
                           { value: "sin", label: "🔴 Sin existencias" },
                         ].map((opt) => (
@@ -1718,6 +1762,11 @@ export default function Inventario() {
                             </td>
                             <td className="px-3 py-3 text-muted-foreground">
                               {(prod as any).tipo || "—"}
+                              {(prod as any).activo === false && (
+                                <span className="ml-2 rounded-full bg-slate-500/15 px-1.5 py-0.5 text-[10px] text-slate-400">
+                                  Inactivo
+                                </span>
+                              )}
                             </td>
                             <td
                               className="px-3 py-3 text-muted-foreground text-xs max-w-[120px] truncate"
@@ -1750,12 +1799,23 @@ export default function Inventario() {
                                   >
                                     <Edit2 className="w-3.5 h-3.5" />
                                   </button>
-                                  <button
-                                    onClick={() => handleDelete(prod.id)}
-                                    className="p-1.5 text-muted-foreground hover:text-destructive bg-muted rounded-lg transition-colors"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                  {(prod as any).activo === false ? (
+                                    <button
+                                      onClick={() => handleReactivar(prod.id)}
+                                      className="p-1.5 text-muted-foreground hover:text-emerald-400 bg-muted rounded-lg transition-colors"
+                                      title="Reactivar producto"
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleDelete(prod.id)}
+                                      className="p-1.5 text-muted-foreground hover:text-destructive bg-muted rounded-lg transition-colors"
+                                      title="Inactivar producto"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </td>

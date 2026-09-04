@@ -34,9 +34,8 @@ import {
   ManoObraSelector,
   calcularDistribucion,
 } from "@/components/ManoObraSelector";
-import { encolarOperacion } from "@/lib/offline-db";
+import { encolarOperacion, esFalloDeRed } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
-import { esFalloDeRed } from "@/lib/offline-db";
 import {
   SearchableSelect,
   type ProductoOpcion,
@@ -879,7 +878,7 @@ export default function NosDebePage() {
                 </button>
               )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3 items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[1fr_1.25fr_1fr_0.8fr_1.35fr_0.9fr] gap-3 items-end">
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">
                   Fecha exacta
