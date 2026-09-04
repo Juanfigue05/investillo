@@ -472,11 +472,15 @@ Las rutas principales se registran en `artifacts/api-server/src/routes/index.ts`
 
 ---
 
-## 9. 🧹 Limpiar la base de datos antes de empezar de verdad
+## 9. 🧹 Reiniciar la base de datos antes de empezar de verdad
 
-Todo lo que hay guardado hasta ahora (productos, ventas, trabajadores) fue de **prueba**, mientras se construía el sistema. Antes de usarlo con datos reales del negocio, hay que vaciarlo.
+Todo lo que hay guardado hasta ahora (productos, ventas, trabajadores) fue de **prueba**, mientras se construía el sistema. Antes de usarlo con datos reales del negocio, hay que reiniciar la base.
 
-⚠️ **Esto borra todo permanentemente. No hay forma de deshacerlo. Haz un respaldo antes (`pnpm run backup`) por si acaso.**
+⚠️ **Esto borra todo permanentemente. No hay forma de deshacerlo. Haz un respaldo antes (`pnpm run backup`) y confirma que estás conectado al proyecto correcto.**
+
+### 9.1 Opción recomendada: vaciar las tablas existentes
+
+Esta opción conserva las tablas y sus permisos. En Supabase, abre **SQL Editor → New query** y ejecuta:
 
 1. Entra a tu proyecto en **[supabase.com](https://supabase.com)**.
 2. Ve al menú lateral → **"SQL Editor"** → **"New query"**.
@@ -515,7 +519,50 @@ RESTART IDENTITY CASCADE;
 - `RESTART IDENTITY` → "vuelve a poner el contador de números en 1" (el próximo producto que crees será el #1, no el #847 de las pruebas).
 - `CASCADE` → limpia también cualquier cosa que dependiera de esos datos, para no dejar nada "suelto".
 
-Si quieres conservar algo (por ejemplo, si ya cargaste trabajadores reales), simplemente quita esa tabla de la lista antes de ejecutar.
+Si quieres conservar algo (por ejemplo, si ya cargaste trabajadores reales), quita esa tabla de la lista antes de ejecutar.
+
+### 9.2 Recrear completamente el esquema `public`
+
+Usa esta opción únicamente si quieres eliminar también tablas, índices, secuencias y restricciones creadas anteriormente. **No ejecutes `DROP DATABASE`**: Supabase mantiene la conexión a la base activa y el usuario de la aplicación normalmente no puede eliminarla.
+
+En el SQL Editor, ejecuta:
+
+```sql
+DROP SCHEMA IF EXISTS public CASCADE;
+CREATE SCHEMA public;
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON SCHEMA public TO postgres, service_role;
+```
+
+Después, desde la carpeta raíz del proyecto, con `.env.api` apuntando a esa misma base:
+
+```cmd
+pnpm install
+pnpm run db:push
+```
+
+`db:push` lee `DATABASE_URL` desde `.env.api`, usa `lib/db/src/schema/index.ts` y crea las tablas definidas en los archivos de `lib/db/src/schema`. No uses `push-force` como primera opción; solo debe utilizarse después de revisar el cambio que Drizzle propone.
+
+### 9.3 Comprobar que la recreación terminó bien
+
+En Supabase puedes comprobar las tablas con:
+
+```sql
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+ORDER BY table_name;
+```
+
+Luego, desde el proyecto, ejecuta:
+
+```cmd
+pnpm run verificar
+pnpm run typecheck
+pnpm run build
+```
+
+`pnpm run verificar` necesita `DATABASE_URL` y revisa datos inconsistentes y referencias huérfanas. Si la base está recién creada, debe terminar sin registros problemáticos.
 
 ---
 
