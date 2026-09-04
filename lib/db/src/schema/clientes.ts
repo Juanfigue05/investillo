@@ -6,6 +6,7 @@ export const clientesTable = pgTable("clientes", {
   id: serial("id").primaryKey(),
   nombre: text("nombre").notNull(),
   telefono: text("telefono"),
+  telefono2: text("telefono2"),
   correo: text("correo"),
   notas: text("notas"),
   creadoEn: timestamp("creado_en").defaultNow(),

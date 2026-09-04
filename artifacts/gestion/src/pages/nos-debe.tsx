@@ -142,10 +142,14 @@ export default function NosDebePage() {
     const cliente = clientes?.find((c) => c.nombre === nombre);
     if (cliente) {
       const vehiculos = (cliente as any).vehiculos ?? [];
+      const telefonoJunto = [cliente.telefono, (cliente as any).telefono2]
+        .filter(Boolean)
+        .map((t) => formatTelefono(t as string))
+        .join(" - ");
       setForm((prev) => ({
         ...prev,
         nombreCliente: cliente.nombre,
-        telefonoCliente: formatTelefono(cliente.telefono) || prev.telefonoCliente,
+        telefonoCliente: telefonoJunto || prev.telefonoCliente,
         placaVehiculo: vehiculos.length === 1 ? vehiculos[0].placa : prev.placaVehiculo,
       }));
     } else {

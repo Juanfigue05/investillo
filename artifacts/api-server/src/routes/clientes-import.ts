@@ -14,8 +14,16 @@ function cleanStr(v: unknown): string {
 interface ParsedCliente {
   nombre: string;
   telefono: string | null;
+  telefono2: string | null;
   correo: string | null;
   notas: string | null;
+}
+
+/** Si la celda trae "3145370182 - 3202501578", separa los 2 números */
+function parseTelefonos(raw: string): { telefono: string | null; telefono2: string | null } {
+  if (!raw) return { telefono: null, telefono2: null };
+  const partes = raw.split("-").map((p) => p.trim()).filter(Boolean);
+  return { telefono: partes[0] || null, telefono2: partes[1] || null };
 }
 
 function parseExcel(buffer: Buffer): { rows: ParsedCliente[]; omitidos: number[] } {
@@ -35,8 +43,9 @@ function parseExcel(buffer: Buffer): { rows: ParsedCliente[]; omitidos: number[]
     rows.push({
       nombre,
       telefono: cleanStr(r[1]) || null,
-      correo: cleanStr(r[2]) || null,
-      notas: cleanStr(r[3]) || null,
+      telefono2: cleanStr(r[2]) || null,
+      correo: cleanStr(r[3]) || null,
+      notas: cleanStr(r[4]) || null,
     });
   }
   return { rows, omitidos };
@@ -80,15 +89,16 @@ async function insertRows(items: ParsedCliente[]) {
   if (!items.length) return;
   const n = items.map((x) => x.nombre);
   const t = items.map((x) => x.telefono);
+  const t2 = items.map((x) => x.telefono2);
   const c = items.map((x) => x.correo);
   const no = items.map((x) => x.notas);
 
   const client = await pool.connect();
   try {
     await client.query(
-      `INSERT INTO clientes (nombre, telefono, correo, notas)
-       SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[], $4::text[])`,
-      [n, t, c, no],
+      `INSERT INTO clientes (nombre, telefono, telefono2, correo, notas)
+       SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[], $4::text[], $5::text[])`,
+      [n, t, t2, c, no],
     );
   } finally {
     client.release();
@@ -97,8 +107,8 @@ async function insertRows(items: ParsedCliente[]) {
 
 router.get("/template", (_req, res) => {
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([["NOMBRE", "TELEFONO", "CORREO", "NOTAS"]]);
-  ws["!cols"] = [30, 18, 30, 40].map((w) => ({ wch: w }));
+  const ws = XLSX.utils.aoa_to_sheet([["NOMBRE", "TELEFONO (si son 2: 3145370182 - 3202501578)", "CORREO", "NOTAS"]]);
+  ws["!cols"] = [30, 40, 30, 40].map((w) => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws, "Clientes");
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

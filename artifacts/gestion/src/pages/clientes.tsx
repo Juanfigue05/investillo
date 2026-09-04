@@ -29,7 +29,7 @@ interface VehiculoForm {
   descripcion: string;
 }
 
-const emptyForm = { nombre: "", telefono: "", correo: "", notas: "" };
+const emptyForm = { nombre: "", telefono: "", telefono2: "", correo: "", notas: "" };
 const emptyVeh: VehiculoForm = { placa: "", descripcion: "" };
 
 export default function Clientes() {
@@ -80,7 +80,7 @@ export default function Clientes() {
 
   const openEdit = (c: Cliente) => {
     setEditingId(c.id);
-    setForm({ nombre: c.nombre, telefono: c.telefono ?? "", correo: c.correo ?? "", notas: c.notas ?? "" });
+setForm({ nombre: c.nombre, telefono: c.telefono ?? "", telefono2: (c as any).telefono2 ?? "", correo: c.correo ?? "", notas: c.notas ?? "" }); 
     setVehiculos([]);
     setFormErrors([]);
     setShowForm(true);
@@ -131,7 +131,7 @@ export default function Clientes() {
     const onGuardadoExitoso = () => { invalidate(); setShowForm(false); setEditingId(null); setForm({ ...emptyForm }); setVehiculos([]); };
 
     if (editingId) {
-      const payload = { nombre: form.nombre.trim(), telefono: form.telefono || null, correo: form.correo || null, notas: form.notas || null };
+      const payload = { nombre: form.nombre.trim(), telefono: form.telefono || null, telefono2: form.telefono2 || null, correo: form.correo || null, notas: form.notas || null };
       actualizarMutation.mutate(
         { id: editingId, data: payload },
         {
@@ -148,9 +148,9 @@ export default function Clientes() {
         },
       );
     } else {
-      const payload = { nombre: form.nombre.trim(), telefono: form.telefono || null, correo: form.correo || null, notas: form.notas || null, vehiculos: vehs.map((v) => ({ placa: v.placa.trim(), descripcion: v.descripcion || null })) };
+    const payload = { nombre: form.nombre.trim(), telefono: form.telefono || null, telefono2: form.telefono2 || null, correo: form.correo || null, notas: form.notas || null, vehiculos: vehs.map((v) => ({ placa: v.placa.trim(), descripcion: v.descripcion || null })) };
 
-      agregarFilaOptimista(queryClient, ["/api/clientes", {}], { nombre: payload.nombre, telefono: payload.telefono, correo: payload.correo, notas: payload.notas });
+      agregarFilaOptimista(queryClient, ["/api/clientes", {}], { nombre: payload.nombre, telefono: payload.telefono, telefono2: payload.telefono2, correo: payload.correo, notas: payload.notas });
 
       crearMutation.mutate(
         { data: payload },
@@ -328,7 +328,7 @@ const handleImportClientes = async (e: React.ChangeEvent<HTMLInputElement>) => {
                     className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
                   />
                 </div>
-                <div>
+                                <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">
                     <Phone className="w-3.5 h-3.5 inline mr-1" />Teléfono
                   </label>
@@ -336,6 +336,18 @@ const handleImportClientes = async (e: React.ChangeEvent<HTMLInputElement>) => {
                     type="text"
                     value={form.telefono}
                     onChange={(e) => setForm({ ...form, telefono: formatTelefono(e.target.value) })}
+                    placeholder="(310) 420 1761"
+                    className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">
+                    <Phone className="w-3.5 h-3.5 inline mr-1" />Teléfono 2 (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={form.telefono2}
+                    onChange={(e) => setForm({ ...form, telefono2: formatTelefono(e.target.value) })}
                     placeholder="(310) 420 1761"
                     className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
                   />
@@ -457,6 +469,11 @@ const handleImportClientes = async (e: React.ChangeEvent<HTMLInputElement>) => {
                       {c.telefono && (
                         <p className="text-xs text-muted-foreground flex items-center gap-1">
                           <Phone className="w-3 h-3" /> {formatTelefono(c.telefono)}
+                        </p>
+                      )}
+                      {(c as any).telefono2 && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Phone className="w-3 h-3" /> {formatTelefono((c as any).telefono2)}
                         </p>
                       )}
                       {c.correo && (
