@@ -270,9 +270,7 @@ export default function Clientes() {
 
   const isSaving = crearMutation.isPending || actualizarMutation.isPending;
 
-  const API = "/api"
-    .replace(/\/+/g, "/")
-    .replace(/\/$/, "");
+  const API = "/api".replace(/\/+/g, "/").replace(/\/$/, "");
 
   // dentro del componente:
   const [importandoClientes, setImportandoClientes] = useState(false);
