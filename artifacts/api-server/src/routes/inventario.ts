@@ -29,6 +29,8 @@ function mapProducto(p: typeof productosTable.$inferSelect) {
     precioVentaConIva: toNum(p.precioVentaConIva),
     tieneIva: p.tieneIva,
     stockActual: toNum(p.stockActual),
+    stockLocal: toNum((p as any).stockLocal),
+    stockBodega: toNum((p as any).stockBodega),
     stockMinimo: toNum(p.stockMinimo),
     activo: p.activo,
     creadoEn: p.creadoEn,
