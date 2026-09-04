@@ -11,7 +11,7 @@
     "backup": "dotenv -e .env.backup -- pnpm --filter @workspace/scripts run backup",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "verificar": "dotenv -e .env.api -- pnpm --filter @workspace/scripts run verificar",
-    "limpiar-operaciones-123456789": "dotenv -e .env.api -- pnpm --filter @workspace/scripts run limpiar-operaciones"
+    "limpiar-operaciones": "dotenv -e .env.api -- pnpm --filter @workspace/scripts run limpiar-operaciones"
   },
   "private": true,
   "devDependencies": {

@@ -1,8 +1,12 @@
-import { listarPendientes, marcarSincronizada } from "./offline-db";
+import {
+  listarPendientes,
+  marcarConError,
+  marcarSincronizada,
+} from "./offline-db";
 import { queryClient } from "./queryClient";
 import { toast } from "@/hooks/use-toast";
 
-const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
+const API = "/api";
 
 let sincronizando = false;
 
@@ -31,16 +35,25 @@ export async function procesarPendientes() {
       try {
         const res = await fetch(`${API}${op.endpoint}`, {
           method: op.metodo,
-          headers: { "Content-Type": "application/json", "X-Operation-Id": op.operationId },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Operation-Id": op.operationId,
+          },
           body: JSON.stringify(op.payload),
         });
 
         if (res.ok) {
           await marcarSincronizada(op.operationId);
           exitosas++;
-          (QUERY_KEYS_POR_TIPO[op.tipo] || []).forEach((k) => queryKeysAfectados.add(k));
+          (QUERY_KEYS_POR_TIPO[op.tipo] || []).forEach((k) =>
+            queryKeysAfectados.add(k),
+          );
         } else {
-          // Error del servidor (no de red) — no se reintenta en bucle infinito, se deja para revisión
+          const detalle = await res.text().catch(() => "");
+          await marcarConError(
+            op.operationId,
+            detalle || `El servidor respondió con HTTP ${res.status}.`,
+          );
           break;
         }
       } catch {
@@ -49,7 +62,9 @@ export async function procesarPendientes() {
       }
     }
 
-    queryKeysAfectados.forEach((k) => queryClient.invalidateQueries({ queryKey: [k] }));
+    queryKeysAfectados.forEach((k) =>
+      queryClient.invalidateQueries({ queryKey: [k] }),
+    );
 
     if (exitosas > 0) {
       toast({
@@ -68,10 +83,14 @@ export function iniciarSincronizacionAutomatica() {
     navigator.storage.persist();
   }
 
-  window.addEventListener("online", () => { procesarPendientes(); });
+  window.addEventListener("online", () => {
+    procesarPendientes();
+  });
 
   // Reintento periódico de respaldo, por si el evento "online" no se dispara bien
-  setInterval(() => { procesarPendientes(); }, 30_000);
+  setInterval(() => {
+    procesarPendientes();
+  }, 30_000);
 
   // Intento inicial al cargar la app
   procesarPendientes();

@@ -8,6 +8,8 @@ export interface OperacionPendiente {
   payload: unknown;
   creadoEn: string;
   estado: "pendiente" | "sincronizado" | "error";
+  ultimoError?: string;
+  intentos?: number;
 }
 
 interface RespaldoImportado {
@@ -28,16 +30,24 @@ interface InvestilloOfflineDB extends DBSchema {
 }
 
 const DB_NAME = "investillo-offline";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let dbPromise: Promise<IDBPDatabase<InvestilloOfflineDB>> | null = null;
 
 function getDB() {
   if (!dbPromise) {
     dbPromise = openDB<InvestilloOfflineDB>(DB_NAME, DB_VERSION, {
       upgrade(db) {
-        const ops = db.createObjectStore("operaciones-pendientes", { keyPath: "operationId" });
-        ops.createIndex("por-estado", "estado");
-        db.createObjectStore("respaldos-importados", { keyPath: "backupId" });
+        const ops = db.objectStoreNames.contains("operaciones-pendientes")
+          ? undefined
+          : db.createObjectStore("operaciones-pendientes", {
+              keyPath: "operationId",
+            });
+        if (ops && !ops.indexNames.contains("por-estado")) {
+          ops.createIndex("por-estado", "estado");
+        }
+        if (!db.objectStoreNames.contains("respaldos-importados")) {
+          db.createObjectStore("respaldos-importados", { keyPath: "backupId" });
+        }
       },
     });
   }
@@ -45,7 +55,9 @@ function getDB() {
 }
 
 /** Encola una operación (venta, crédito, etc.) para sincronizar después */
-export async function encolarOperacion(op: Omit<OperacionPendiente, "operationId" | "creadoEn" | "estado">) {
+export async function encolarOperacion(
+  op: Omit<OperacionPendiente, "operationId" | "creadoEn" | "estado">,
+) {
   const db = await getDB();
   const operacion: OperacionPendiente = {
     ...op,
@@ -59,7 +71,11 @@ export async function encolarOperacion(op: Omit<OperacionPendiente, "operationId
 
 export async function listarPendientes(): Promise<OperacionPendiente[]> {
   const db = await getDB();
-  return db.getAllFromIndex("operaciones-pendientes", "por-estado", "pendiente");
+  return db.getAllFromIndex(
+    "operaciones-pendientes",
+    "por-estado",
+    "pendiente",
+  );
 }
 
 export async function marcarSincronizada(operationId: string) {
@@ -73,7 +89,10 @@ export async function contarPendientes(): Promise<number> {
 
 // ── Copia local (exportar / importar) ───────────────────────────────────────
 
-export async function exportarRespaldoLocal(): Promise<{ blob: Blob; nombreArchivo: string }> {
+export async function exportarRespaldoLocal(): Promise<{
+  blob: Blob;
+  nombreArchivo: string;
+}> {
   const db = await getDB();
   const operaciones = await db.getAll("operaciones-pendientes");
 
@@ -84,7 +103,9 @@ export async function exportarRespaldoLocal(): Promise<{ blob: Blob; nombreArchi
     operaciones,
   };
 
-  const blob = new Blob([JSON.stringify(respaldo, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(respaldo, null, 2)], {
+    type: "application/json",
+  });
   const fecha = new Date().toISOString().replace(/[:.]/g, "-");
   return { blob, nombreArchivo: `investillo_copia_local_${fecha}.json` };
 }
@@ -96,16 +117,26 @@ export interface ResultadoImportacion {
   omitidasPorDuplicado?: number;
 }
 
-export async function importarRespaldoLocal(archivo: File): Promise<ResultadoImportacion> {
+export async function importarRespaldoLocal(
+  archivo: File,
+): Promise<ResultadoImportacion> {
   let contenido: any;
   try {
     contenido = JSON.parse(await archivo.text());
   } catch {
-    return { ok: false, mensaje: "El archivo no es una copia local válida (JSON corrupto o formato incorrecto)." };
+    return {
+      ok: false,
+      mensaje:
+        "El archivo no es una copia local válida (JSON corrupto o formato incorrecto).",
+    };
   }
 
   if (!contenido?.backupId || !Array.isArray(contenido?.operaciones)) {
-    return { ok: false, mensaje: "El archivo no tiene el formato esperado de una copia local de Investillo." };
+    return {
+      ok: false,
+      mensaje:
+        "El archivo no tiene el formato esperado de una copia local de Investillo.",
+    };
   }
 
   const db = await getDB();
@@ -115,7 +146,8 @@ export async function importarRespaldoLocal(archivo: File): Promise<ResultadoImp
   if (yaImportado) {
     return {
       ok: false,
-      mensaje: "Este archivo de copia local ya fue importado anteriormente — no se volvió a aplicar, para evitar duplicar información en el inventario.",
+      mensaje:
+        "Este archivo de copia local ya fue importado anteriormente — no se volvió a aplicar, para evitar duplicar información en el inventario.",
     };
   }
 
@@ -126,13 +158,19 @@ export async function importarRespaldoLocal(archivo: File): Promise<ResultadoImp
   for (const op of contenido.operaciones as OperacionPendiente[]) {
     if (!op?.operationId) continue;
     const existente = await tx.store.get(op.operationId);
-    if (existente) { omitidasPorDuplicado++; continue; }
+    if (existente) {
+      omitidasPorDuplicado++;
+      continue;
+    }
     await tx.store.put(op);
     agregadas++;
   }
   await tx.done;
 
-  await db.put("respaldos-importados", { backupId: contenido.backupId, importadoEn: new Date().toISOString() });
+  await db.put("respaldos-importados", {
+    backupId: contenido.backupId,
+    importadoEn: new Date().toISOString(),
+  });
 
   return {
     ok: true,
@@ -144,6 +182,58 @@ export async function importarRespaldoLocal(archivo: File): Promise<ResultadoImp
 
 /** true = de verdad no hay red; false = el servidor respondió con un error real (no encolar, mostrar el error) */
 export function esFalloDeRed(error: unknown): boolean {
-  if (error && typeof error === "object" && (error as any).name === "ApiError") return false;
+  if (error && typeof error === "object" && (error as any).name === "ApiError")
+    return false;
   return error instanceof TypeError || !navigator.onLine;
+}
+
+/** Lista las operaciones que fallaron por un error del servidor. */
+export async function listarErrores(): Promise<OperacionPendiente[]> {
+  const db = await getDB();
+  return db.getAllFromIndex("operaciones-pendientes", "por-estado", "error");
+}
+
+/** Cuenta operaciones pendientes o con error que todavía no se sincronizaron. */
+export async function contarNoSincronizadas(): Promise<number> {
+  const db = await getDB();
+  const pendientes = await db.getAllFromIndex(
+    "operaciones-pendientes",
+    "por-estado",
+    "pendiente",
+  );
+  const errores = await db.getAllFromIndex(
+    "operaciones-pendientes",
+    "por-estado",
+    "error",
+  );
+  return pendientes.length + errores.length;
+}
+
+/** Marca una operación como error y conserva el motivo para revisarlo. */
+export async function marcarConError(operationId: string, mensaje: string) {
+  const db = await getDB();
+  const operacion = await db.get("operaciones-pendientes", operationId);
+  if (!operacion) return;
+  await db.put("operaciones-pendientes", {
+    ...operacion,
+    estado: "error",
+    ultimoError: mensaje,
+    intentos: (operacion.intentos ?? 0) + 1,
+  });
+}
+
+/** Devuelve los errores al estado pendiente para permitir un nuevo intento. */
+export async function reintentarErrores(): Promise<number> {
+  const db = await getDB();
+  const errores = await listarErrores();
+  const tx = db.transaction("operaciones-pendientes", "readwrite");
+  for (const operacion of errores) {
+    await tx.store.put({
+      ...operacion,
+      estado: "pendiente",
+      ultimoError: undefined,
+    });
+  }
+  await tx.done;
+  return errores.length;
 }

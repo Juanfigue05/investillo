@@ -27,20 +27,20 @@ Funciona incluso **sin conexión a internet** (los datos se guardan en el comput
 
 Cuando abres Investillo, en el lado izquierdo de la pantalla ves un menú. Aquí te explico qué hace cada opción, como si nunca lo hubieras visto:
 
-| Página | ¿Para qué sirve? |
-|---|---|
-| 📊 **Dashboard** | La pantalla principal — un resumen rápido: cuánto se vendió hoy, cuánto deben los clientes, cuánto se ha comprado, y una gráfica de ventas. |
-| 🚚 **Compras** | Aquí registras qué le compraste a tus proveedores, y cuándo llegó la mercancía a la bodega. El stock del producto sube automáticamente. |
-| 🛒 **Ventas Diarias** | Aquí anotas cada venta del día — qué se vendió, a cómo, y cómo te pagaron (efectivo o a una cuenta bancaria). El stock del producto baja automáticamente. |
-| 💳 **Créditos** | Para cuando un cliente se lleva algo y paga después. Aquí llevas el control de cuánto debe y cuándo va abonando. |
-| 🤝 **Nos Debe** | Igual que Créditos, pero para cuando es el negocio el que le debe/fía algo a alguien más. |
-| 📦 **Inventario** | La lista completa de todos tus productos: cuántos hay, a cómo los compras, a cómo los vendes. También tiene una pestaña aparte para las "Remachadas" (precio de remachar bandas). |
-| 🧮 **Cierre Diario** | Al final del día, aquí calculas cuánto le toca pagar a cada trabajador (según lo que trabajó, el seguro que se le descuenta, etc.), y armas el conteo de caja (monedas y billetes). |
-| 👥 **Clientes** | La lista de tus clientes, con sus datos y los vehículos que tengan registrados. |
-| 📖 **Historial de Ventas** | Guarda el resumen de días de venta pasados, para consultarlos cuando quieras. |
-| 🕐 **Historial Cierres** | Lo mismo, pero de los Cierres Diarios que ya guardaste. |
-| 📈 **Historial de Precios** | Una gráfica que muestra cómo han subido o bajado los precios de compra con el tiempo. |
-| 🔧 **Trabajadores** | El perfil de cada trabajador: su seguro social, si se le descuenta o no, y cuánto le deben. |
+| Página                      | ¿Para qué sirve?                                                                                                                                                                    |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 📊 **Dashboard**            | La pantalla principal — un resumen rápido: cuánto se vendió hoy, cuánto deben los clientes, cuánto se ha comprado, y una gráfica de ventas.                                         |
+| 🚚 **Compras**              | Aquí registras qué le compraste a tus proveedores, y cuándo llegó la mercancía a la bodega. El stock del producto sube automáticamente.                                             |
+| 🛒 **Ventas Diarias**       | Aquí anotas cada venta del día — qué se vendió, a cómo, y cómo te pagaron (efectivo o a una cuenta bancaria). El stock del producto baja automáticamente.                           |
+| 💳 **Créditos**             | Para cuando un cliente se lleva algo y paga después. Aquí llevas el control de cuánto debe y cuándo va abonando.                                                                    |
+| 🤝 **Nos Debe**             | Igual que Créditos, pero para cuando es el negocio el que le debe/fía algo a alguien más.                                                                                           |
+| 📦 **Inventario**           | La lista completa de todos tus productos: cuántos hay, a cómo los compras, a cómo los vendes. También tiene una pestaña aparte para las "Remachadas" (precio de remachar bandas).   |
+| 🧮 **Cierre Diario**        | Al final del día, aquí calculas cuánto le toca pagar a cada trabajador (según lo que trabajó, el seguro que se le descuenta, etc.), y armas el conteo de caja (monedas y billetes). |
+| 👥 **Clientes**             | La lista de tus clientes, con sus datos y los vehículos que tengan registrados.                                                                                                     |
+| 📖 **Historial de Ventas**  | Guarda el resumen de días de venta pasados, para consultarlos cuando quieras.                                                                                                       |
+| 🕐 **Historial Cierres**    | Lo mismo, pero de los Cierres Diarios que ya guardaste.                                                                                                                             |
+| 📈 **Historial de Precios** | Una gráfica que muestra cómo han subido o bajado los precios de compra con el tiempo.                                                                                               |
+| 🔧 **Trabajadores**         | El perfil de cada trabajador: su seguro social, si se le descuenta o no, y cuánto le deben.                                                                                         |
 
 ### La "Calculadora de Cierre"
 
@@ -50,11 +50,11 @@ Hay un botón con un ícono de calculadora en la barra de arriba (visible desde 
 
 ## 2. Autor
 
-| | |
-|---|---|
-| **Rol** | Propietario / Product Owner / Desarrollador |
-| **Nombre** | Juan David Figueroa |
-| **Contacto** | +57 314 537 0182 |
+|              |                                             |
+| ------------ | ------------------------------------------- |
+| **Rol**      | Propietario / Product Owner / Desarrollador |
+| **Nombre**   | Juan David Figueroa                         |
+| **Contacto** | +57 314 537 0182                            |
 
 ---
 
@@ -64,27 +64,63 @@ No necesitas entender esto para usar el sistema — es información para quien q
 
 Investillo es un **monorepo** (varios proyectos relacionados guardados juntos en una sola carpeta):
 
-| Parte | Dónde está | Qué es, en simple |
-|---|---|---|
-| `gestion` | `artifacts/gestion` | Lo que ves en pantalla (el "frontend") — hecho con React, Vite y Tailwind CSS. |
+| Parte        | Dónde está             | Qué es, en simple                                                                                                  |
+| ------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `gestion`    | `artifacts/gestion`    | Lo que ves en pantalla (el "frontend") — hecho con React, Vite y Tailwind CSS.                                     |
 | `api-server` | `artifacts/api-server` | El "cerebro" que atiende las peticiones y habla con la base de datos (el "backend") — hecho con Node.js y Express. |
-| `db` | `lib/db` | La definición de cómo se guardan los datos — usa una herramienta llamada Drizzle ORM. |
-| `scripts` | `scripts/` | Programas de apoyo, como el que hace los respaldos automáticos. |
+| `db`         | `lib/db`               | La definición de cómo se guardan los datos — usa una herramienta llamada Drizzle ORM.                              |
+| `scripts`    | `scripts/`             | Programas de apoyo, como el que hace los respaldos automáticos.                                                    |
 
 Todo el código está escrito en **TypeScript** (una versión de JavaScript que ayuda a detectar errores antes de que pasen).
 
 **La base de datos es PostgreSQL**, alojada en 3 lugares distintos por seguridad (ver sección 6).
 
+### 3.1 Cómo se relacionan las piezas
+
+El flujo normal de una operación es:
+
+```text
+Navegador (React/Vite)
+  │  HTTP /api
+  ▼
+API Express (api-server)
+  │  Drizzle ORM
+  ▼
+PostgreSQL (Supabase)
+```
+
+- `artifacts/gestion` es la interfaz. Las consultas principales usan el cliente generado desde OpenAPI.
+- `artifacts/api-server` registra las rutas bajo `/api`, valida reglas de negocio y sirve el frontend compilado en producción.
+- `lib/db` contiene las tablas y la configuración de Drizzle.
+- `lib/api-spec/openapi.yaml` es el contrato de las rutas que se generan automáticamente.
+- `lib/api-client-react` genera hooks para React Query y `lib/api-zod` genera esquemas Zod.
+- Algunas funciones especiales, como importaciones, reportes y ciertos formularios, usan `fetch` manual. Es importante mantener sus respuestas y payloads sincronizados con el backend.
+
+En producción, `pnpm run build` compila el frontend y el backend; luego Express sirve ambos desde el puerto definido en `PORT`.
+
+### 3.2 Requisitos técnicos comprobados
+
+| Requisito                               | Uso                                          |
+| --------------------------------------- | -------------------------------------------- |
+| Node.js 24.x                            | Ejecutar las herramientas y servidores       |
+| pnpm                                    | Instalar dependencias y ejecutar el monorepo |
+| PostgreSQL accesible                    | Guardar los datos del sistema                |
+| PostgreSQL client tools 17.x o superior | Crear respaldos con `pg_dump` y `pg_restore` |
+| Navegador moderno                       | Usar React, PWA e IndexedDB                  |
+
+El backend requiere `DATABASE_URL` incluso para importar módulos en pruebas. Si no existe esa variable, las pruebas del API fallarán al arrancar.
+
 ### Tareas automáticas recomendadas (Programador de Tareas de Windows)
 
-| Tarea | Frecuencia | Comando (en "Acción" → "Iniciar un programa") |
-|---|---|---|
-| Respaldo + verificación | Semanal | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run backup >> backups\log.txt 2>&1` |
-| Revisión de consistencia | Diaria | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run verificar >> logs\consistencia.txt 2>&1` |
-| Limpieza de operaciones viejas | Mensual | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run limpiar-operaciones >> logs\limpieza.txt 2>&1` |
-| Inicio automático del sistema local | Al iniciar sesión | Ver abajo — versión más confiable que un simple acceso directo |
+| Tarea                               | Frecuencia        | Comando (en "Acción" → "Iniciar un programa")                                                                     |
+| ----------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Respaldo + verificación             | Semanal           | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run backup >> backups\log.txt 2>&1` y después `pnpm run verificar` |
+| Revisión de consistencia            | Diaria            | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run verificar >> logs\consistencia.txt 2>&1`                       |
+| Limpieza de operaciones viejas      | Mensual           | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run limpiar-operaciones >> logs\limpieza.txt 2>&1`                 |
+| Inicio automático del sistema local | Al iniciar sesión | Ver abajo — versión más confiable que un simple acceso directo                                                    |
 
 **Inicio automático más confiable (en vez de solo la carpeta de Inicio):**
+
 1. Abre **Programador de tareas** → **Crear tarea básica** → nombre `Iniciar Investillo`.
 2. Desencadenador: **Al iniciar sesión**.
 3. Acción → Programa: `cmd.exe` → Argumentos: `/c cd /d "C:\ruta\investillo" && pnpm run start:prod >> logs\sistema.txt 2>&1`
@@ -143,6 +179,7 @@ git clone https://github.com/juanfigue05/investillo.git
 cd investillo
 pnpm install
 ```
+
 Este último comando puede tardar unos minutos — está descargando todas las piezas necesarias.
 
 ### Paso 6 — Crear los archivos de configuración
@@ -152,6 +189,7 @@ El sistema necesita saber a qué base de datos conectarse. Esa información va e
 Créalos en la carpeta principal del proyecto (al lado de `package.json`), usando el explorador de archivos de VS Code (clic derecho → "New File") — **no uses el Bloc de notas de Windows**, porque a veces le agrega una extensión `.txt` escondida sin que te des cuenta.
 
 **Archivo `.env.api`:**
+
 ```
 DATABASE_URL=postgresql://postgres.<tu-proyecto>:<tu-contraseña>@aws-0-<región>.pooler.supabase.com:5432/postgres
 PORT=8080
@@ -159,12 +197,14 @@ NODE_ENV=development
 ```
 
 **Archivo `.env.web`:**
+
 ```
 PORT=5173
 BASE_PATH=/
 ```
 
 **Archivo `.env.backup`** (solo si vas a hacer respaldos desde este computador):
+
 ```
 SOURCE_DATABASE_URL=postgresql://postgres.<tu-proyecto>:<tu-contraseña>@aws-0-<región>.pooler.supabase.com:5432/postgres
 AIVEN_DATABASE_URL=postgresql://avnadmin:<tu-contraseña>@<tu-servicio>.aivencloud.com:<puerto>/defaultdb?sslmode=require
@@ -182,6 +222,7 @@ PG_BIN_PATH=C:\Program Files\PostgreSQL\17\bin
 ```cmd
 pnpm run db:push
 ```
+
 Esto le dice a la base de datos "crea todas las tablas que este sistema necesita".
 
 ### Paso 8 — ¡Listo! Ya puedes correrlo
@@ -189,7 +230,8 @@ Esto le dice a la base de datos "crea todas las tablas que este sistema necesita
 ```cmd
 pnpm run dev
 ```
-Esto abre el sistema en tu navegador, normalmente en `http://localhost:5173`.
+
+Esto inicia el API en `http://localhost:8080` y, cuando responde `/api/healthz`, inicia Vite normalmente en `http://localhost:5173`. Vite recarga los cambios del frontend; el backend ejecuta su compilación y arranque definidos en `artifacts/api-server/package.json`, por lo que normalmente debes reiniciarlo después de cambiar código del servidor.
 
 ---
 
@@ -197,20 +239,52 @@ Esto abre el sistema en tu navegador, normalmente en `http://localhost:5173`.
 
 Todos se escriben en el **Símbolo del sistema (CMD)**, estando dentro de la carpeta del proyecto.
 
-| Comando | Qué hace |
-|---|---|
-| `pnpm install` | Descarga/actualiza todas las piezas necesarias del proyecto |
-| `pnpm run dev` | Corre el sistema en modo "estoy programando" (se actualiza solo cuando cambias código) |
-| `pnpm run start:prod` | Corre el sistema en modo "uso normal del negocio" (más rápido y estable — ver sección 7) |
-| `pnpm run db:push` | Actualiza la estructura de la base de datos según lo definido en el código |
-| `pnpm run backup` | Hace una copia de seguridad completa de la base de datos, en 3 lugares distintos |
-| `pnpm run build` | Prepara el código para producción (lo "compila") |
+| Comando                                          | Qué hace                                                                                 |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `pnpm install`                                   | Descarga/actualiza todas las piezas necesarias del proyecto                              |
+| `pnpm run dev`                                   | Corre el sistema en modo "estoy programando" (se actualiza solo cuando cambias código)   |
+| `pnpm run start:prod`                            | Corre el sistema en modo "uso normal del negocio" (más rápido y estable — ver sección 7) |
+| `pnpm run db:push`                               | Actualiza la estructura de la base de datos según lo definido en el código               |
+| `pnpm run backup`                                | Crea una copia local y, si están configurados, la replica en Aiven y Cloudflare R2       |
+| `pnpm run build`                                 | Prepara el código para producción (lo "compila")                                         |
+| `pnpm run typecheck`                             | Comprueba TypeScript en las librerías, API, frontend y scripts                           |
+| `pnpm --filter @workspace/api-spec codegen`      | Regenera los clientes React y esquemas Zod desde OpenAPI                                 |
+| `pnpm --filter @workspace/api-server test:stock` | Ejecuta la prueba de stock de créditos; necesita `DATABASE_URL`                          |
+
+### 5.1 Validación antes de publicar cambios
+
+Ejecuta desde la raíz del proyecto:
+
+```cmd
+pnpm install
+pnpm --filter @workspace/api-spec codegen
+pnpm run typecheck
+pnpm run build
+```
+
+Si modificaste el backend o una regla de inventario, configura `.env.api` y ejecuta también:
+
+```cmd
+pnpm --filter @workspace/api-server test:stock
+```
+
+La prueba no sustituye una prueba contra una base de datos real. Antes de operar con información real, verifica manualmente crear, editar y eliminar un registro, refrescar el navegador y repetir la operación sin conexión.
+
+### 5.2 Diagnóstico rápido
+
+| Síntoma                                  | Revisión                                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| El API no inicia                         | Comprueba `DATABASE_URL`, `PORT` y el log del servidor                                                        |
+| El frontend no inicia                    | Comprueba `PORT` y `BASE_PATH` en `.env.web`                                                                  |
+| La pantalla no actualiza                 | Revisa `/api/healthz`, la consola del navegador y la pestaña Network                                          |
+| Hay datos pendientes                     | Abre el indicador de conexión y conserva el navegador con el mismo perfil; las operaciones están en IndexedDB |
+| Una prueba falla antes de ejecutar casos | Configura `DATABASE_URL`; el módulo de base de datos falla al cargarse sin ella                               |
 
 ---
 
 ## 6. 🗄️ Las bases de datos — por qué hay 3
 
-Para que nunca se pierda información, aunque uno de los servicios falle, usamos **3 lugares distintos** para guardar los datos:
+Para reducir el riesgo de pérdida de información, el respaldo se guarda localmente y puede replicarse en Aiven y Cloudflare R2:
 
 ```
 ┌─────────────────────────────────────┐
@@ -261,7 +335,29 @@ Para que nunca se pierda información, aunque uno de los servicios falle, usamos
 ```cmd
 pnpm run backup
 ```
+
 Esto guarda una copia completa en los 3 lugares a la vez. **Recomendado: prográmalo para que corra solo, una vez por semana**, usando el Programador de Tareas de Windows (búscalo en el menú Inicio → "Crear tarea básica" → elige "Semanalmente" → en "Acción" pon el comando `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run backup`).
+
+### 6.5 Restaurar un respaldo
+
+La restauración es una operación administrativa y puede sobrescribir datos. Antes de hacerla:
+
+1. Detén el sistema para que nadie escriba durante la restauración.
+2. Conserva una copia del estado actual y verifica que el archivo corresponde a la base de datos correcta.
+3. Usa `pg_restore` para archivos de respaldo en formato custom o el procedimiento indicado por el proveedor de PostgreSQL.
+4. Ejecuta `pnpm run verificar` y comprueba manualmente inventario, ventas, clientes y créditos.
+
+No ejecutes comandos destructivos de restauración sobre producción sin confirmar la base de datos destino y tener una copia adicional.
+
+### 6.6 Verificar referencias de la base de datos
+
+El esquema debe declarar claves foráneas cuando la relación y la política de borrado estén definidas. Antes de agregarlas a una base existente, ejecuta:
+
+```cmd
+pnpm run verificar
+```
+
+El script revisa referencias huérfanas en vehículos, compras, líneas y abonos de créditos, distribuciones de mano de obra y pagos de seguro. Si encuentra resultados, corrígelos o decide cómo conservarlos antes de ejecutar `pnpm run db:push`. No se recomienda añadir `CASCADE` a todas las tablas: las compras, ventas e historiales pueden ser datos contables que deben conservarse.
 
 ---
 
@@ -345,6 +441,7 @@ Ambas usan **la misma base de datos de Supabase de siempre** — nunca se crea u
 ### 8.4 Evitar que Render se "duerma" (funciona incluso en vacaciones)
 
 Crea este archivo en el proyecto: **`.github/workflows/keep-alive.yml`**
+
 ```yaml
 name: Keep Alive
 
@@ -360,6 +457,7 @@ jobs:
       - name: Ping Render
         run: curl -sf https://investillo.onrender.com || echo "Render no respondió"
 ```
+
 (cambia las 2 direcciones por las tuyas reales)
 
 Súbelo con `git push` — desde ese momento, un robot de GitHub le "toca la puerta" a ambas direcciones cada 10 minutos, todos los días del año, así que nunca llegan a dormirse por inactividad — ni siquiera si el negocio cierra por vacaciones.
@@ -367,6 +465,10 @@ Súbelo con `git push` — desde ese momento, un robot de GitHub le "toca la pue
 ### 8.5 Actualizaciones automáticas
 
 Cada vez que subas cambios nuevos (`git push`), **ambas plataformas se actualizan solas** — no hay que repetir ningún paso.
+
+### 8.6 Rutas y contrato API
+
+Las rutas principales se registran en `artifacts/api-server/src/routes/index.ts`. El contrato OpenAPI cubre los hooks generados, pero algunas rutas de importación, reportes y funciones auxiliares se consumen desde el frontend con `fetch` manual. Después de cambiar una ruta documentada, regenera los clientes con `pnpm --filter @workspace/api-spec codegen` y ejecuta `pnpm run typecheck`.
 
 ---
 
@@ -408,6 +510,7 @@ RESTART IDENTITY CASCADE;
 5. Abre el sistema — todas las listas deberían aparecer vacías, listas para empezar con información real.
 
 **¿Qué significa cada palabra del comando?**
+
 - `TRUNCATE TABLE` → "vacía estas tablas por completo".
 - `RESTART IDENTITY` → "vuelve a poner el contador de números en 1" (el próximo producto que crees será el #1, no el #847 de las pruebas).
 - `CASCADE` → limpia también cualquier cosa que dependiera de esos datos, para no dejar nada "suelto".
@@ -426,6 +529,11 @@ Para que sepas qué esperar y qué no, por ahora:
 - La **app de escritorio** (para seguir funcionando varios días sin ninguna conexión a internet) todavía está en diseño, no construida — hoy el modo sin conexión cubre cortes de horas, no de varios días seguidos.
 - El plan gratis de Aiven se pausa si pasan 7 días sin usarlo — si el respaldo automático deja de correr por más de una semana, toca reactivarlo a mano.
 - La importación masiva de clientes detecta duplicados solo por nombre, no por teléfono o correo.
+- El modo sin conexión no cubre todas las funciones: la cola actual contempla ventas, mano de obra asociada a ventas, créditos, compras, cierres, productos y clientes. Importaciones, reportes, notas, trabajadores y varias funciones auxiliares requieren conexión.
+- Si una operación recibe un error del servidor, queda marcada como error con el mensaje y número de intentos. El panel **Copia local** permite reactivarla y reintentarla; no debe asumirse que fue aplicada hasta comprobarlo.
+- No hay pruebas automáticas de integración que levanten PostgreSQL por sí solas; las pruebas del API necesitan una `DATABASE_URL` válida.
+- El contrato OpenAPI y las rutas implementadas no son idénticos: las funciones que usan `fetch` manual deben probarse además de ejecutar el codegen.
+- La PWA usa `BASE_PATH` para `base`, `start_url`, `scope` y `navigateFallback`. Para desplegar bajo una subruta, configura esa variable durante el build y verifica que el proxy publique `/api` en la misma URL esperada por el frontend.
 
 ---
 
@@ -433,7 +541,9 @@ Para que sepas qué esperar y qué no, por ahora:
 
 - Antes de operar con datos reales, considera subir **Supabase al plan Pro ($25 USD/mes)** — el plan gratis no incluye respaldos automáticos propios y se pausa por inactividad.
 - Programa `pnpm run backup` para que corra **automáticamente cada semana**.
+- Después de un cambio importante, ejecuta `pnpm run typecheck` y `pnpm run build` antes de reiniciar producción.
 - **No borres "Cookies y datos de sitios"** del navegador en el computador principal — ahí es donde vive la información guardada mientras no hay internet. Borrar solo el historial de navegación sí es seguro.
+- Si aparece una operación pendiente, no borres los datos del sitio ni reinstales el navegador hasta confirmar si ya se sincronizó o si debes exportar una copia local.
 - Usa el botón **"Guardar copia local"** de la barra superior antes de apagar el equipo, si trabajaste sin conexión y no alcanzaste a confirmar que sincronizó.
 - Antes de construir cualquier módulo de contabilidad en el futuro, **defínelo primero con un contador certificado** — evita errores costosos de mapeo frente a la DIAN.
 
@@ -443,16 +553,16 @@ Para que sepas qué esperar y qué no, por ahora:
 
 > Esta sección es informativa, no una cotización formal — los valores reales dependen de cómo crezca el uso del sistema.
 
-| Servicio | Plan actual | Costo | ¿Cuándo subir de plan? |
-|---|---|---|---|
-| Supabase | Free | $0/mes | Al operar con datos reales → **Pro: $25 USD/mes** |
-| Aiven | Free | $0/mes | Para que nunca se pause → **Developer: $5 USD/mes** |
-| Cloudflare R2 | Free (10 GB) | $0/mes | Si algún día se supera 10 GB de respaldos (poco probable en varios años) |
-| Render | Free | $0/mes | Si necesitas que nunca tarde en "despertar" → planes desde ~$7 USD/mes |
-| Railway | Free ($1 de crédito/mes) | $0/mes | Si el uso supera el crédito gratis → **Hobby: $5 USD/mes** |
+| Servicio      | Plan actual              | Costo  | ¿Cuándo subir de plan?                                                   |
+| ------------- | ------------------------ | ------ | ------------------------------------------------------------------------ |
+| Supabase      | Free                     | $0/mes | Al operar con datos reales → **Pro: $25 USD/mes**                        |
+| Aiven         | Free                     | $0/mes | Para que nunca se pause → **Developer: $5 USD/mes**                      |
+| Cloudflare R2 | Free (10 GB)             | $0/mes | Si algún día se supera 10 GB de respaldos (poco probable en varios años) |
+| Render        | Free                     | $0/mes | Si necesitas que nunca tarde en "despertar" → planes desde ~$7 USD/mes   |
+| Railway       | Free ($1 de crédito/mes) | $0/mes | Si el uso supera el crédito gratis → **Hobby: $5 USD/mes**               |
 
 **Estimado mensual con todo en plan gratis:** $0. **Estimado si se sube todo a planes pagos de tranquilidad:** ~$35-40 USD/mes aprox.
 
 ---
 
-*Documento actualizado como parte de la documentación técnica del proyecto Investillo.*
+_Documento actualizado como parte de la documentación técnica del proyecto Investillo._

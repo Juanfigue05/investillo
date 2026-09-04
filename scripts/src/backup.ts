@@ -3,12 +3,13 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-const PG_BIN = process.env.PG_BIN_PATH ?? "C:\\Program Files\\PostgreSQL\\16\\bin";
+const PG_BIN =
+  process.env.PG_BIN_PATH ?? "C:\\Program Files\\PostgreSQL\\17\\bin";
 const PG_DUMP = join(PG_BIN, "pg_dump.exe");
 const PG_RESTORE = join(PG_BIN, "pg_restore.exe");
 
 const SOURCE_URL = process.env.SOURCE_DATABASE_URL; // Supabase (producción)
-const AIVEN_URL = process.env.AIVEN_DATABASE_URL;   // Capa 2
+const AIVEN_URL = process.env.AIVEN_DATABASE_URL; // Capa 2
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
@@ -32,10 +33,12 @@ execFileSync(
     "--schema=public",
     "--no-owner",
     "--no-privileges",
-    "-F", "c",
-    "-f", filePath,
+    "-F",
+    "c",
+    "-f",
+    filePath,
   ],
-  { stdio: "inherit" }
+  { stdio: "inherit" },
 );
 console.log(`Respaldo local guardado en ${filePath}`);
 
@@ -43,17 +46,27 @@ const { statSync } = await import("node:fs");
 const stats = statSync(filePath);
 const TAMANO_MINIMO_ESPERADO = 10 * 1024; // 10 KB — un respaldo real de tu base de datos siempre pesa más que esto
 if (stats.size < TAMANO_MINIMO_ESPERADO) {
-  throw new Error(`⚠️ El archivo de respaldo se ve sospechosamente pequeño (${stats.size} bytes) — puede estar vacío o corrupto. Revisa manualmente antes de confiar en este respaldo.`);
+  throw new Error(
+    `⚠️ El archivo de respaldo se ve sospechosamente pequeño (${stats.size} bytes) — puede estar vacío o corrupto. Revisa manualmente antes de confiar en este respaldo.`,
+  );
 }
-console.log(`✅ Verificado: el archivo pesa ${(stats.size / 1024 / 1024).toFixed(2)} MB — tamaño razonable.`);
+console.log(
+  `✅ Verificado: el archivo pesa ${(stats.size / 1024 / 1024).toFixed(2)} MB — tamaño razonable.`,
+);
 
 if (AIVEN_URL) {
   console.log("[2/3] Restaurando respaldo en Aiven...");
   try {
     execFileSync(
       PG_RESTORE,
-      [`--dbname=${AIVEN_URL}`, "--clean", "--if-exists", "--no-owner", filePath],
-      { stdio: "inherit" }
+      [
+        `--dbname=${AIVEN_URL}`,
+        "--clean",
+        "--if-exists",
+        "--no-owner",
+        filePath,
+      ],
+      { stdio: "inherit" },
     );
     console.log("Restaurado en Aiven correctamente.");
   } catch (err) {
@@ -78,7 +91,7 @@ if (R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET) {
       Bucket: R2_BUCKET,
       Key: fileName,
       Body: readFileSync(filePath),
-    })
+    }),
   );
   console.log("Subido a Cloudflare R2 correctamente.");
 } else {

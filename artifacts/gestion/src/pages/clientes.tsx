@@ -270,7 +270,7 @@ export default function Clientes() {
 
   const isSaving = crearMutation.isPending || actualizarMutation.isPending;
 
-  const API = `${import.meta.env.BASE_URL}api`
+  const API = "/api"
     .replace(/\/+/g, "/")
     .replace(/\/$/, "");
 
