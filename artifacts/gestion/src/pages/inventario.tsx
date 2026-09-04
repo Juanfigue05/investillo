@@ -178,6 +178,17 @@ export default function Inventario() {
   }, [search, filters, sortCol, sortDir]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputCompletoRef = useRef<HTMLInputElement>(null);
+  const [previsualizando, setPrevisualizando] = useState(false);
+  const [aplicandoCompleto, setAplicandoCompleto] = useState(false);
+  const [previewCompleto, setPreviewCompleto] = useState<{
+    totalEnArchivo: number;
+    sinCambios: number;
+    omitidosSinNombre: number;
+    cambios: { codigo: string; nombre: string; esNuevo: boolean; cambios: { campo: string; actual: string; nuevo: string }[] }[];
+    filasParaAplicar: any[];
+  } | null>(null);
+  const [resultadoAplicado, setResultadoAplicado] = useState<{ actualizados: number; creados: number } | null>(null);
   const [importando, setImportando] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
@@ -187,6 +198,48 @@ export default function Inventario() {
   const [newCodes, setNewCodes] = useState<Record<string, string>>({}); // codigo → nuevo código para opción C
   const [resolviendo, setResolviendo] = useState(false);
   const [resolvedOk, setResolvedOk] = useState(false);
+
+    const handlePrevisualizar = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setPrevisualizando(true);
+    setPreviewCompleto(null);
+    setResultadoAplicado(null);
+    try {
+      const form = new FormData();
+      form.append("archivo", file);
+      const res = await fetch(`${API}/inventario-import/previsualizar`, { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al previsualizar");
+      setPreviewCompleto(data);
+    } catch (err) {
+      alert("Error: " + err);
+    } finally {
+      setPrevisualizando(false);
+    }
+  };
+
+  const handleAplicarCompleto = async () => {
+    if (!previewCompleto?.filasParaAplicar.length) return;
+    setAplicandoCompleto(true);
+    try {
+      const res = await fetch(`${API}/inventario-import/aplicar-completo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filas: previewCompleto.filasParaAplicar }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al aplicar");
+      setResultadoAplicado({ actualizados: data.actualizados, creados: data.creados });
+      setPreviewCompleto(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+    } catch (err) {
+      alert("Error al aplicar los cambios: " + err);
+    } finally {
+      setAplicandoCompleto(false);
+    }
+  };
 
   const handleTrasladar = async () => {
     if (!trasladarProductoId || !trasladarCantidad) return;
@@ -669,8 +722,8 @@ export default function Inventario() {
           <div className="flex gap-2 flex-wrap">
             {/* Download template */}
             <a
-              href={`${API}/inventario-import/template`}
-              download="plantilla_inventario.xlsx"
+              href={`${API}/inventario-import/template-completa`}
+              download="plantilla_inventario_completa.xlsx"
               className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm"
             >
               <FileDown className="w-4 h-4 text-green-400" />
@@ -678,8 +731,8 @@ export default function Inventario() {
             </a>
 
             <a
-              href={`${API}/inventario-import/export`}
-              download="inventario_productos.xlsx"
+              href={`${API}/inventario-import/exportar-completo`}
+              download="inventario_completo.xlsx"
               className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm"
             >
               <FileDown className="w-4 h-4 text-primary" />
@@ -706,6 +759,28 @@ export default function Inventario() {
               ) : (
                 <>
                   <Upload className="w-4 h-4 text-primary" /> Importar Excel
+                </>
+              )}
+            </button>
+                        <input
+              ref={fileInputCompletoRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={handlePrevisualizar}
+            />
+            <button
+              onClick={() => fileInputCompletoRef.current?.click()}
+              disabled={previsualizando}
+              className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 border border-primary/40 text-primary rounded-xl font-medium hover:bg-primary/20 transition-all shadow-md whitespace-nowrap text-sm disabled:opacity-60"
+            >
+              {previsualizando ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Comparando...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4" /> Importar y Revisar Cambios
                 </>
               )}
             </button>
@@ -758,6 +833,110 @@ export default function Inventario() {
             </button>
           </div>
         </div>
+        
+        {/* Vista previa de cambios */}
+        {previewCompleto && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }} onClick={() => setPreviewCompleto(null)}>
+            <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="sticky top-0 bg-card border-b border-border px-6 py-4 flex items-center justify-between z-10">
+                <h2 className="text-lg font-bold text-foreground">Vista previa de cambios</h2>
+                <button onClick={() => setPreviewCompleto(null)} className="text-muted-foreground hover:text-foreground text-xl leading-none">✕</button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-background rounded-xl border border-border p-3 text-center">
+                    <p className="text-2xl font-bold text-foreground">{previewCompleto.totalEnArchivo}</p>
+                    <p className="text-xs text-muted-foreground">En el Excel</p>
+                  </div>
+                  <div className="bg-emerald-500/10 rounded-xl border border-emerald-500/30 p-3 text-center">
+                    <p className="text-2xl font-bold text-emerald-400">{previewCompleto.cambios.filter((c) => c.esNuevo).length}</p>
+                    <p className="text-xs text-muted-foreground">Productos nuevos</p>
+                  </div>
+                  <div className="bg-amber-500/10 rounded-xl border border-amber-500/30 p-3 text-center">
+                    <p className="text-2xl font-bold text-amber-400">{previewCompleto.cambios.filter((c) => !c.esNuevo).length}</p>
+                    <p className="text-xs text-muted-foreground">Con cambios</p>
+                  </div>
+                  <div className="bg-background rounded-xl border border-border p-3 text-center">
+                    <p className="text-2xl font-bold text-muted-foreground">{previewCompleto.sinCambios}</p>
+                    <p className="text-xs text-muted-foreground">Sin cambios (se ignoran)</p>
+                  </div>
+                </div>
+
+                {previewCompleto.omitidosSinNombre > 0 && (
+                  <p className="text-sm text-destructive">⚠ {previewCompleto.omitidosSinNombre} fila(s) se omitieron por ser productos nuevos sin nombre.</p>
+                )}
+
+                {previewCompleto.cambios.length === 0 ? (
+                  <p className="text-center py-8 text-muted-foreground text-sm">No hay ningún cambio que aplicar — el archivo coincide con lo que ya tienes.</p>
+                ) : (
+                  <div className="border border-border rounded-xl overflow-hidden max-h-[50vh] overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted sticky top-0">
+                        <tr>
+                          <th className="text-left px-3 py-2">Código</th>
+                          <th className="text-left px-3 py-2">Producto</th>
+                          <th className="text-left px-3 py-2">Cambios</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {previewCompleto.cambios.map((c) => (
+                          <tr key={c.codigo}>
+                            <td className="px-3 py-2 font-mono text-xs align-top">{c.codigo}</td>
+                            <td className="px-3 py-2 align-top">
+                              {c.nombre}
+                              {c.esNuevo && <span className="ml-2 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">NUEVO</span>}
+                            </td>
+                            <td className="px-3 py-2 text-xs">
+                              {c.esNuevo ? (
+                                <span className="text-muted-foreground">Se creará este producto</span>
+                              ) : (
+                                <ul className="space-y-0.5">
+                                  {c.cambios.map((d, i) => (
+                                    <li key={i}>
+                                      <span className="text-muted-foreground">{d.campo}:</span>{" "}
+                                      <span className="text-destructive">{d.actual}</span>{" → "}
+                                      <span className="text-emerald-400 font-medium">{d.nuevo}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {previewCompleto.cambios.length > 0 && (
+                  <button
+                    onClick={handleAplicarCompleto}
+                    disabled={aplicandoCompleto}
+                    className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-xl font-bold disabled:opacity-50"
+                  >
+                    {aplicandoCompleto ? "Aplicando..." : `Aplicar ${previewCompleto.cambios.length} cambio(s)`}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {resultadoAplicado && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }} onClick={() => setResultadoAplicado(null)}>
+            <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center space-y-3" onClick={(e) => e.stopPropagation()}>
+              <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
+              <h3 className="text-lg font-bold text-foreground">¡Listo!</h3>
+              <p className="text-sm text-muted-foreground">
+                {resultadoAplicado.actualizados} producto(s) actualizado(s), {resultadoAplicado.creados} creado(s) nuevo(s).
+              </p>
+              <button onClick={() => setResultadoAplicado(null)} className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium">
+                Cerrar
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Trasladar Stock Modal */}
         <div className="space-y-4">
