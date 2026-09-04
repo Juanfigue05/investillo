@@ -1004,8 +1004,8 @@ export default function Creditos() {
           </div>
         )}
 
-        <div className="flex flex-col lg:flex-row gap-3 lg:items-start">
-          <div className="relative max-w-md lg:flex-1">
+        <div className="space-y-3">
+          <div className="relative w-full max-w-xl">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
@@ -1023,102 +1023,109 @@ export default function Creditos() {
               </button>
             )}
           </div>
-          <div className="flex flex-wrap gap-3 items-end lg:justify-end">
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
-                Fecha exacta
-              </label>
-              <input
-                type="date"
-                value={filtroFechaExacta}
-                onChange={(e) => setFiltroFechaExacta(e.target.value)}
-                className="bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none"
-              />
+          <div className="rounded-2xl border border-border bg-card/70 p-3 sm:p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Filtros de consulta
+              </p>
+              {hayFiltros && (
+                <button
+                  onClick={() => {
+                    setBusqueda("");
+                    setFiltroDesde("");
+                    setFiltroHasta("");
+                    setFiltroPlaca("");
+                    setFiltroFechaExacta("");
+                    setFiltroMes("");
+                    setFiltroMora("");
+                    setFiltroValor("");
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Limpiar filtros
+                </button>
+              )}
             </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
-                Mes y año
-              </label>
-              <input
-                type="month"
-                value={filtroMes}
-                onChange={(e) => setFiltroMes(e.target.value)}
-                className="bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
-                Mora
-              </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3 items-end">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Fecha exacta
+                </label>
+                <input
+                  type="date"
+                  value={filtroFechaExacta}
+                  onChange={(e) => setFiltroFechaExacta(e.target.value)}
+                  className="bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Mes y año
+                </label>
+                <input
+                  type="month"
+                  value={filtroMes}
+                  onChange={(e) => setFiltroMes(e.target.value)}
+                  className="bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Mora
+                </label>
+                <select
+                  value={filtroMora}
+                  onChange={(e) => setFiltroMora(e.target.value)}
+                  className="bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none"
+                >
+                  <option value="">Cualquier mora</option>
+                  <option value="1-15">1-15 días</option>
+                  <option value="16-30">16-30 días</option>
+                  <option value="31-45">31-45 días</option>
+                  <option value="46-60">46-60 días</option>
+                  <option value="61-90">61-90 días</option>
+                  <option value="91-180">91-180 días</option>
+                  <option value="181+">Más de 6 meses</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Valor
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="$"
+                  value={filtroValor}
+                  onChange={(e) => setFiltroValor(e.target.value)}
+                  className="w-28 bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none"
+                />
+              </div>
               <select
-                value={filtroMora}
-                onChange={(e) => setFiltroMora(e.target.value)}
+                aria-label="Regla de valor"
+                value={filtroValorModo}
+                onChange={(e) =>
+                  setFiltroValorModo(e.target.value as typeof filtroValorModo)
+                }
                 className="bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none"
               >
-                <option value="">Cualquier mora</option>
-                <option value="1-15">1-15 días</option>
-                <option value="16-30">16-30 días</option>
-                <option value="31-45">31-45 días</option>
-                <option value="46-60">46-60 días</option>
-                <option value="61-90">61-90 días</option>
-                <option value="91-180">91-180 días</option>
-                <option value="181+">Más de 6 meses</option>
+                <option value="menorIgual">Menor o igual</option>
+                <option value="igual">Igual</option>
+                <option value="hasta20">Hasta 20% mayor</option>
               </select>
+              <div className="relative">
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Placa / Vehículo
+                </label>
+                <input
+                  type="text"
+                  placeholder="Placa..."
+                  value={filtroPlaca}
+                  onChange={(e) => setFiltroPlaca(e.target.value)}
+                  className="w-32 bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
-                Valor
-              </label>
-              <input
-                type="number"
-                min="0"
-                placeholder="$"
-                value={filtroValor}
-                onChange={(e) => setFiltroValor(e.target.value)}
-                className="w-28 bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none"
-              />
-            </div>
-            <select
-              aria-label="Regla de valor"
-              value={filtroValorModo}
-              onChange={(e) =>
-                setFiltroValorModo(e.target.value as typeof filtroValorModo)
-              }
-              className="bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none"
-            >
-              <option value="menorIgual">Menor o igual</option>
-              <option value="igual">Igual</option>
-              <option value="hasta20">Hasta 20% mayor</option>
-            </select>
-            <div className="relative">
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
-                Placa / Vehículo
-              </label>
-              <input
-                type="text"
-                placeholder="Placa..."
-                value={filtroPlaca}
-                onChange={(e) => setFiltroPlaca(e.target.value)}
-                className="w-32 bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none"
-              />
-            </div>
-            {hayFiltros && (
-              <button
-                onClick={() => {
-                  setBusqueda("");
-                  setFiltroDesde("");
-                  setFiltroHasta("");
-                  setFiltroPlaca("");
-                  setFiltroFechaExacta("");
-                  setFiltroMes("");
-                  setFiltroMora("");
-                  setFiltroValor("");
-                }}
-                className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-xl px-3 py-2 bg-card"
-              >
-                Limpiar
-              </button>
-            )}
           </div>
         </div>
 
