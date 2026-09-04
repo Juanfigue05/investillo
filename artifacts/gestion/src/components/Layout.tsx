@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Sidebar } from "./Sidebar";
 import { FloatingNotepad } from "./FloatingNotepad";
 import { FloatingPriceCheck } from "./FloatingPriceCheck";
@@ -27,6 +27,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
     query: { queryKey: getGetAlertasStockQueryKey(), refetchInterval: 4000 },
   });
 
+  const [sidebarExpandido, setSidebarExpandido] = useState(false);
+  const collapseTimeout = useRef<ReturnType<typeof setTimeout> | null>(null); 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [read, setRead] = useState<Set<number>>(() => loadSet(KEYS.read));
@@ -86,11 +88,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
-        <Sidebar onClose={() => setSidebarOpen(false)} />
+        <Sidebar
+          onClose={() => setSidebarOpen(false)}
+          expandido={sidebarExpandido}
+          onMouseEnter={() => {
+            if (collapseTimeout.current) clearTimeout(collapseTimeout.current);
+            setSidebarExpandido(true);
+          }}
+          onMouseLeave={() => {
+            collapseTimeout.current = setTimeout(() => setSidebarExpandido(false), 5000);
+          }}
+        />
       </div>
 
       {/* Main content */}
-      <div className="flex-1 lg:ml-64 flex flex-col min-w-0">
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${sidebarExpandido ? "lg:ml-64" : "lg:ml-20"}`}>
         {/* Header */}
         <header className="h-16 lg:h-20 px-4 lg:px-8 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-20 flex items-center justify-between gap-4">
           {/* Mobile hamburger */}

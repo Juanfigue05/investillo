@@ -386,7 +386,10 @@ export default function Inventario() {
     precioVentaSinIva: 0,
     tieneIva: false,
     stockActual: 0,
+    stockLocal: 0,
+    stockBodega: 0,
     stockMinimo: 0,
+    activo: true,
   });
 
   // Unique marcas and tipos from inventory
@@ -518,7 +521,10 @@ export default function Inventario() {
       precioVentaSinIva: prod.precioVentaSinIva,
       tieneIva: prod.tieneIva,
       stockActual: prod.stockActual,
+      stockLocal: (prod as any).stockLocal ?? 0,
+      stockBodega: (prod as any).stockBodega ?? 0,
       stockMinimo: prod.stockMinimo,
+      activo: (prod as any).activo !== false,
     });
     setEditingId(prod.id);
     setShowForm(true);
@@ -725,6 +731,9 @@ export default function Inventario() {
                   tieneIva: true,
                   stockActual: 0,
                   stockMinimo: 0,
+                  stockLocal: 0,
+                  stockBodega: 0,
+                  activo: true,
                 });
                 setShowForm(true);
               }}
@@ -1792,30 +1801,25 @@ export default function Inventario() {
                                   ⏳ Pendiente
                                 </span>
                               ) : (
-                                <div className="flex justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="flex justify-end items-center gap-1.5">
+                                  <select
+                                    value={(prod as any).activo === false ? "inactivo" : "activo"}
+                                    onChange={(e) => e.target.value === "inactivo" ? handleDelete(prod.id) : handleReactivar(prod.id)}
+                                    className={`text-xs px-2 py-1 rounded-lg border outline-none cursor-pointer ${
+                                      (prod as any).activo === false
+                                        ? "bg-destructive/10 border-destructive/30 text-destructive"
+                                        : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                                    }`}
+                                  >
+                                    <option value="activo">🟢 Activo</option>
+                                    <option value="inactivo">🔴 Inactivo</option>
+                                  </select>
                                   <button
                                     onClick={() => openEdit(prod)}
-                                    className="p-1.5 text-muted-foreground hover:text-primary bg-muted rounded-lg transition-colors"
+                                    className="p-1.5 text-muted-foreground hover:text-primary bg-muted rounded-lg transition-colors opacity-0 group-hover:opacity-100 transition-opacity"
                                   >
                                     <Edit2 className="w-3.5 h-3.5" />
                                   </button>
-                                  {(prod as any).activo === false ? (
-                                    <button
-                                      onClick={() => handleReactivar(prod.id)}
-                                      className="p-1.5 text-muted-foreground hover:text-emerald-400 bg-muted rounded-lg transition-colors"
-                                      title="Reactivar producto"
-                                    >
-                                      <CheckCircle2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() => handleDelete(prod.id)}
-                                      className="p-1.5 text-muted-foreground hover:text-destructive bg-muted rounded-lg transition-colors"
-                                      title="Inactivar producto"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
                                 </div>
                               )}
                             </td>
@@ -1990,25 +1994,53 @@ export default function Inventario() {
 
                       <hr className="border-border" />
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-muted-foreground mb-1">
-                            Stock Actual
+                            🏪 En Local
                           </label>
                           <input
                             required
                             type="number"
                             step="0.01"
-                            value={formData.stockActual}
+                            value={formData.stockLocal}
                             onChange={(e) =>
                               setFormData({
                                 ...formData,
-                                stockActual: parseFloat(e.target.value) || 0,
+                                stockLocal: parseFloat(e.target.value) || 0,
                               })
                             }
                             className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground"
                           />
                         </div>
+                        <div>
+                          <label className="block text-sm font-medium text-muted-foreground mb-1">
+                            📦 En Bodega
+                          </label>
+                          <input
+                            required
+                            type="number"
+                            step="0.01"
+                            value={formData.stockBodega}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                stockBodega: parseFloat(e.target.value) || 0,
+                              })
+                            }
+                            className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-muted-foreground mb-1">
+                            Total (automático)
+                          </label>
+                          <div className="w-full px-4 py-2 bg-muted border border-border rounded-lg text-foreground font-bold">
+                            {(formData.stockLocal + formData.stockBodega).toLocaleString("es-CO", { maximumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-muted-foreground mb-1">
                             Stock Mínimo (Alerta)
@@ -2108,6 +2140,18 @@ export default function Inventario() {
                             {formatCurrency(precioConIva)}
                           </span>
                         </div>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-muted-foreground mb-1">Estado</label>
+                        <select
+                          value={formData.activo ? "activo" : "inactivo"}
+                          onChange={(e) => setFormData({ ...formData, activo: e.target.value === "activo" })}
+                          className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground"
+                        >
+                          <option value="activo">🟢 Activo</option>
+                          <option value="inactivo">🔴 Inactivo</option>
+                        </select>
                       </div>
 
                       <div className="flex justify-end gap-3 pt-4">

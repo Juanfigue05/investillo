@@ -154,12 +154,16 @@ router.put("/:id", async (req, res) => {
     precioCompra,
     precioVentaSinIva,
     tieneIva,
-    stockActual,
+    stockLocal,
+    stockBodega,
     stockMinimo,
+    activo,
   } = req.body;
 
   const pvSinIva = parseFloat(precioVentaSinIva);
   const pvConIva = calcPrecioConIva(pvSinIva);
+  const local = parseFloat(stockLocal) || 0;
+  const bodega = parseFloat(stockBodega) || 0;
 
   const [producto] = await db
     .update(productosTable)
@@ -174,8 +178,11 @@ router.put("/:id", async (req, res) => {
       precioVentaSinIva: String(pvSinIva),
       precioVentaConIva: String(pvConIva),
       tieneIva: Boolean(tieneIva),
-      stockActual: String(parseFloat(stockActual)),
+      stockLocal: String(local),
+      stockBodega: String(bodega),
+      stockActual: String(local + bodega),
       stockMinimo: String(parseFloat(stockMinimo)),
+      activo: activo !== undefined ? Boolean(activo) : undefined,
       actualizadoEn: new Date(),
     })
     .where(eq(productosTable.id, id))
