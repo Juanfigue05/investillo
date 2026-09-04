@@ -221,7 +221,7 @@ export default function Creditos() {
             // Solo auto-llenar precios en líneas nuevas; las guardadas mantienen su precio
             ...(esLinueva
               ? {
-                  precioVenta: String(prod.precioVentaSinIva),
+                  precioVenta: String(prod.tieneIva ? prod.precioVentaConIva : prod.precioVentaSinIva),
                   precioCompra: String(prod.precioCompra),
                 }
               : {}),
@@ -1299,7 +1299,7 @@ export default function Creditos() {
                                   nombre: p.nombre,
                                   codigo: p.codigo,
                                   marca: p.marca || undefined,
-                                  precioVenta: p.precioVentaSinIva,
+                                  precioVenta: p.tieneIva ? p.precioVentaConIva : p.precioVentaSinIva,
                                   stockActual: p.stockActual,
                                   stockMinimo: p.stockMinimo,
                                 }),

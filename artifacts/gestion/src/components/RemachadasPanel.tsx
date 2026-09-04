@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, Pencil, Check } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
@@ -17,6 +17,7 @@ export function RemachadasPanel() {
   const [editValor, setEditValor] = useState("");
   const [nuevaBanda, setNuevaBanda] = useState("");
   const [nuevoValor, setNuevoValor] = useState("");
+  const [filtroPrecio, setFiltroPrecio] = useState("");
 
   const cargar = async () => {
     setCargando(true);
@@ -65,6 +66,16 @@ export function RemachadasPanel() {
     setRemachadas((prev) => prev.filter((r) => r.id !== id));
   };
 
+  const preciosUnicos = useMemo(
+    () => [...new Set(remachadas.map((r) => r.valorJuego))].sort((a, b) => a - b),
+    [remachadas]
+  );
+
+  const remachadasFiltradas = useMemo(
+    () => (filtroPrecio ? remachadas.filter((r) => r.valorJuego === parseFloat(filtroPrecio)) : remachadas),
+    [remachadas, filtroPrecio]
+  );
+
   return (
     <div className="bg-card border border-border rounded-2xl p-5 shadow-xl">
       <h2 className="text-lg font-display font-bold text-foreground mb-1">
@@ -76,86 +87,8 @@ export function RemachadasPanel() {
         Cierre.
       </p>
 
-      <div className="overflow-x-auto rounded-xl border border-border">
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="bg-muted text-muted-foreground">
-              <th className="px-3 py-2 text-left">Número banda</th>
-              <th className="px-3 py-2 text-right">Valor remachada (juego)</th>
-              <th className="px-3 py-2 w-20"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/50">
-            {cargando ? (
-              <tr>
-                <td
-                  colSpan={3}
-                  className="px-3 py-6 text-center text-muted-foreground"
-                >
-                  Cargando...
-                </td>
-              </tr>
-            ) : remachadas.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={3}
-                  className="px-3 py-6 text-center text-muted-foreground"
-                >
-                  No hay bandas registradas todavía.
-                </td>
-              </tr>
-            ) : (
-              remachadas.map((r) => (
-                <tr key={r.id}>
-                  <td className="px-3 py-2 font-medium">{r.numeroBanda}</td>
-                  <td className="px-3 py-2 text-right">
-                    {editandoId === r.id ? (
-                      <input
-                        type="number"
-                        value={editValor}
-                        onChange={(e) => setEditValor(e.target.value)}
-                        className="w-28 bg-background border border-primary/50 px-2 py-1 rounded-lg text-sm text-right"
-                      />
-                    ) : (
-                      formatCurrency(r.valorJuego)
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex gap-1 justify-end">
-                      {editandoId === r.id ? (
-                        <button
-                          onClick={() => guardarEdicion(r.id)}
-                          className="p-1 text-primary"
-                        >
-                          <Check className="w-4 h-4" />
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setEditandoId(r.id);
-                            setEditValor(String(r.valorJuego));
-                          }}
-                          className="p-1 text-muted-foreground hover:text-primary"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => eliminar(r.id)}
-                        className="p-1 text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="flex gap-2 mt-4">
+      {/* ── Agregar (arriba, para que no se corra con la tabla) ── */}
+      <div className="flex flex-wrap gap-2 mb-4">
         <input
           placeholder="Número de banda"
           value={nuevaBanda}
@@ -175,6 +108,98 @@ export function RemachadasPanel() {
         >
           <Plus className="w-4 h-4" /> Agregar
         </button>
+      </div>
+
+      {/* ── Filtro por precio ── */}
+      <div className="flex items-center gap-2 mb-3">
+        <label className="text-xs font-medium text-muted-foreground">Filtrar por precio:</label>
+        <select
+          value={filtroPrecio}
+          onChange={(e) => setFiltroPrecio(e.target.value)}
+          className="bg-background border border-border px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
+        >
+          <option value="">Todos los precios ({remachadas.length})</option>
+          {preciosUnicos.map((precio) => {
+            const cantidad = remachadas.filter((r) => r.valorJuego === precio).length;
+            return (
+              <option key={precio} value={precio}>
+                {formatCurrency(precio)} ({cantidad})
+              </option>
+            );
+          })}
+        </select>
+        {filtroPrecio && (
+          <button onClick={() => setFiltroPrecio("")} className="text-xs text-muted-foreground hover:text-destructive underline">
+            Quitar filtro
+          </button>
+        )}
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-border">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="bg-muted text-muted-foreground">
+              <th className="px-3 py-2 text-left">Número banda</th>
+              <th className="px-3 py-2 text-right">Valor remachada (juego)</th>
+              <th className="px-3 py-2 w-20"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/50">
+            {cargando ? (
+              <tr>
+                <td colSpan={3} className="px-3 py-6 text-center text-muted-foreground">
+                  Cargando...
+                </td>
+              </tr>
+            ) : remachadasFiltradas.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="px-3 py-6 text-center text-muted-foreground">
+                  {filtroPrecio ? "Ninguna banda tiene ese precio." : "No hay bandas registradas todavía."}
+                </td>
+              </tr>
+            ) : (
+              remachadasFiltradas.map((r) => (
+                <tr key={r.id}>
+                  <td className="px-3 py-2 font-medium">{r.numeroBanda}</td>
+                  <td className="px-3 py-2 text-right">
+                    {editandoId === r.id ? (
+                      <input
+                        type="number"
+                        value={editValor}
+                        onChange={(e) => setEditValor(e.target.value)}
+                        className="w-28 bg-background border border-primary/50 px-2 py-1 rounded-lg text-sm text-right"
+                      />
+                    ) : (
+                      formatCurrency(r.valorJuego)
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex gap-1 justify-end">
+                      {editandoId === r.id ? (
+                        <button onClick={() => guardarEdicion(r.id)} className="p-1 text-primary">
+                          <Check className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setEditandoId(r.id);
+                            setEditValor(String(r.valorJuego));
+                          }}
+                          className="p-1 text-muted-foreground hover:text-primary"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button onClick={() => eliminar(r.id)} className="p-1 text-muted-foreground hover:text-destructive">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

@@ -103,7 +103,7 @@ export function FloatingPriceCheck({ topbar }: { topbar?: boolean }) {
       cant,
       subtotalCompra: prod.precioCompra * cant,
       subtotalSinIva: prod.precioVentaSinIva * cant,
-      subtotalConIva: prod.precioVentaConIva * cant,
+      subtotalConIva: Math.ceil((prod.precioVentaSinIva * 1.19) / 1000) * 1000 * cant,
     };
   };
 
@@ -176,7 +176,7 @@ export function FloatingPriceCheck({ topbar }: { topbar?: boolean }) {
                   <div className="grid grid-cols-3 gap-x-1 text-xs">
                     <span className="text-right text-muted-foreground font-medium tabular-nums">{formatCurrency(calc.prod.precioCompra)}</span>
                     <span className="text-right text-muted-foreground font-medium tabular-nums">{formatCurrency(calc.prod.precioVentaSinIva)}</span>
-                    <span className="text-right text-green-500 font-bold tabular-nums">{formatCurrency(calc.prod.precioVentaConIva)}</span>
+                    <span className="text-right text-green-500 font-bold tabular-nums">{formatCurrency(Math.ceil((calc.prod.precioVentaSinIva * 1.19) / 1000) * 1000)}</span>
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground/40 text-center col-span-1">—</div>

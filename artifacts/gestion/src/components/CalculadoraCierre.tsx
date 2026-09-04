@@ -94,13 +94,14 @@ export function CalculadoraCierre({
     if (open && remachadas.length === 0) cargarRemachadas();
   }, [open]);
 
-  // "resultadoBanda" depende de "remachadas" y "bandaBuscada" — por eso va DESPUÉS de que ambas ya existan arriba.
-  const resultadoBanda = useMemo(
+  // "resultadosBanda" depende de "remachadas" y "bandaBuscada" — por eso va DESPUÉS de que ambas ya existan arriba.
+  const resultadosBanda = useMemo(
     () =>
-      remachadas.find(
-        (r) =>
-          r.numeroBanda.toLowerCase() === bandaBuscada.trim().toLowerCase(),
-      ) || null,
+      bandaBuscada.trim()
+        ? remachadas.filter((r) =>
+            r.numeroBanda.toLowerCase().includes(bandaBuscada.trim().toLowerCase()),
+          )
+        : [],
     [remachadas, bandaBuscada],
   );
 
@@ -448,7 +449,7 @@ export function CalculadoraCierre({
 
               {!cargandoRemachadas &&
                 bandaBuscada.trim() &&
-                (resultadoBanda ? (
+                (resultadosBanda.length > 0 ? (
                   <div className="mt-3 overflow-x-auto rounded-xl border border-border max-w-2xl">
                     <table className="w-full text-sm border-collapse">
                       <thead>
@@ -463,32 +464,34 @@ export function CalculadoraCierre({
                           </th>
                         </tr>
                       </thead>
-                      <tbody>
-                        <tr>
-                          <td className="px-3 py-2 font-medium">
-                            {resultadoBanda.numeroBanda}
-                          </td>
-                          <td className="px-3 py-2 text-right font-bold text-primary">
-                            {formatCurrency(resultadoBanda.valorJuego)}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {formatCurrency(
-                              aproximarMiles(resultadoBanda.valorJuego * 0.5),
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {formatCurrency(
-                              aproximarMiles(resultadoBanda.valorJuego * 0.25),
-                            )}
-                          </td>
-                        </tr>
+                      <tbody className="divide-y divide-border/50">
+                        {resultadosBanda.map((r) => (
+                          <tr
+                            key={r.id}
+                            className="cursor-pointer hover:bg-muted/40 transition-colors"
+                            onClick={() => setBandaBuscada(r.numeroBanda)}
+                          >
+                            <td className="px-3 py-2 font-medium">
+                              {r.numeroBanda}
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold text-primary">
+                              {formatCurrency(r.valorJuego)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatCurrency(aproximarMiles(r.valorJuego * 0.5))}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatCurrency(aproximarMiles(r.valorJuego * 0.25))}
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground mt-3">
-                    No se encontró esa banda. Agrégala desde Inventario →
-                    pestaña Remachadas.
+                    No se encontró ninguna banda con ese número. Agrégala desde
+                    Inventario → pestaña Remachadas.
                   </p>
                 ))}
             </div>

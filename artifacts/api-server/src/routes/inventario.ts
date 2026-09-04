@@ -99,7 +99,7 @@ router.post("/", async (req, res) => {
   } = req.body;
 
   const pvSinIva = parseFloat(precioVentaSinIva);
-  const pvConIva = tieneIva ? calcPrecioConIva(pvSinIva) : pvSinIva;
+  const pvConIva = calcPrecioConIva(pvSinIva);
 
   const [producto] = await db
     .insert(productosTable)
@@ -159,7 +159,7 @@ router.put("/:id", async (req, res) => {
   } = req.body;
 
   const pvSinIva = parseFloat(precioVentaSinIva);
-  const pvConIva = tieneIva ? calcPrecioConIva(pvSinIva) : pvSinIva;
+  const pvConIva = calcPrecioConIva(pvSinIva);
 
   const [producto] = await db
     .update(productosTable)

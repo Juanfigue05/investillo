@@ -1495,6 +1495,21 @@ export default function Compras() {
                                         );
                                       })}
                                     </tbody>
+                                    <tfoot className="border-t-2 border-border bg-muted/30">
+                                      <tr>
+                                        <td colSpan={5} className="px-4 py-3 text-right font-bold text-foreground uppercase text-xs tracking-wider hidden md:table-cell print:table-cell">
+                                          Total del mes
+                                        </td>
+                                        <td colSpan={2} className="px-4 py-3 text-right font-bold text-foreground uppercase text-xs tracking-wider md:hidden print:hidden">
+                                          Total del mes
+                                        </td>
+                                        <td className="px-4 py-3 font-display font-bold text-lg text-primary whitespace-nowrap">
+                                          {formatCurrency(totalMes)}
+                                        </td>
+                                        <td className="hidden lg:table-cell print:table-cell"></td>
+                                        <td className="no-print"></td>
+                                      </tr>
+                                    </tfoot>
                                   </table>
                                 </div>
                               </div>

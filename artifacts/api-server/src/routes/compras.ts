@@ -115,8 +115,7 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
 
       if (nuevoPrecioVentaSinIva !== undefined && nuevoPrecioVentaSinIva !== "") {
         const pvSinIva = parseFloat(String(nuevoPrecioVentaSinIva));
-        const haIva = tieneIva !== undefined ? Boolean(tieneIva) : producto.tieneIva;
-        precioVentaFinal = haIva ? calcPrecioConIva(pvSinIva) : pvSinIva;
+        precioVentaFinal = calcPrecioConIva(pvSinIva);
         if (Math.abs(precioVentaFinal - toNum(producto.precioVentaConIva)) > 0.01) preciosModificados = true;
         if (actualizarPrecioInventario !== false) {
           updateProd.precioVentaSinIva = String(pvSinIva);
