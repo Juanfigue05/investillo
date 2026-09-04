@@ -95,6 +95,8 @@ export interface VentaDiaria {
   beneficio: number;
   /** Descripcion adicional (para manoobra o credito) */
   descripcion?: string | null;
+  /** Forma de pago: efectivo, cuenta_ernesto, cuenta_olga, cuenta_juan */
+  formaPago?: string | null;
   creadoEn?: string;
 }
 
@@ -121,6 +123,7 @@ export interface VentaDiariaInput {
   precioVentaTotal: number;
   beneficio: number;
   descripcion?: string | null;
+  formaPago?: string | null;
 }
 
 export interface CreditoLinea {
@@ -429,6 +432,7 @@ export interface Cliente {
   id: number;
   nombre: string;
   telefono?: string | null;
+  telefono2?: string | null;
   correo?: string | null;
   notas?: string | null;
   creadoEn?: string | null;
@@ -439,6 +443,7 @@ export interface Cliente {
 export interface ClienteInput {
   nombre: string;
   telefono?: string | null;
+  telefono2?: string | null;
   correo?: string | null;
   notas?: string | null;
   vehiculos?: VehiculoInput[];
@@ -447,6 +452,7 @@ export interface ClienteInput {
 export interface ClienteUpdateInput {
   nombre?: string;
   telefono?: string | null;
+  telefono2?: string | null;
   correo?: string | null;
   notas?: string | null;
 }

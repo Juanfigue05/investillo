@@ -263,6 +263,12 @@ export const GetVentasResponseItem = zod.object({
     .string()
     .nullish()
     .describe("Descripcion adicional (para manoobra o credito)"),
+  formaPago: zod
+    .string()
+    .nullish()
+    .describe(
+      "Forma de pago: efectivo, cuenta_ernesto, cuenta_olga, cuenta_juan",
+    ),
   creadoEn: zod.coerce.date().optional(),
 });
 export const GetVentasResponse = zod.array(GetVentasResponseItem);
@@ -284,6 +290,7 @@ export const CrearVentaBody = zod.object({
   precioVentaTotal: zod.number(),
   beneficio: zod.number(),
   descripcion: zod.string().nullish(),
+  formaPago: zod.string().nullish(),
 });
 
 /**
@@ -323,6 +330,7 @@ export const ActualizarVentaBody = zod.object({
   precioVentaTotal: zod.number(),
   beneficio: zod.number(),
   descripcion: zod.string().nullish(),
+  formaPago: zod.string().nullish(),
 });
 
 export const ActualizarVentaResponse = zod.object({
@@ -349,6 +357,12 @@ export const ActualizarVentaResponse = zod.object({
     .string()
     .nullish()
     .describe("Descripcion adicional (para manoobra o credito)"),
+  formaPago: zod
+    .string()
+    .nullish()
+    .describe(
+      "Forma de pago: efectivo, cuenta_ernesto, cuenta_olga, cuenta_juan",
+    ),
   creadoEn: zod.coerce.date().optional(),
 });
 
@@ -1050,6 +1064,12 @@ export const GetHistorialResponseItem = zod.object({
         .string()
         .nullish()
         .describe("Descripcion adicional (para manoobra o credito)"),
+      formaPago: zod
+        .string()
+        .nullish()
+        .describe(
+          "Forma de pago: efectivo, cuenta_ernesto, cuenta_olga, cuenta_juan",
+        ),
       creadoEn: zod.coerce.date().optional(),
     }),
   ),
@@ -1105,6 +1125,12 @@ export const ActualizarHistorialResponse = zod.object({
         .string()
         .nullish()
         .describe("Descripcion adicional (para manoobra o credito)"),
+      formaPago: zod
+        .string()
+        .nullish()
+        .describe(
+          "Forma de pago: efectivo, cuenta_ernesto, cuenta_olga, cuenta_juan",
+        ),
       creadoEn: zod.coerce.date().optional(),
     }),
   ),
@@ -1160,6 +1186,7 @@ export const GetClientesResponseItem = zod.object({
   id: zod.number(),
   nombre: zod.string(),
   telefono: zod.string().nullish(),
+  telefono2: zod.string().nullish(),
   correo: zod.string().nullish(),
   notas: zod.string().nullish(),
   creadoEn: zod.coerce.date().nullish(),
@@ -1182,6 +1209,7 @@ export const GetClientesResponse = zod.array(GetClientesResponseItem);
 export const CrearClienteBody = zod.object({
   nombre: zod.string(),
   telefono: zod.string().nullish(),
+  telefono2: zod.string().nullish(),
   correo: zod.string().nullish(),
   notas: zod.string().nullish(),
   vehiculos: zod
@@ -1205,6 +1233,7 @@ export const GetClienteResponse = zod.object({
   id: zod.number(),
   nombre: zod.string(),
   telefono: zod.string().nullish(),
+  telefono2: zod.string().nullish(),
   correo: zod.string().nullish(),
   notas: zod.string().nullish(),
   creadoEn: zod.coerce.date().nullish(),
@@ -1230,6 +1259,7 @@ export const ActualizarClienteParams = zod.object({
 export const ActualizarClienteBody = zod.object({
   nombre: zod.string().optional(),
   telefono: zod.string().nullish(),
+  telefono2: zod.string().nullish(),
   correo: zod.string().nullish(),
   notas: zod.string().nullish(),
 });
@@ -1238,6 +1268,7 @@ export const ActualizarClienteResponse = zod.object({
   id: zod.number(),
   nombre: zod.string(),
   telefono: zod.string().nullish(),
+  telefono2: zod.string().nullish(),
   correo: zod.string().nullish(),
   notas: zod.string().nullish(),
   creadoEn: zod.coerce.date().nullish(),

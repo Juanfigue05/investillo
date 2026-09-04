@@ -10,6 +10,7 @@ import type { VehiculoInput } from "./vehiculoInput";
 export interface ClienteInput {
   nombre: string;
   telefono?: string | null;
+  telefono2?: string | null;
   correo?: string | null;
   notas?: string | null;
   vehiculos?: VehiculoInput[];

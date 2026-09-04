@@ -27,5 +27,7 @@ export interface VentaDiaria {
   beneficio: number;
   /** Descripcion adicional (para manoobra o credito) */
   descripcion?: string | null;
+  /** Forma de pago: efectivo, cuenta_ernesto, cuenta_olga, cuenta_juan */
+  formaPago?: string | null;
   creadoEn?: Date;
 }

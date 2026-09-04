@@ -21,4 +21,5 @@ export interface VentaDiariaInput {
   precioVentaTotal: number;
   beneficio: number;
   descripcion?: string | null;
+  formaPago?: string | null;
 }

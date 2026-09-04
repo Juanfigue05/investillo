@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { clientesTable, vehiculosClienteTable } from "@workspace/db/schema";
-import { eq, desc, ilike, or, and } from "drizzle-orm";
+import { eq, desc, ilike, or, and, isNotNull } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
 
 const router: IRouter = Router();
@@ -59,26 +59,38 @@ router.get("/:id", async (req, res) => {
 
 /** Valida: los 2 números de un mismo cliente no pueden ser iguales entre sí,
  *  y ninguno puede estar ya usado (como telefono o telefono2) por OTRO cliente. */
-async function validarTelefonos(telefono: string | null, telefono2: string | null, clienteIdActual: number | null): Promise<string | null> {
-  const t1 = telefono?.trim() || null;
-  const t2 = telefono2?.trim() || null;
+function soloDigitos(v: string | null | undefined): string {
+  return (v || "").replace(/\D/g, "");
+}
 
-  if (t1 && t2 && t1 === t2) {
+/** Valida: los 2 números de un mismo cliente no pueden ser iguales entre sí,
+ *  y ninguno puede estar ya usado (como telefono o telefono2) por OTRO cliente.
+ *  Compara solo los dígitos, sin importar cómo esté formateado cada uno. */
+async function validarTelefonos(telefono: string | null, telefono2: string | null, clienteIdActual: number | null): Promise<string | null> {
+  const d1 = soloDigitos(telefono);
+  const d2 = soloDigitos(telefono2);
+
+  if (d1 && d2 && d1 === d2) {
     return "Los dos números de teléfono no pueden ser iguales";
   }
 
-  const numeros = [t1, t2].filter((t): t is string => !!t);
-  if (numeros.length === 0) return null;
+  const digitosAValidar = [d1, d2].filter(Boolean);
+  if (digitosAValidar.length === 0) return null;
 
-  const condiciones = numeros.flatMap((num) => [eq(clientesTable.telefono, num), eq(clientesTable.telefono2, num)]);
-  const posiblesConflictos = await db
-    .select({ id: clientesTable.id, nombre: clientesTable.nombre })
+  const todosConTelefono = await db
+    .select({ id: clientesTable.id, nombre: clientesTable.nombre, telefono: clientesTable.telefono, telefono2: clientesTable.telefono2 })
     .from(clientesTable)
-    .where(or(...condiciones));
+    .where(or(isNotNull(clientesTable.telefono), isNotNull(clientesTable.telefono2)));
 
-  for (const c of posiblesConflictos) {
-    if (clienteIdActual !== null && c.id === clienteIdActual) continue; // no cuenta contra sí mismo
-    return `Ese número ya está registrado con el cliente "${c.nombre}"`;
+  for (const c of todosConTelefono) {
+    if (clienteIdActual !== null && c.id === clienteIdActual) continue;
+    const ct1 = soloDigitos(c.telefono);
+    const ct2 = soloDigitos(c.telefono2);
+    for (const d of digitosAValidar) {
+      if ((ct1 && ct1 === d) || (ct2 && ct2 === d)) {
+        return `Ese número ya está registrado con el cliente "${c.nombre}"`;
+      }
+    }
   }
 
   return null;

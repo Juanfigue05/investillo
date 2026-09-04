@@ -1902,6 +1902,9 @@ components:
         telefono:
           type: string
           nullable: true
+        telefono2:
+          type: string
+          nullable: true
         correo:
           type: string
           nullable: true
@@ -1933,6 +1936,9 @@ components:
         telefono:
           type: string
           nullable: true
+        telefono2:
+          type: string
+          nullable: true
         correo:
           type: string
           nullable: true
@@ -1952,6 +1958,9 @@ components:
         nombre:
           type: string
         telefono:
+          type: string
+          nullable: true
+        telefono2:
           type: string
           nullable: true
         correo:

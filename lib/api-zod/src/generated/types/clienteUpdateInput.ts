@@ -9,6 +9,7 @@
 export interface ClienteUpdateInput {
   nombre?: string;
   telefono?: string | null;
+  telefono2?: string | null;
   correo?: string | null;
   notas?: string | null;
 }

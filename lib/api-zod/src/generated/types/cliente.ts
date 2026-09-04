@@ -11,6 +11,7 @@ export interface Cliente {
   id: number;
   nombre: string;
   telefono?: string | null;
+  telefono2?: string | null;
   correo?: string | null;
   notas?: string | null;
   creadoEn?: Date | null;
