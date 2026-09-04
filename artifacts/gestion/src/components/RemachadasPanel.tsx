@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Plus, Trash2, Pencil, Check } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
-const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
+const API = "/api";
 
 interface RemachadaRow {
   id: number;
