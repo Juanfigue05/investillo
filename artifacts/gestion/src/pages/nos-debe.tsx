@@ -134,6 +134,7 @@ export default function NosDebePage() {
   const [filtroFechaExacta, setFiltroFechaExacta] = useState("");
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroMora, setFiltroMora] = useState("");
+  const [filtroPlaca, setFiltroPlaca] = useState("");
   const [filtroValor, setFiltroValor] = useState("");
   const [filtroValorModo, setFiltroValorModo] = useState<
     "menorIgual" | "igual" | "hasta20"
@@ -722,6 +723,7 @@ export default function NosDebePage() {
     filtroFechaExacta ||
     filtroMes ||
     filtroMora ||
+    filtroPlaca ||
     filtroValor
   );
   const allCreditos = useMemo(() => {
@@ -739,6 +741,13 @@ export default function NosDebePage() {
       if (filtroFechaExacta && c.fechaFactura !== filtroFechaExacta)
         return false;
       if (filtroMes && !c.fechaFactura.startsWith(filtroMes)) return false;
+      if (
+        filtroPlaca &&
+        !(c.placaVehiculo || "")
+          .toLowerCase()
+          .includes(filtroPlaca.toLowerCase())
+      )
+        return false;
       const mora = diasVencidos(c.fechaFactura);
       if (filtroMora && c.valorRestante <= 0) return false;
       if (filtroMora === "1-15" && (mora < 1 || mora > 15)) return false;
@@ -767,6 +776,7 @@ export default function NosDebePage() {
     filtroFechaExacta,
     filtroMes,
     filtroMora,
+    filtroPlaca,
     filtroValor,
     filtroValorModo,
   ]);
@@ -860,6 +870,7 @@ export default function NosDebePage() {
                     setFiltroFechaExacta("");
                     setFiltroMes("");
                     setFiltroMora("");
+                    setFiltroPlaca("");
                     setFiltroValor("");
                   }}
                   className="text-xs text-muted-foreground hover:text-foreground"
@@ -935,6 +946,18 @@ export default function NosDebePage() {
                 <option value="igual">Igual</option>
                 <option value="hasta20">Hasta 20% mayor</option>
               </select>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Placa / Vehículo
+                </label>
+                <input
+                  type="text"
+                  placeholder="Placa..."
+                  value={filtroPlaca}
+                  onChange={(e) => setFiltroPlaca(e.target.value)}
+                  className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none"
+                />
+              </div>
             </div>
           </div>
         </div>
