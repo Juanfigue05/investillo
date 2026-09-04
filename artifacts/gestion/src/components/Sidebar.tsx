@@ -12,24 +12,27 @@ import {
   Calculator,
   History,
   Users,
-  Wrench
+  Wrench,
+  Wallet
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RelojColombia } from "./RelojColombia";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/compras", label: "Compras", icon: Truck },
+  { href: "/cierre-diario", label: "Cierre Diario", icon: Calculator },
+  { href: "/inventario", label: "Inventario", icon: Package },
   { href: "/ventas", label: "Ventas Diarias", icon: ShoppingCart },
   { href: "/creditos", label: "Créditos", icon: CreditCard },
+  { href: "/compras", label: "Compras", icon: Truck },
   { href: "/nos-debe", label: "Nos Debe", icon: HandCoins },
-  { href: "/inventario", label: "Inventario", icon: Package },
-  { href: "/cierre-diario", label: "Cierre Diario", icon: Calculator },
   { href: "/clientes", label: "Clientes", icon: Users },
-  { href: "/historial", label: "Historial de Ventas", icon: BookOpen },
+  { href: "/historial", label: "Historial de Ventas", icon: BookOpen },  
+  { href: "/reporte-pagos", label: "Reporte de Pagos", icon: Wallet },
+  { href: "/mano-obra", label: "Trabajadores", icon: Wrench },
   { href: "/historial-cierres", label: "Historial Cierres", icon: History },
   { href: "/historial-precios", label: "Historial de Precios", icon: TrendingUp },
-  { href: "/mano-obra", label: "Trabajadores", icon: Wrench },
+  
 ];
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {

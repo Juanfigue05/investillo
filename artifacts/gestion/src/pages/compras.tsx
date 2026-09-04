@@ -22,6 +22,8 @@ function agregarFilaOptimista(queryClient: any, queryKey: readonly unknown[], fi
 
 interface LlegadaForm {
   cantidad: string;
+  cantidadLocal: string;
+  cantidadBodega: string;
   nuevoPrecioCompra: string;
   nuevoPrecioVentaSinIva: string;
   tieneIva: boolean;
@@ -201,6 +203,8 @@ export default function Compras() {
     tieneIva: false,
     proveedor: "",
     fechaLlegada: fechaHoyColombia(),
+    cantidadLocal: "",
+    cantidadBodega: "",
   });
 
   const [showAddForm, setShowAddForm] = useState(false);
@@ -226,6 +230,8 @@ export default function Compras() {
       tieneIva: prod ? prod.tieneIva : false,
       proveedor: "",
       fechaLlegada: fechaHoyColombia(),
+      cantidadLocal: "",
+      cantidadBodega: "",
     });
   };
 
@@ -234,6 +240,8 @@ export default function Compras() {
       fechaLlegada: form.fechaLlegada,
       estado: "llegado" as const,
       cantidadRecibida: parseFloat(form.cantidad),
+      cantidadLocal: form.cantidadLocal ? parseFloat(form.cantidadLocal) : undefined,
+      cantidadBodega: form.cantidadBodega ? parseFloat(form.cantidadBodega) : undefined,
       nuevoPrecioCompra: form.nuevoPrecioCompra ? parseFloat(form.nuevoPrecioCompra) : undefined,
       nuevoPrecioVentaSinIva: form.nuevoPrecioVentaSinIva ? parseFloat(form.nuevoPrecioVentaSinIva) : undefined,
       tieneIva: form.tieneIva,
@@ -684,6 +692,23 @@ useEffect(() => {
                             <div>
                               <label className="block text-xs text-muted-foreground mb-1">Cantidad <span className="text-destructive">*</span></label>
                               <input type="number" min="0" step="0.25" placeholder="0" value={llegadaForm.cantidad} onChange={(e) => setLlegadaForm({ ...llegadaForm, cantidad: e.target.value })} className="w-full bg-card border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                              <div className="grid grid-cols-2 gap-2 mt-2">
+                                <div>
+                                  <label className="block text-[11px] text-muted-foreground mb-1">🏪 A Local</label>
+                                  <input type="number" value={llegadaForm.cantidadLocal}
+                                    onChange={(e) => setLlegadaForm({ ...llegadaForm, cantidadLocal: e.target.value })}
+                                    className="w-full bg-card border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] text-muted-foreground mb-1">📦 A Bodega</label>
+                                  <input type="number" value={llegadaForm.cantidadBodega}
+                                    onChange={(e) => setLlegadaForm({ ...llegadaForm, cantidadBodega: e.target.value })}
+                                    className="w-full bg-card border border-border px-2 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none" />
+                                </div>
+                              </div>
+                              {(parseFloat(llegadaForm.cantidadLocal || "0") + parseFloat(llegadaForm.cantidadBodega || "0")) !== parseFloat(llegadaForm.cantidad || "0") && (llegadaForm.cantidadLocal || llegadaForm.cantidadBodega) && (
+                                <p className="text-[11px] text-amber-400 mt-1">⚠ Local + Bodega debe sumar {llegadaForm.cantidad}</p>
+                              )}
                             </div>
                             <div>
                               <label className="block text-xs text-muted-foreground mb-1">P. Compra nuevo</label>

@@ -73,6 +73,8 @@ router.post("/", async (req, res) => {
 
 interface LlegadaInput {
   cantidadRecibida?: string | number;
+  cantidadLocal?: string | number;
+  cantidadBodega?: string | number;
   nuevoPrecioCompra?: string | number;
   nuevoPrecioVentaSinIva?: string | number;
   tieneIva?: boolean;
@@ -83,7 +85,7 @@ interface LlegadaInput {
 }
 
 async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
-  const { estado, cantidadRecibida, nuevoPrecioCompra, nuevoPrecioVentaSinIva, tieneIva, proveedor, actualizarPrecioInventario, fechaLlegada } = datos;
+  const { estado, cantidadRecibida, cantidadLocal, cantidadBodega, nuevoPrecioCompra, nuevoPrecioVentaSinIva, tieneIva, proveedor, actualizarPrecioInventario, fechaLlegada } = datos;
 
   const [existing] = await db.select().from(comprasTable).where(eq(comprasTable.id, id));
   if (!existing) throw new Error(`Compra ${id} no encontrada`);
@@ -98,6 +100,8 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
       const cantidadNum = parseFloat(String(cantidadRecibida));
       const updateProd: Record<string, unknown> = {
         stockActual: sql`${productosTable.stockActual} + ${cantidadNum}`,
+        stockLocal: sql`${productosTable.stockLocal} + ${parseFloat(String(cantidadLocal || 0))}`,
+        stockBodega: sql`${productosTable.stockBodega} + ${parseFloat(String(cantidadBodega || 0))}`,
         actualizadoEn: new Date(),
       };
 

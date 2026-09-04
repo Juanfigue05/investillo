@@ -113,8 +113,15 @@ router.post("/", async (req, res) => {
       // Resta atómica de stock -- así una venta encolada offline nunca desface el inventario al sincronizar.
       const esVentaConProducto = (tipoLinea === "venta" || !tipoLinea) && productoId;
       if (esVentaConProducto) {
+        const cantidadNum = parseFloat(cantidad);
         await tx.update(productosTable)
-          .set({ stockActual: sql`GREATEST(0, ${productosTable.stockActual} - ${parseFloat(cantidad)})`, actualizadoEn: new Date() })
+          .set({
+            // Descuenta primero de Local; si no alcanza, el resto sale de Bodega
+            stockLocal: sql`GREATEST(0, ${productosTable.stockLocal} - LEAST(${productosTable.stockLocal}, ${cantidadNum}))`,
+            stockBodega: sql`GREATEST(0, ${productosTable.stockBodega} - GREATEST(0, ${cantidadNum} - ${productosTable.stockLocal}))`,
+            stockActual: sql`GREATEST(0, ${productosTable.stockActual} - ${cantidadNum})`,
+            actualizadoEn: new Date(),
+          })
           .where(eq(productosTable.id, Number(productoId)));
       }
 
@@ -281,6 +288,28 @@ router.delete("/:id", async (req, res) => {
 
   await db.delete(ventasDiariasTable).where(eq(ventasDiariasTable.id, id));
   res.json({ mensaje: "Venta eliminada" });
+});
+
+router.post("/:id/trasladar", async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { cantidad } = req.body as { cantidad: number };
+  const cant = parseFloat(String(cantidad));
+  if (!cant || cant <= 0) { res.status(400).json({ error: "Cantidad inválida" }); return; }
+
+  const [prod] = await db.select().from(productosTable).where(eq(productosTable.id, id));
+  if (!prod) { res.status(404).json({ error: "Producto no encontrado" }); return; }
+  if (toNum(prod.stockBodega) < cant) { res.status(400).json({ error: `Solo hay ${prod.stockBodega} en bodega` }); return; }
+
+  const [actualizado] = await db.update(productosTable)
+    .set({
+      stockBodega: sql`${productosTable.stockBodega} - ${cant}`,
+      stockLocal: sql`${productosTable.stockLocal} + ${cant}`,
+      actualizadoEn: new Date(),
+    })
+    .where(eq(productosTable.id, id))
+    .returning();
+
+  res.json(actualizado);
 });
 
 export default router;

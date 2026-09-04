@@ -15,6 +15,8 @@ export const productosTable = pgTable("productos", {
   precioVentaConIva: numeric("precio_venta_con_iva", { precision: 15, scale: 2 }).notNull(),
   tieneIva: boolean("tiene_iva").notNull().default(false),
   stockActual: numeric("stock_actual", { precision: 15, scale: 3 }).notNull().default("0"),
+  stockLocal: numeric("stock_local", { precision: 15, scale: 3 }).notNull().default("0"),
+  stockBodega: numeric("stock_bodega", { precision: 15, scale: 3 }).notNull().default("0"),
   stockMinimo: numeric("stock_minimo", { precision: 15, scale: 3 }).notNull().default("0"),
   activo: boolean("activo").notNull().default(true),
   creadoEn: timestamp("creado_en").defaultNow(),

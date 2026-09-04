@@ -2,12 +2,13 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetInventario, useCrearProducto, useActualizarProducto, useEliminarProducto } from "@workspace/api-client-react";
 import { formatCurrency, calcularPrecioConIva } from "@/lib/utils";
-import { Plus, Search, Edit2, Trash2, AlertCircle, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, ChevronDown as ChevDown, Upload, CheckCircle2, Loader2, FileDown, GitMerge } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, AlertCircle, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, ChevronDown as ChevDown, Upload, CheckCircle2, Loader2, FileDown, GitMerge,ArrowRightLeft  } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { RemachadasPanel } from "@/components/RemachadasPanel";
 import { esFalloDeRed } from "@/lib/offline-db";
+import { SearchableSelect, type ProductoOpcion } from "@/components/SearchableSelect";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
@@ -78,6 +79,10 @@ export default function Inventario() {
   const crearMutation = useCrearProducto();
   const actualizarMutation = useActualizarProducto();
   const eliminarMutation = useEliminarProducto();
+  const [showTrasladar, setShowTrasladar] = useState(false);
+  const [trasladarProductoId, setTrasladarProductoId] = useState("");
+  const [trasladarCantidad, setTrasladarCantidad] = useState("");
+  const [trasladando, setTrasladando] = useState(false);
 
   const [vista, setVista] = useState<"productos" | "remachadas">("productos");
 
@@ -111,6 +116,27 @@ export default function Inventario() {
   const [newCodes, setNewCodes] = useState<Record<string, string>>({}); // codigo → nuevo código para opción C
   const [resolviendo, setResolviendo] = useState(false);
   const [resolvedOk, setResolvedOk] = useState(false);
+
+  const handleTrasladar = async () => {
+    if (!trasladarProductoId || !trasladarCantidad) return;
+    setTrasladando(true);
+    try {
+      const res = await fetch(`${API}/inventario/${trasladarProductoId}/trasladar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cantidad: parseFloat(trasladarCantidad) }),
+      });
+      if (!res.ok) { const err = await res.json(); alert(err.error || "No se pudo trasladar"); return; }
+      queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+      setShowTrasladar(false);
+      setTrasladarProductoId("");
+      setTrasladarCantidad("");
+    } finally {
+      setTrasladando(false);
+    }
+  };
+
+  const productoTrasladar = productos?.find((p) => String(p.id) === trasladarProductoId);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -399,6 +425,13 @@ export default function Inventario() {
                 : <><Upload className="w-4 h-4 text-primary" /> Importar Excel</>}
             </button>
             <button
+              onClick={() => setShowTrasladar(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm"
+            >
+              <ArrowRightLeft className="w-4 h-4 text-cyan-400" />
+              Trasladar Stock
+            </button>
+            <button
               onClick={() => {
                 setEditingId(null);
                 setFormData({ nombre: "", codigo: "", marca: "", tipo: "", referencia: "", adicional: "", precioCompra: 0, precioVentaSinIva: 0, tieneIva: true, stockActual: 0, stockMinimo: 0 });
@@ -421,9 +454,53 @@ export default function Inventario() {
             </button>
           </div>
         </div>
-
         
+        {/* Trasladar Stock Modal */}
         <div className="space-y-4">
+          {showTrasladar && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }} onClick={() => setShowTrasladar(false)}>
+              <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <ArrowRightLeft className="w-5 h-5 text-cyan-400" /> Trasladar de Bodega a Local
+                </h3>
+
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Producto</label>
+                  <SearchableSelect
+                    opciones={(productos || []).map((p): ProductoOpcion => ({
+                      id: String(p.id), nombre: p.nombre, codigo: p.codigo, marca: p.marca || undefined,
+                      stockActual: (p as any).stockBodega, stockMinimo: 0,
+                    }))}
+                    value={trasladarProductoId}
+                    onChange={setTrasladarProductoId}
+                    placeholder="Buscar producto..."
+                  />
+                </div>
+
+                {productoTrasladar && (
+                  <div className="bg-background rounded-xl border border-border p-3 flex justify-between text-sm">
+                    <span>🏪 Local: <strong>{(productoTrasladar as any).stockLocal ?? 0}</strong></span>
+                    <span>📦 Bodega: <strong>{(productoTrasladar as any).stockBodega ?? 0}</strong></span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Cantidad a trasladar</label>
+                  <input type="number" value={trasladarCantidad} onChange={(e) => setTrasladarCantidad(e.target.value)}
+                    className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button onClick={handleTrasladar} disabled={trasladando || !trasladarProductoId || !trasladarCantidad}
+                    className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium text-sm disabled:opacity-50">
+                    {trasladando ? "Trasladando..." : "Confirmar traslado"}
+                  </button>
+                  <button onClick={() => setShowTrasladar(false)} className="px-4 py-2.5 bg-muted text-foreground rounded-xl font-medium border border-border text-sm">Cancelar</button>
+                </div>
+              </div>
+            </div>
+          )}
+
         {/* Import result banner */}
         {importResult && (
           <div className={`rounded-2xl border px-5 py-4 flex items-start gap-3 shadow-lg ${
@@ -898,6 +975,10 @@ export default function Inventario() {
                           {prod.stockActual <= prod.stockMinimo && (
                             <AlertCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0" />
                           )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                          <span title="En el local">🏪 {(prod as any).stockLocal ?? 0}</span>
+                          <span title="En bodega">📦 {(prod as any).stockBodega ?? 0}</span>
                         </div>
                       </td>
                       <td className="px-3 py-3 text-muted-foreground">{(prod as any).tipo || "—"}</td>

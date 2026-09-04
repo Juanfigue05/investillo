@@ -20,6 +20,7 @@ import HistorialCierres from "@/pages/historial-cierres";
 import ClientesPage from "@/pages/clientes";
 import NotFound from "@/pages/not-found";
 import ManoObra from "@/pages/mano-obra";
+import ReportePagos from "@/pages/reporte-pagos";
 
 import { queryClient } from "@/lib/queryClient";
 
@@ -38,6 +39,7 @@ function Router() {
       <Route path="/historial-cierres" component={HistorialCierres} />
       <Route path="/clientes" component={ClientesPage} />
       <Route path="/mano-obra" component={ManoObra} />
+      <Route path="/reporte-pagos" component={ReportePagos} />
       <Route component={NotFound} />
     </Switch>
   );

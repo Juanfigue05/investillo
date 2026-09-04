@@ -111,19 +111,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <FloatingNotepad topbar />
             <BackupLocal topbar />
 
-            <button onClick={() => setCalcCierreOpen(true)} className="p-2 rounded-full hover:bg-muted transition-colors" aria-label="Calculadora de cierre">
-              <CalcIcon className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground hover:text-foreground transition-colors" />
+            <button onClick={() => setCalcCierreOpen(true)} className="flex flex-col items-center justify-center gap-0.5 w-14 py-1.5 rounded-xl hover:bg-muted transition-colors" aria-label="Calculadora de cierre">
+              <CalcIcon className="w-5 h-5 text-muted-foreground hover:text-foreground transition-colors" />
+              <span className="text-[9px] text-muted-foreground leading-none">Cierre</span>
             </button>
             
-              
             <button
               type="button"
               aria-label="Ver alertas de inventario"
               aria-expanded={alertsOpen}
               onClick={() => setAlertsOpen((open) => !open)}
-              className="relative p-2 rounded-full hover:bg-muted transition-colors cursor-pointer block"
+              className="relative flex flex-col items-center justify-center gap-0.5 w-14 py-1.5 rounded-xl hover:bg-muted transition-colors cursor-pointer"
             >
-              <Bell className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground hover:text-foreground transition-colors" />
+              <Bell className="w-5 h-5 text-muted-foreground hover:text-foreground transition-colors" />
+              <span className="text-[9px] text-muted-foreground leading-none">Alertas</span>
               {alertCount > 0 && (
                 <span className="absolute top-0.5 right-0.5 w-4 h-4 lg:w-5 lg:h-5 bg-destructive text-destructive-foreground text-[9px] lg:text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
                   {alertCount > 999 ? "999+" : alertCount}
