@@ -879,7 +879,7 @@ export default function NosDebePage() {
                 </button>
               )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3 items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3 items-end">
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">
                   Fecha exacta
