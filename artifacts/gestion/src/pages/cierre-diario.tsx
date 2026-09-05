@@ -157,17 +157,28 @@ function GruposTrabajoPanel({
   const crearGrupo = async () => {
     if (nuevoGrupoIds.length < 2) return;
 
+    const idsNormalizados = [...new Set(nuevoGrupoIds)].sort((a, b) => a - b);
+    const yaExisteHoy = gruposDia.some((grupo) => {
+      const ids = [...new Set(grupo.trabajadorIds)].sort((a, b) => a - b);
+      return ids.length === idsNormalizados.length && ids.every((id, index) => id === idsNormalizados[index]);
+    });
+    if (yaExisteHoy) {
+      setNuevoGrupoIds([]);
+      setNuevoEsPermanente(false);
+      return;
+    }
+
     if (nuevoEsPermanente) {
       const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
       await fetch(`${API}/grupos-trabajo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trabajadorIds: nuevoGrupoIds }),
+        body: JSON.stringify({ trabajadorIds: idsNormalizados }),
       });
       recargarGruposDefault();
     }
 
-    setGruposDia((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, trabajadorIds: nuevoGrupoIds, moEntradas: Array.from({ length: 10 }, () => "") }]);setNuevoGrupoIds([]);
+    setGruposDia((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, trabajadorIds: idsNormalizados, moEntradas: Array.from({ length: 10 }, () => "") }]);setNuevoGrupoIds([]);
     setNuevoEsPermanente(false);
   };
 
@@ -382,6 +393,14 @@ export default function CierreDiario() {
       // ignore malformed data
     }
   }, []);
+
+  useEffect(() => {
+    if (editFecha || items.length > 0 || !trabajadores) return;
+    const activos = trabajadores.filter((trabajador) => trabajador.activo);
+    if (activos.length > 0) {
+      setItems(activos.map((trabajador) => newTrabajador(trabajador.nombre, trabajador.id)));
+    }
+  }, [editFecha, items.length, trabajadores]);
 
   const agregarDesdeLista = (id: number, nombre: string) => {
     setItems((prev) => [...prev, newTrabajador(nombre, id)]);

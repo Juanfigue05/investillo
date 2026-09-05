@@ -10,6 +10,7 @@ import { ConnectionStatus } from "./ConnectionStatus";
 import { CalculadoraCierre } from "./CalculadoraCierre";
 import { Calculator as CalcIcon } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
+import { RelojColombia } from "./RelojColombia";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 function loadSet(key: string): Set<number> {
@@ -129,6 +130,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
             Panel de Control
           </h2>
           <span className="text-base font-display font-bold text-primary sm:hidden">Investillo</span>
+
+          <RelojColombia />
 
           <div className="flex items-center gap-3 ml-auto">
             <ConnectionStatus />

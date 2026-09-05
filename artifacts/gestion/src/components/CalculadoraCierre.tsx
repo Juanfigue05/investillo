@@ -450,7 +450,7 @@ export function CalculadoraCierre({
               {!cargandoRemachadas &&
                 bandaBuscada.trim() &&
                 (resultadosBanda.length > 0 ? (
-                  <div className="mt-3 overflow-x-auto rounded-xl border border-border max-w-2xl">
+                  <div className="mt-3 max-h-64 overflow-auto rounded-xl border border-border max-w-2xl">
                     <table className="w-full text-sm border-collapse">
                       <thead>
                         <tr className="bg-muted text-muted-foreground">

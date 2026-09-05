@@ -15,7 +15,6 @@ import {
   Wallet
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { RelojColombia } from "./RelojColombia";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -81,7 +80,6 @@ export function Sidebar({
           );
         })}
       </div>
-      <RelojColombia />
     </div>
   );
 }

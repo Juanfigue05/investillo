@@ -57,6 +57,7 @@ interface EditValues {
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
 export default function VentasDiarias() {
+  const newRowRef = useRef<HTMLTableRowElement>(null);
   const [fecha, setFecha] = useState(fechaHoyColombia());
   const { data: ventas, isLoading } = useGetVentas({ fecha });
   const { data: productos } = useGetInventario();
@@ -77,6 +78,14 @@ export default function VentasDiarias() {
   useEffect(() => {
     setOrdenLocal(null);
   }, [fecha]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    const frame = requestAnimationFrame(() => {
+      newRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [fecha, isLoading]);
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -426,7 +435,7 @@ export default function VentasDiarias() {
 
   return (
     <Layout>
-      <div className="space-y-5">
+      <div className="space-y-5 pb-40">
         <div className="no-print flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div>
             <h1 className="text-2xl lg:text-3xl font-display font-bold text-foreground">Ventas Diarias</h1>
@@ -518,7 +527,7 @@ export default function VentasDiarias() {
                     />
                   ))
                 )}
-                <tr className={`no-print bg-background/40 ${modoActual === "manoobra" || modoActual === "soldadura" ? "row-manoobra" : modoActual === "abono" ? "row-credito" : ""}`}>
+                <tr ref={newRowRef} className={`no-print bg-background/40 scroll-mt-24 ${modoActual === "manoobra" || modoActual === "soldadura" ? "row-manoobra" : modoActual === "abono" ? "row-credito" : ""}`}>
                   <td className="p-2 no-print">
                     <button onClick={handleAddRow} disabled={crearMutation.isPending} className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow" title="Guardar fila">
                       <Save className="w-4 h-4" />

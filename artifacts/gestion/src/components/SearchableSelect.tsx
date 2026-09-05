@@ -32,6 +32,7 @@ export function SearchableSelect({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const portalRef = useRef<HTMLDivElement | null>(null);
   const [dropdownRect, setDropdownRect] = useState<DOMRect | null>(null);
+  const [openAbove, setOpenAbove] = useState(false);
 
   const selected = opciones.find((o) => o.id === value);
 
@@ -79,7 +80,9 @@ export function SearchableSelect({
 
   const handleToggle = () => {
     if (!open && triggerRef.current) {
-      setDropdownRect(triggerRef.current.getBoundingClientRect());
+      const rect = triggerRef.current.getBoundingClientRect();
+      setDropdownRect(rect);
+      setOpenAbove(rect.bottom + 420 > window.innerHeight && rect.top > 220);
     }
     setOpen((prev) => !prev);
     if (!open) setBusqueda("");
@@ -104,7 +107,8 @@ export function SearchableSelect({
           ref={(el) => { portalRef.current = el; }}
           style={{
             position: "fixed",
-            top: dropdownRect.bottom + 4,
+            top: openAbove ? undefined : dropdownRect.bottom + 4,
+            bottom: openAbove ? window.innerHeight - dropdownRect.top + 4 : undefined,
             left: dropdownRect.left,
             width: Math.max(dropdownRect.width, 420),
             maxWidth: "min(520px, 92vw)",

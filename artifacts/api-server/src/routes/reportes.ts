@@ -1,12 +1,17 @@
 import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
 import { cierreDiarioTable, trabajadoresTable, ventasDiariasTable } from "@workspace/db/schema";
-import { gte, sql } from "drizzle-orm";
+import { eq, gte, sql } from "drizzle-orm";
 import { fechaColombia } from "../lib/fecha";
 
 const router: IRouter = Router();
 
 const FORMAS_PAGO = ["efectivo", "cuenta_ernesto", "cuenta_olga", "cuenta_juan"] as const;
+
+function parseReportNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 router.get("/formas-pago", async (_req, res) => {
   const fechaLimite = new Date();
@@ -69,7 +74,7 @@ router.get("/nomina", async (req, res) => {
   const seleccionados = await db.select({ id: trabajadoresTable.id, nombre: trabajadoresTable.nombre })
     .from(trabajadoresTable)
     .where(sql`${trabajadoresTable.activo} = true AND ${trabajadoresTable.incluyeNomina} = true`);
-  const cierres = await db.select({ fecha: cierreDiarioTable.fecha, datos: cierreDiarioTable.datos })
+  const cierres = await db.select({ id: cierreDiarioTable.id, fecha: cierreDiarioTable.fecha, datos: cierreDiarioTable.datos })
     .from(cierreDiarioTable)
     .where(sql`${cierreDiarioTable.fecha} >= ${desde} AND ${cierreDiarioTable.fecha} <= ${hasta}`);
 
@@ -89,19 +94,28 @@ router.get("/nomina", async (req, res) => {
       const descuentoOtros = Number(calc.descuento || 0);
       const seguro = Number(calc.seguro || 0);
       trabajador.dias.set(cierre.fecha, {
+        cierreId: cierre.id,
         valor, descuentoOtros, seguro,
         total: Number(calc.total ?? valor - descuentoOtros - seguro),
       });
     }
   }
 
+  const fechasConCierre = new Set(cierres.map((cierre) => cierre.fecha));
+
   // Rellenar TODOS los días del mes, marcando los que no tienen registro
   const trabajadores = [...porTrabajador.values()].map((t) => {
     const dias = [];
     for (let d = 1; d <= ultimoDia; d++) {
       const fecha = `${mes}-${String(d).padStart(2, "0")}`;
+      const diaSemana = new Date(`${fecha}T12:00:00`).getDay();
+      if (diaSemana === 0) continue;
       const registro = t.dias.get(fecha);
-      dias.push(registro ? { fecha, ...registro } : { fecha, sinRegistro: true });
+      dias.push(registro
+        ? { fecha, ...registro }
+        : fechasConCierre.has(fecha)
+          ? { fecha, noVino: true }
+          : { fecha, sinRegistro: true });
     }
     return { trabajadorId: t.trabajadorId, nombre: t.nombre, dias };
   });
@@ -117,6 +131,70 @@ router.get("/nomina", async (req, res) => {
     tensionadas: tensionadas.rows.map((t) => ({ id: t.id, fecha: t.fecha.toISOString().slice(0, 10), valor: parseFloat(t.valor) })),
     totalTensionadas,
   });
+});
+
+router.patch("/nomina/dia", async (req, res) => {
+  const {
+    fechaOriginal,
+    fecha,
+    trabajadorId,
+    valor,
+    descuentoOtros,
+    seguro,
+    total,
+  } = req.body as {
+    fechaOriginal?: string;
+    fecha?: string;
+    trabajadorId?: number;
+    valor?: number;
+    descuentoOtros?: number;
+    seguro?: number;
+    total?: number;
+  };
+  if (!fechaOriginal || !fecha || !trabajadorId) {
+    res.status(400).json({ error: "fechaOriginal, fecha y trabajadorId son obligatorios" });
+    return;
+  }
+  if (new Date(`${fecha}T12:00:00`).getDay() === 0) {
+    res.status(400).json({ error: "Los domingos no se incluyen en nómina" });
+    return;
+  }
+  const [cierre] = await db.select().from(cierreDiarioTable).where(eq(cierreDiarioTable.fecha, fechaOriginal)).limit(1);
+  if (!cierre) { res.status(404).json({ error: "Cierre diario no encontrado" }); return; }
+  const datos = Array.isArray(cierre.datos) ? cierre.datos : (cierre.datos as any)?.trabajadores;
+  if (!Array.isArray(datos)) { res.status(400).json({ error: "Formato del cierre no reconocido" }); return; }
+  const registro = datos.find((item: any) => Number(item?.trabajadorId) === Number(trabajadorId));
+  if (!registro) { res.status(404).json({ error: "Trabajador no encontrado en ese cierre" }); return; }
+  const seguroAnterior = parseReportNumber(registro.calc?.seguro);
+  const nuevoValor = parseReportNumber(valor);
+  const nuevoDescuento = parseReportNumber(descuentoOtros);
+  const nuevoSeguro = parseReportNumber(seguro);
+  registro.calc = {
+    ...(registro.calc || {}),
+    mo: nuevoValor,
+    descuento: nuevoDescuento,
+    seguro: nuevoSeguro,
+    total: total === undefined ? nuevoValor - nuevoDescuento - nuevoSeguro : parseReportNumber(total),
+  };
+  const nuevoTotalPagar = datos.reduce((sum: number, item: any) => sum + parseReportNumber(item?.calc?.total), 0);
+  try {
+    const actualizado = await db.transaction(async (tx) => {
+      const deltaSeguro = nuevoSeguro - seguroAnterior;
+      if (deltaSeguro !== 0) {
+        await tx.update(trabajadoresTable)
+          .set({ totalSeguroDescontado: sql`${trabajadoresTable.totalSeguroDescontado} + ${deltaSeguro}` })
+          .where(eq(trabajadoresTable.id, trabajadorId));
+      }
+      const [fila] = await tx.update(cierreDiarioTable)
+        .set({ fecha, datos: Array.isArray(cierre.datos) ? datos : { ...(cierre.datos as any), trabajadores: datos }, totalPagar: Math.round(nuevoTotalPagar) })
+        .where(eq(cierreDiarioTable.id, cierre.id))
+        .returning({ id: cierreDiarioTable.id, fecha: cierreDiarioTable.fecha });
+      return fila;
+    });
+    res.json(actualizado);
+  } catch (error) {
+    res.status(409).json({ error: `No se pudo actualizar el cierre: ${String(error)}` });
+  }
 });
 
 export default router;

@@ -1337,12 +1337,17 @@ export default function Compras() {
                           {meses.map(([mes, items]) => {
                             const claveMes = `${anio}-${mes}`;
                             const mesAbierto = mesesAbiertos.has(claveMes);
-                            const totalMes = items.reduce(
-                              (s, c) =>
-                                s +
-                                (c.cantidadRecibida ?? 0) *
-                                  (c.precioCompraRegistrado ?? 0),
-                              0,
+                            const totalesMes = items.reduce(
+                              (totales, c) => {
+                                const cantidad = c.cantidadRecibida ?? 0;
+                                const precioCompra = c.precioCompraRegistrado ?? 0;
+                                const precioVenta = c.precioVentaRegistrado ?? 0;
+                                totales.compra += cantidad * precioCompra;
+                                totales.venta += cantidad * precioVenta;
+                                totales.ganancia += cantidad * (precioVenta - precioCompra);
+                                return totales;
+                              },
+                              { compra: 0, venta: 0, ganancia: 0 },
                             );
 
                             return (
@@ -1371,7 +1376,7 @@ export default function Compras() {
                                     {NOMBRES_MES[parseInt(mes)]}
                                   </span>
                                   <span className="text-sm font-bold text-foreground">
-                                    {formatCurrency(totalMes)}
+                                    {formatCurrency(totalesMes.compra)}
                                   </span>
                                 </button>
 
@@ -1429,6 +1434,8 @@ export default function Compras() {
                                         const precioV =
                                           compra.precioVentaRegistrado ?? 0;
                                         const totalCompra = cantRec * precioC;
+                                        const totalVenta = cantRec * precioV;
+                                        const totalGanancia = totalVenta - totalCompra;
                                         return (
                                           <tr
                                             key={compra.id}
@@ -1464,6 +1471,16 @@ export default function Compras() {
                                             <td className="px-4 py-3 font-bold text-primary">
                                               {totalCompra > 0
                                                 ? formatCurrency(totalCompra)
+                                                : "—"}
+                                            </td>
+                                            <td className="px-4 py-3 font-bold text-primary">
+                                              {totalVenta > 0
+                                                ? formatCurrency(totalVenta)
+                                                : "—"}
+                                            </td>
+                                            <td className="px-4 py-3 font-bold text-emerald-600 dark:text-emerald-400">
+                                              {totalGanancia !== 0
+                                                ? formatCurrency(totalGanancia)
                                                 : "—"}
                                             </td>
                                             <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell print:table-cell">
@@ -1503,14 +1520,20 @@ export default function Compras() {
                                     </tbody>
                                     <tfoot className="border-t-2 border-border bg-muted/30">
                                       <tr>
-                                        <td colSpan={5} className="px-4 py-3 text-right font-bold text-foreground uppercase text-xs tracking-wider hidden md:table-cell print:table-cell">
+                                        <td colSpan={6} className="px-4 py-3 text-right font-bold text-foreground uppercase text-xs tracking-wider hidden md:table-cell print:table-cell">
                                           Total del mes
                                         </td>
-                                        <td colSpan={2} className="px-4 py-3 text-right font-bold text-foreground uppercase text-xs tracking-wider md:hidden print:hidden">
+                                        <td colSpan={3} className="px-4 py-3 text-right font-bold text-foreground uppercase text-xs tracking-wider md:hidden print:hidden">
                                           Total del mes
                                         </td>
                                         <td className="px-4 py-3 font-display font-bold text-lg text-primary whitespace-nowrap">
-                                          {formatCurrency(totalMes)}
+                                          {formatCurrency(totalesMes.compra)}
+                                        </td>
+                                        <td className="px-4 py-3 font-display font-bold text-lg text-primary whitespace-nowrap">
+                                          {formatCurrency(totalesMes.venta)}
+                                        </td>
+                                        <td className="px-4 py-3 font-display font-bold text-lg text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                                          {formatCurrency(totalesMes.ganancia)}
                                         </td>
                                         <td className="hidden lg:table-cell print:table-cell"></td>
                                         <td className="no-print"></td>
