@@ -16,7 +16,7 @@ Funciona incluso **sin conexión a internet** (los datos se guardan en el comput
 6. [Las bases de datos — por qué hay 3](#6--las-bases-de-datos--por-qué-hay-3)
 7. [Usarlo día a día en la oficina (Modo producción)](#7--usarlo-día-a-día-en-la-oficina-modo-producción)
 8. [Ponerlo en internet, con respaldo (Render + Railway)](#8--ponerlo-en-internet-con-respaldo-render--railway)
-9. [Limpiar la base de datos antes de empezar de verdad](#9--limpiar-la-base-de-datos-antes-de-empezar-de-verdad)
+9. [Reiniciar la base de datos antes de empezar de verdad](#9--reiniciar-la-base-de-datos-antes-de-empezar-de-verdad)
 10. [Cosas que el sistema todavía NO hace](#10--cosas-que-el-sistema-todavía-no-hace)
 11. [Consejos para que todo funcione bien](#11--consejos-para-que-todo-funcione-bien)
 12. [Referencia de costos](#12--referencia-de-costos)
@@ -29,22 +29,23 @@ Cuando abres Investillo, en el lado izquierdo de la pantalla ves un menú. Aquí
 
 | Página                      | ¿Para qué sirve?                                                                                                                                                                    |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 📊 **Dashboard**            | La pantalla principal — un resumen rápido: cuánto se vendió hoy, cuánto deben los clientes, cuánto se ha comprado, y una gráfica de ventas.                                         |
-| 🚚 **Compras**              | Aquí registras qué le compraste a tus proveedores, y cuándo llegó la mercancía a la bodega. El stock del producto sube automáticamente.                                             |
-| 🛒 **Ventas Diarias**       | Aquí anotas cada venta del día — qué se vendió, a cómo, y cómo te pagaron (efectivo o a una cuenta bancaria). El stock del producto baja automáticamente.                           |
-| 💳 **Créditos**             | Para cuando un cliente se lleva algo y paga después. Aquí llevas el control de cuánto debe y cuándo va abonando.                                                                    |
-| 🤝 **Nos Debe**             | Igual que Créditos, pero para cuando es el negocio el que le debe/fía algo a alguien más.                                                                                           |
-| 📦 **Inventario**           | La lista completa de todos tus productos: cuántos hay, a cómo los compras, a cómo los vendes. También tiene una pestaña aparte para las "Remachadas" (precio de remachar bandas).   |
-| 🧮 **Cierre Diario**        | Al final del día, aquí calculas cuánto le toca pagar a cada trabajador (según lo que trabajó, el seguro que se le descuenta, etc.), y armas el conteo de caja (monedas y billetes). |
-| 👥 **Clientes**             | La lista de tus clientes, con sus datos y los vehículos que tengan registrados.                                                                                                     |
-| 📖 **Historial de Ventas**  | Guarda el resumen de días de venta pasados, para consultarlos cuando quieras.                                                                                                       |
-| 🕐 **Historial Cierres**    | Lo mismo, pero de los Cierres Diarios que ya guardaste.                                                                                                                             |
-| 📈 **Historial de Precios** | Una gráfica que muestra cómo han subido o bajado los precios de compra con el tiempo.                                                                                               |
-| 🔧 **Trabajadores**         | El perfil de cada trabajador: su seguro social, si se le descuenta o no, y cuánto le deben.                                                                                         |
+| 📊 **Dashboard**            | La pantalla principal — un resumen rápido: cuánto se vendió hoy, cuánto deben los clientes, cuánto se ha comprado, una gráfica de ventas, y una tarjeta para instalar la app.        |
+| 🚚 **Compras**              | Registra lo que compras a proveedores, con fecha de llegada elegible, registro en lote (varios productos del mismo proveedor a la vez), e historial agrupado por año y mes.          |
+| 🛒 **Ventas Diarias**       | Cada venta del día — qué se vendió, a cómo, y cómo te pagaron (Efectivo / Cuenta Ernesto / Cuenta Olga / Cuenta Juan). El stock baja solo, descontando primero de Local y luego de Bodega si hace falta. |
+| 💳 **Créditos**             | Para cuando un cliente se lleva algo y paga después — con filtros por fecha y por placa, y forma de pago registrada al abonar.                                                       |
+| 🤝 **Nos Debe**             | Igual que Créditos, pero para cuando es el negocio el que le debe/fía a alguien más.                                                                                                  |
+| 📦 **Inventario**           | Todos tus productos, con el stock dividido entre **Local** y **Bodega**, botón de **Trasladar Stock** entre los dos, Estado Activo/Inactivo, pestaña de **Remachadas**, y exportación/importación completa con vista previa de cambios antes de aplicar nada. |
+| 🧮 **Cierre Diario**        | Cuánto le toca pagar a cada trabajador, con el seguro social, el conteo de caja, y los **Grupos de Trabajo** para repartir la mano de obra entre varios trabajadores que trabajaron en compañía. |
+| 👥 **Clientes**             | Tus clientes, con hasta 2 teléfonos cada uno (el sistema avisa si un número ya está usado por otro cliente) y sus vehículos.                                                          |
+| 📖 **Historial de Ventas**  | El resumen de días de venta pasados.                                                                                                                                                  |
+| 🕐 **Historial Cierres**    | Lo mismo, pero de los Cierres Diarios ya guardados.                                                                                                                                   |
+| 📈 **Historial de Precios** | Gráfica de cómo han subido o bajado los precios de compra.                                                                                                                            |
+| 💰 **Reporte de Pagos**     | Cuánto ha entrado por cada forma de pago (Efectivo y las 3 cuentas), por día y por mes, con gráfica de los últimos 6 meses.                                                           |
+| 🔧 **Trabajadores**         | El perfil de cada trabajador: seguro social, si se le descuenta o no, y los grupos permanentes de "trabajo en compañía".                                                              |
 
 ### La "Calculadora de Cierre"
 
-Hay un botón con un ícono de calculadora en la barra de arriba (visible desde cualquier página) — se usa para cuadrar la caja del día: sumar lo que entró, restar lo que se pagó por fuera, contar monedas y billetes, y ver si "cuadra" con lo esperado.
+Hay un botón con un ícono de calculadora en la barra de arriba (visible desde cualquier página) — se usa para cuadrar la caja del día: sumar lo que entró, restar lo que se pagó por fuera, contar monedas y billetes, y ver si "cuadra" con lo esperado. El recuadro de "Diferencia" cambia de color según el resultado: verde apagado si cuadra exacto, verde fuerte si sobra dinero, rojo si falta. También incluye una consulta rápida de "Remachadas" (precio de remachar bandas por número) y un conteo persistente de monedas repartido entre Bolsa y Caja.
 
 ---
 
@@ -101,7 +102,7 @@ En producción, `pnpm run build` compila el frontend y el backend; luego Express
 ### 3.2 Requisitos técnicos comprobados
 
 | Requisito                               | Uso                                          |
-| --------------------------------------- | -------------------------------------------- |
+| --------------------------------------- | --------------------------------------------- |
 | Node.js 24.x                            | Ejecutar las herramientas y servidores       |
 | pnpm                                    | Instalar dependencias y ejecutar el monorepo |
 | PostgreSQL accesible                    | Guardar los datos del sistema                |
@@ -109,6 +110,13 @@ En producción, `pnpm run build` compila el frontend y el backend; luego Express
 | Navegador moderno                       | Usar React, PWA e IndexedDB                  |
 
 El backend requiere `DATABASE_URL` incluso para importar módulos en pruebas. Si no existe esa variable, las pruebas del API fallarán al arrancar.
+
+### 3.3 Funciones visuales y de usabilidad
+
+- **Tema claro/oscuro:** botón en la barra superior (ícono de sol/luna) — útil sobre todo si hay mucha luz o reflejo de sol sobre la pantalla, ya que el modo oscuro se ve mal en esas condiciones. Recuerda tu elección entre sesiones.
+- **Barra de navegación colapsable:** se ve angosta (solo íconos) por defecto para dejar más espacio a la pantalla, y se expande sola al poner el mouse encima — se vuelve a encoger 5 segundos después de que el mouse se aleja.
+- **Buscador de productos mejorado:** al buscar un producto en Ventas, Créditos o Nos Debe, se puede buscar por nombre, código o marca, y se ve el stock y el precio antes de seleccionar.
+- **Instalable como PWA:** desde el Dashboard o desde la barra de direcciones del navegador (Chrome/Edge).
 
 ### Tareas automáticas recomendadas (Programador de Tareas de Windows)
 
@@ -127,6 +135,34 @@ El backend requiere `DATABASE_URL` incluso para importar módulos en pruebas. Si
 4. En **Propiedades** de la tarea (después de crearla) → pestaña **General** → marca **"Ejecutar tanto si el usuario inició sesión como si no"** — así arranca incluso si nadie ha entrado a Windows todavía.
 
 Esto es más confiable que un acceso directo en la carpeta de Inicio porque **queda registrado en un log** si algo falla al arrancar, en vez de fallar en silencio.
+
+### Paso a paso para crear cada tarea en el Programador de Tareas de Windows
+
+Las 3 tareas de arriba (Respaldo, Verificación, Limpieza) se crean todas de la misma forma — solo cambia el nombre, la frecuencia y el comando. Aquí está el proceso completo, usando el **Respaldo semanal** como ejemplo:
+
+1. Presiona `Win + R`, escribe `taskschd.msc` y da Enter (o busca "Programador de tareas" en el menú Inicio).
+2. En el panel derecho, clic en **"Crear tarea básica..."**.
+3. **Nombre:** escribe algo claro, por ejemplo `Investillo - Respaldo Semanal`. Clic en **Siguiente**.
+4. **Desencadenador** (cuándo se ejecuta): elige la frecuencia según la tabla de arriba:
+   - Respaldo → **Semanalmente**
+   - Verificación de consistencia → **Diariamente**
+   - Limpieza de operaciones → **Mensualmente**
+
+   Clic en **Siguiente**.
+5. Según lo que elegiste, Windows te pregunta el día y la hora exacta (ej. "todos los lunes a las 7:00 a.m."). Complétalo y clic en **Siguiente**.
+6. **Acción:** deja seleccionado **"Iniciar un programa"** y clic en **Siguiente**.
+7. En esta pantalla se llenan **2 campos por separado** — no pegues todo el comando junto en el primero:
+   - **Programa o script:** escribe únicamente `cmd.exe`
+   - **Agregar argumentos (opcional):** aquí sí va el resto del comando completo, por ejemplo:
+
+ /c cd /d "C:\ruta\investillo" && pnpm run backup >> backups\log.txt 2>&1
+
+     (cambia `C:\ruta\investillo` por la carpeta real donde tengas el proyecto, y usa el comando correspondiente de la tabla según la tarea que estés creando)
+8. Clic en **Siguiente**, revisa el resumen, y clic en **Finalizar**.
+9. **Paso extra importante:** busca la tarea recién creada en la lista del Programador de Tareas, haz doble clic para abrir sus **Propiedades**, y en la pestaña **General** marca la casilla **"Ejecutar tanto si el usuario inició sesión como si no"** — así la tarea corre igual aunque nadie haya iniciado sesión en Windows en ese momento (por ejemplo, de madrugada).
+10. Repite estos mismos 9 pasos para las otras 2 tareas, cambiando solo el nombre, la frecuencia (paso 4-5) y el comando de "Agregar argumentos" (paso 7), según la tabla de arriba.
+
+**Cómo confirmar que sí están funcionando:** haz clic derecho sobre cualquiera de las tareas creadas → **"Ejecutar"** — esto la corre de inmediato, sin esperar a la fecha programada, para que puedas revisar el archivo de log (`backups\log.txt`, `logs\consistencia.txt`, etc.) y confirmar que sí se generó correctamente.
 
 ---
 
@@ -175,7 +211,7 @@ Este paso es **opcional** — solo hace falta en el computador que va a correr `
 
 ```cmd
 cd C:\Users\TuUsuario\Documents
-git clone https://github.com/juanfigue05/investillo.git
+git clone https://github.com/Juanfigue05/investillo.git
 cd investillo
 pnpm install
 ```
@@ -240,12 +276,14 @@ Esto inicia el API en `http://localhost:8080` y, cuando responde `/api/healthz`,
 Todos se escriben en el **Símbolo del sistema (CMD)**, estando dentro de la carpeta del proyecto.
 
 | Comando                                          | Qué hace                                                                                 |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | `pnpm install`                                   | Descarga/actualiza todas las piezas necesarias del proyecto                              |
 | `pnpm run dev`                                   | Corre el sistema en modo "estoy programando" (se actualiza solo cuando cambias código)   |
 | `pnpm run start:prod`                            | Corre el sistema en modo "uso normal del negocio" (más rápido y estable — ver sección 7) |
 | `pnpm run db:push`                               | Actualiza la estructura de la base de datos según lo definido en el código               |
 | `pnpm run backup`                                | Crea una copia local y, si están configurados, la replica en Aiven y Cloudflare R2       |
+| `pnpm run verificar`                             | Revisa consistencia de datos (stock negativo, créditos sobre-abonados, precios invertidos, etc.) |
+| `pnpm run limpiar-operaciones`                   | Limpia la tabla anti-duplicados de operaciones ya sincronizadas hace más de 60 días       |
 | `pnpm run build`                                 | Prepara el código para producción (lo "compila")                                         |
 | `pnpm run typecheck`                             | Comprueba TypeScript en las librerías, API, frontend y scripts                           |
 | `pnpm --filter @workspace/api-spec codegen`      | Regenera los clientes React y esquemas Zod desde OpenAPI                                 |
@@ -273,7 +311,7 @@ La prueba no sustituye una prueba contra una base de datos real. Antes de operar
 ### 5.2 Diagnóstico rápido
 
 | Síntoma                                  | Revisión                                                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | El API no inicia                         | Comprueba `DATABASE_URL`, `PORT` y el log del servidor                                                        |
 | El frontend no inicia                    | Comprueba `PORT` y `BASE_PATH` en `.env.web`                                                                  |
 | La pantalla no actualiza                 | Revisa `/api/healthz`, la consola del navegador y la pestaña Network                                          |
@@ -359,6 +397,18 @@ pnpm run verificar
 
 El script revisa referencias huérfanas en vehículos, compras, líneas y abonos de créditos, distribuciones de mano de obra y pagos de seguro. Si encuentra resultados, corrígelos o decide cómo conservarlos antes de ejecutar `pnpm run db:push`. No se recomienda añadir `CASCADE` a todas las tablas: las compras, ventas e historiales pueden ser datos contables que deben conservarse.
 
+### 6.7 Inventario: exportar, corregir y volver a subir con vista previa
+
+Para corregir muchos productos a la vez (por ejemplo, cuadrar el stock de Local/Bodega de todo el inventario), Inventario tiene un flujo pensado para volúmenes grandes (probado con casi 3.000 productos a la vez):
+
+1. **"Exportar Inventario"** descarga un Excel con **todos** los productos y **todos** los campos (nombre, marca, tipo, referencia, precios, IVA, Stock Local, Stock Bodega, stock mínimo).
+2. Corriges lo que necesites en el Excel — **una celda vacía significa "no tocar ese campo"**, así que solo hace falta escribir lo que realmente quieres cambiar.
+3. **"Importar y Revisar Cambios"** sube el archivo completo (sin límite de filas) y compara contra la base de datos — pero **no cambia nada todavía**.
+4. Se abre una vista previa mostrando, producto por producto, exactamente qué campo cambiaría y de qué valor a cuál (ej. "Stock Local: 10 → 45"), además de cuáles productos son nuevos.
+5. Solo al darle **"Aplicar cambios"** se actualiza la base de datos, de una sola vez.
+
+El botón **"Importar Excel"** (el original, más simple) sigue disponible aparte, para cuando solo necesitas subir/corregir cantidades rápido sin revisar cambio por cambio.
+
 ---
 
 ## 7. 🏢 Usarlo día a día en la oficina (Modo producción)
@@ -406,7 +456,7 @@ Esto permite acceder al sistema desde cualquier lugar con internet (no solo desd
 
 ### 8.1 Por qué 2 plataformas
 
-- **Render** (principal) — plan gratis, predecible, nunca se apaga por falta de dinero, solo se "duerme" tras 15 minutos sin uso (lo resolvemos en el paso 8.3).
+- **Render** (principal, ya desplegado y funcionando) — plan gratis, predecible, nunca se apaga por falta de dinero, solo se "duerme" tras 15 minutos sin uso (lo resolvemos en el paso 8.4).
 - **Railway** (respaldo) — mismo código, misma base de datos, como segunda entrada por si Render falla.
 
 Ambas usan **la misma base de datos de Supabase de siempre** — nunca se crea una base de datos nueva en la nube.
@@ -438,6 +488,8 @@ Ambas usan **la misma base de datos de Supabase de siempre** — nunca se crea u
 4. En **"Variables"**, agrega las mismas 2 variables que en Render.
 5. En **"Networking"**, clic en **"Generate Domain"** para obtener tu dirección pública.
 
+> Alternativa sin usar tarjeta de crédito: **Koyeb** también ofrece un servicio web gratis "para siempre" (a diferencia de Railway, que ahora es una prueba de 30 días + $1 de crédito mensual) — pide verificar identidad con una tarjeta, pero no cobra nada mientras te quedes en el plan gratis. El proceso de desplegar es casi idéntico al de Render.
+
 ### 8.4 Evitar que Render se "duerma" (funciona incluso en vacaciones)
 
 Crea este archivo en el proyecto: **`.github/workflows/keep-alive.yml`**
@@ -455,12 +507,45 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Render
-        run: curl -sf https://investillo.onrender.com || echo "Render no respondió"
+        run: curl -sf https://investillo.onrender.com
+      - name: Ping Railway
+        run: curl -sf https://investillo-production.up.railway.app
 ```
 
-(cambia las 2 direcciones por las tuyas reales)
+(cambia las direcciones por las tuyas reales — si todavía no tienes Railway, borra ese segundo paso)
 
-Súbelo con `git push` — desde ese momento, un robot de GitHub le "toca la puerta" a ambas direcciones cada 10 minutos, todos los días del año, así que nunca llegan a dormirse por inactividad — ni siquiera si el negocio cierra por vacaciones.
+Súbelo con `git push` — desde ese momento, un robot de GitHub le "toca la puerta" a la(s) dirección(es) cada 10 minutos, todos los días del año, así que nunca llegan a dormirse por inactividad — ni siquiera si el negocio cierra por vacaciones. Si un `curl` falla, ese paso del workflow falla también, y GitHub te manda un correo automático avisando — así te enteras si Render (o Railway) dejó de responder.
+
+### 8.4.1 Revisión de consistencia automática en la nube
+
+Además del respaldo semanal (que depende de que el portátil esté prendido), `pnpm run verificar` también puede correr en GitHub Actions — así funciona aunque el portátil esté apagado:
+
+**`.github/workflows/verificar-consistencia.yml`**
+
+```yaml
+name: Verificar Consistencia
+
+on:
+  schedule:
+    - cron: "0 13 * * *"   # todos los días a las 8:00 a.m. hora Colombia
+  workflow_dispatch: {}
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable && corepack prepare pnpm@latest --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run verificar
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+```
+
+Necesita que guardes tu `DATABASE_URL` como **Secret** del repositorio: **Settings → Secrets and variables → Actions → New repository secret**.
 
 ### 8.5 Actualizaciones automáticas
 
@@ -574,8 +659,9 @@ Para que sepas qué esperar y qué no, por ahora:
 - Las herramientas `pg_dump`/`pg_restore` que instalas localmente deben ser versión 17 o más nueva (la misma que usa Supabase).
 - **No existe integración con contabilidad formal (PUC/NIIF) ni facturación electrónica DIAN** — se decidió, por ahora, que el sistema se enfoque solo en control interno.
 - La **app de escritorio** (para seguir funcionando varios días sin ninguna conexión a internet) todavía está en diseño, no construida — hoy el modo sin conexión cubre cortes de horas, no de varios días seguidos.
+- El sistema hoy solo tiene **Render** desplegado en la nube — Railway o Koyeb como segunda plataforma de respaldo quedaron analizados pero sin implementar (no es urgente: el portátil local conecta directo a Supabase, sin depender de Render para nada).
 - El plan gratis de Aiven se pausa si pasan 7 días sin usarlo — si el respaldo automático deja de correr por más de una semana, toca reactivarlo a mano.
-- La importación masiva de clientes detecta duplicados solo por nombre, no por teléfono o correo.
+- La importación masiva de clientes detecta duplicados por nombre y por teléfono (compara solo los dígitos, sin importar el formato) — si un número ya está en uso, esa fila queda separada para revisión manual, no se omite en silencio. Correo no se valida contra duplicados.
 - El modo sin conexión no cubre todas las funciones: la cola actual contempla ventas, mano de obra asociada a ventas, créditos, compras, cierres, productos y clientes. Importaciones, reportes, notas, trabajadores y varias funciones auxiliares requieren conexión.
 - Si una operación recibe un error del servidor, queda marcada como error con el mensaje y número de intentos. El panel **Copia local** permite reactivarla y reintentarla; no debe asumirse que fue aplicada hasta comprobarlo.
 - No hay pruebas automáticas de integración que levanten PostgreSQL por sí solas; las pruebas del API necesitan una `DATABASE_URL` válida.
