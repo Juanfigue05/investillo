@@ -31,6 +31,7 @@ const NAV_ITEMS = [
   { href: "/mano-obra", label: "Trabajadores", icon: Wrench },
   { href: "/historial-cierres", label: "Historial Cierres", icon: History },
   { href: "/historial-precios", label: "Historial de Precios", icon: TrendingUp },
+  { href: "/reporte-nomina", label: "Reporte de Nómina", icon: Wallet }
 ];
 
 export function Sidebar({

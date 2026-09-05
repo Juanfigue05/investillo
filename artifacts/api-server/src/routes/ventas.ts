@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { ventasDiariasTable, productosTable } from "@workspace/db/schema";
 import { eq, sql, and, gte, lte } from "drizzle-orm";
 import { manoObraTable, distribucionesTable, trabajadoresTable, operacionesSincronizadasTable } from "@workspace/db/schema";
@@ -68,12 +68,24 @@ router.get("/resumen", async (req, res) => {
 router.get("/", async (req, res) => {
   const { fecha } = req.query;
   if (fecha) {
-    const ventas = await db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.fecha, String(fecha))).orderBy(ventasDiariasTable.creadoEn);
-    res.json(ventas.map(mapVenta));
+    const ventas = await db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.fecha, String(fecha)));
+    const ordenadas = [...ventas].sort((a, b) => {
+      const aCreado = a.creadoEn ? new Date(a.creadoEn).getTime() : 0;
+      const bCreado = b.creadoEn ? new Date(b.creadoEn).getTime() : 0;
+      if (aCreado !== bCreado) return aCreado - bCreado;
+      return Number(a.id) - Number(b.id);
+    });
+    res.json(ordenadas.map(mapVenta));
     return;
   }
-  const ventas = await db.select().from(ventasDiariasTable).orderBy(ventasDiariasTable.creadoEn);
-  res.json(ventas.map(mapVenta));
+  const ventas = await db.select().from(ventasDiariasTable);
+  const ordenadas = [...ventas].sort((a, b) => {
+    const aCreado = a.creadoEn ? new Date(a.creadoEn).getTime() : 0;
+    const bCreado = b.creadoEn ? new Date(b.creadoEn).getTime() : 0;
+    if (aCreado !== bCreado) return aCreado - bCreado;
+    return Number(a.id) - Number(b.id);
+  });
+  res.json(ordenadas.map(mapVenta));
 });
 
 router.post("/", async (req, res) => {
@@ -292,24 +304,54 @@ router.delete("/:id", async (req, res) => {
 
 router.post("/:id/trasladar", async (req, res) => {
   const id = parseInt(req.params.id);
-  const { cantidad } = req.body as { cantidad: number };
+  const { cantidad, direccion } = req.body as {
+    cantidad: number;
+    direccion: "bodega-local" | "local-bodega";
+  };
   const cant = parseFloat(String(cantidad));
   if (!cant || cant <= 0) { res.status(400).json({ error: "Cantidad inválida" }); return; }
 
+  const origen = direccion === "local-bodega" ? "stockLocal" : "stockBodega";
+  const destino = direccion === "local-bodega" ? "stockBodega" : "stockLocal";
+
   const [prod] = await db.select().from(productosTable).where(eq(productosTable.id, id));
   if (!prod) { res.status(404).json({ error: "Producto no encontrado" }); return; }
-  if (toNum(prod.stockBodega) < cant) { res.status(400).json({ error: `Solo hay ${prod.stockBodega} en bodega` }); return; }
+  if (toNum(prod[origen]) < cant) {
+    const nombreOrigen = direccion === "local-bodega" ? "local" : "bodega";
+    res.status(400).json({ error: `Solo hay ${prod[origen]} en ${nombreOrigen}` });
+    return;
+  }
 
   const [actualizado] = await db.update(productosTable)
     .set({
-      stockBodega: sql`${productosTable.stockBodega} - ${cant}`,
-      stockLocal: sql`${productosTable.stockLocal} + ${cant}`,
+      [origen]: sql`${productosTable[origen]} - ${cant}`,
+      [destino]: sql`${productosTable[destino]} + ${cant}`,
       actualizadoEn: new Date(),
     })
     .where(eq(productosTable.id, id))
     .returning();
 
   res.json(actualizado);
+});
+
+// ─── PUT /reordenar — guarda el nuevo orden después de arrastrar filas ──
+router.put("/reordenar", async (req, res) => {
+  const { ids } = req.body as { ids: number[] }; // el arreglo COMPLETO de IDs, ya en el orden nuevo
+  if (!Array.isArray(ids) || !ids.length) { res.status(400).json({ error: "ids requerido" }); return; }
+
+  const client = await pool.connect();
+  try {
+    const posiciones = ids.map((_, i) => i + 1);
+    await client.query(
+      `UPDATE ventas_diarias AS v SET orden = u.orden
+       FROM UNNEST($1::int[], $2::int[]) AS u(id, orden)
+       WHERE v.id = u.id`,
+      [ids, posiciones],
+    );
+    res.json({ ok: true });
+  } finally {
+    client.release();
+  }
 });
 
 export default router;

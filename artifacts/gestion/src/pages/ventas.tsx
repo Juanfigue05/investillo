@@ -12,7 +12,7 @@ import {
   useGuardarDiaHistorial,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
-import { Printer, Save, Trash2, ChevronDown, X, Pencil, Check, BookMarked } from "lucide-react";
+import { Printer, Save, BookMarked } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ManoObraSelector, calcularDistribucion } from "@/components/ManoObraSelector";
 import { encolarOperacion } from "@/lib/offline-db";
@@ -20,6 +20,9 @@ import { toast } from "@/hooks/use-toast";
 import { esFalloDeRed } from "@/lib/offline-db";
 import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
 import { SearchableSelect, type ProductoOpcion } from "@/components/SearchableSelect";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { FilaVentaSortable } from "@/components/FilaVentaSortable";
 
 const SPECIAL_MANOOBRA = "__manoobra__";
 const SPECIAL_ABONO = "__abono__";
@@ -58,6 +61,33 @@ export default function VentasDiarias() {
   const eliminarMutation = useEliminarVenta();
   const actualizarMutation = useActualizarVenta();
   const guardarDiaMutation = useGuardarDiaHistorial();
+
+  const [ordenLocal, setOrdenLocal] = useState<any[] | null>(null);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const ventasOrdenadas = ordenLocal ?? ventas ?? [];
+
+  useEffect(() => {
+    setOrdenLocal(null);
+  }, [fecha]);
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = ventasOrdenadas.findIndex((v: any) => v.id === active.id);
+    const newIndex = ventasOrdenadas.findIndex((v: any) => v.id === over.id);
+    const nuevoOrden = arrayMove(ventasOrdenadas, oldIndex, newIndex);
+
+    setOrdenLocal(nuevoOrden); // se ve el cambio al instante, sin esperar al servidor
+
+    await fetch(`${API}/ventas/reordenar`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: nuevoOrden.map((v: any) => v.id) }),
+    });
+    queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+  };
 
   const [newRow, setNewRow] = useState({
     referencia: "",
@@ -431,7 +461,9 @@ export default function VentasDiarias() {
             Ventas Diarias — {fechaFormateada}
           </div>
 
-          <div className="overflow-auto max-h-[62vh]">
+          <div className="overflow-auto max-h-[62vh] print:max-h-none print:overflow-visible">
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={ventasOrdenadas.map((venta: any) => venta.id)} strategy={verticalListSortingStrategy}>
             <table className="w-full text-left border-collapse text-xs lg:text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-muted text-muted-foreground border-b border-border">
@@ -554,80 +586,23 @@ export default function VentasDiarias() {
 
                 {isLoading ? (
                   <tr><td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">Cargando ventas...</td></tr>
-                ) : ventas?.length === 0 ? (
+                ) : ventasOrdenadas.length === 0 ? (
                   <tr><td colSpan={11} className="px-4 py-6 text-center text-muted-foreground text-sm">Sin registros para esta fecha.</td></tr>
                 ) : (
-                  ventas?.map((venta) => {
-                    const rowCls = venta.tipoLinea === "manoobra" ? "row-manoobra" : venta.tipoLinea === "credito" ? "row-credito" : "row-venta";
-                    const isEditing = editingId === venta.id;
-
-                    if (isEditing) {
-                      const editPvU = parseFloat(editValues.precioVentaUnidad) || 0;
-                      const editPcU = parseFloat(editValues.precioCompraUnidad) || 0;
-                      const editCant = parseFloat(editValues.cantidad) || 0;
-                      const editTotal = editPvU * editCant;
-                      const editBen = venta.tipoLinea === "venta" ? (editPvU - editPcU) * editCant : 0;
-                      return (
-                        <tr key={venta.id} className={`${rowCls} ring-2 ring-inset ring-primary/40`}>
-                          <td className="p-2 no-print"></td>
-                          <td className="p-2"><input value={editValues.referencia} onChange={(e) => setEditValues((v) => ({ ...v, referencia: e.target.value }))} className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-                          <td className="p-2"><input value={editValues.productoNombre} onChange={(e) => setEditValues((v) => ({ ...v, productoNombre: e.target.value }))} className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-                          <td className="p-2"><input value={editValues.productoMarca} onChange={(e) => setEditValues((v) => ({ ...v, productoMarca: e.target.value }))} className="w-20 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-                          <td className="p-2"><input type="number" min="0" step="0.25" value={editValues.cantidad} onChange={(e) => setEditValues((v) => ({ ...v, cantidad: e.target.value }))} className="w-20 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-                          <td className="p-2"><input type="number" value={editValues.precioCompraUnidad} onChange={(e) => setEditValues((v) => ({ ...v, precioCompraUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-                          <td className="p-2"><input type="number" value={editValues.precioVentaUnidad} onChange={(e) => setEditValues((v) => ({ ...v, precioVentaUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-                          <td className="p-2 font-bold text-primary whitespace-nowrap">{formatCurrency(editTotal)}</td>
-                          <td className="p-2 font-medium text-green-500 whitespace-nowrap">{venta.tipoLinea === "venta" ? formatCurrency(editBen) : "—"}</td>
-                          <td className="p-2 no-print">
-                            <select value={editValues.formaPago || (venta as { formaPago?: string }).formaPago || "efectivo"} onChange={(e) => setEditValues((v) => ({ ...v, formaPago: e.target.value }))}
-                              className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-xs outline-none focus:ring-1 focus:ring-primary">
-                              <option value="efectivo">Efectivo</option>
-                              <option value="cuenta_ernesto">Cta. Ernesto</option>
-                              <option value="cuenta_olga">Cta. Olga</option>
-                              <option value="cuenta_juan">Cta. Juan</option>
-                            </select>
-                          </td>
-                          <td className="p-2 no-print">
-                            <div className="flex gap-1">
-                              <button onClick={() => handleSaveEdit(venta)} disabled={actualizarMutation.isPending} className="p-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors border border-primary/30"><Check className="w-3.5 h-3.5" /></button>
-                              <button onClick={() => setEditingId(null)} className="p-1.5 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors border border-border"><X className="w-3.5 h-3.5" /></button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    return (
-                      <tr key={venta.id} className={`${rowCls} group hover:brightness-110 transition-all`}>
-                        <td className="px-3 py-3 no-print w-10"></td>
-                        <td className="px-3 py-3 font-mono text-xs">{venta.referencia}</td>
-                        <td className="px-3 py-3 font-medium">{venta.productoNombre}</td>
-                        <td className="px-3 py-3 text-muted-foreground text-xs">{venta.productoMarca || "—"}</td>
-                        <td className="px-3 py-3">{String(venta.cantidad).replace(".", ",")}</td>
-                        <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioCompraUnidad)}</td>
-                        <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioVentaUnidad)}</td>
-                        <td className="px-3 py-3 font-bold text-primary">{formatCurrency(venta.precioVentaTotal)}</td>
-                        <td className="px-3 py-3 font-medium text-green-500">{venta.tipoLinea === "venta" ? formatCurrency(venta.beneficio) : "—"}</td>
-                                                <td className="px-3 py-3 no-print text-xs text-muted-foreground">
-                          {({ efectivo: "Efectivo", cuenta_ernesto: "Cta. Ernesto", cuenta_olga: "Cta. Olga", cuenta_juan: "Cta. Juan" } as Record<string, string>)[(venta as { formaPago?: string }).formaPago || "efectivo"]}
-                        </td>
-                        <td className="px-3 py-3 no-print">
-                          {(venta as any)._pendiente ? (
-                            <span className="text-[10px] text-amber-400 font-medium whitespace-nowrap" title="Guardado local, esperando sincronizar">⏳ Pendiente</span>
-                          ) : (
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                              <button onClick={() => openEdit(venta)} className="p-1.5 text-muted-foreground hover:text-primary bg-background/50 rounded-lg transition-all border border-border">
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button onClick={() => handleDelete(venta.id)} className="p-1.5 text-muted-foreground hover:text-destructive bg-background/50 rounded-lg transition-all border border-border">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
+                  ventasOrdenadas.map((venta: any) => (
+                    <FilaVentaSortable
+                      key={venta.id}
+                      venta={venta}
+                      isEditing={editingId === venta.id}
+                      editValues={editValues}
+                      setEditValues={setEditValues}
+                      onSaveEdit={handleSaveEdit}
+                      onCancelEdit={() => setEditingId(null)}
+                      onOpenEdit={openEdit}
+                      onDelete={handleDelete}
+                      guardando={actualizarMutation.isPending}
+                    />
+                  ))
                 )}
               </tbody>
 
@@ -648,6 +623,8 @@ export default function VentasDiarias() {
                 )}
               </tfoot>
             </table>
+            </SortableContext>
+            </DndContext>
           </div>
         </div>
 

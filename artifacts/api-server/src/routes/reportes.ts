@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { ventasDiariasTable } from "@workspace/db/schema";
 import { gte, sql } from "drizzle-orm";
 import { fechaColombia } from "../lib/fecha";
@@ -55,6 +55,64 @@ router.get("/formas-pago", async (_req, res) => {
   const porMes = [...porMesMap.entries()].map(([mes, montos]) => ({ mes, ...montos })).sort((a, b) => a.mes.localeCompare(b.mes));
 
   res.json({ porDia, porMes });
+});
+
+router.get("/nomina", async (req, res) => {
+  const mes = String(req.query.mes || ""); // "2026-08"
+  if (!/^\d{4}-\d{2}$/.test(mes)) { res.status(400).json({ error: "mes inválido, use YYYY-MM" }); return; }
+
+  const desde = `${mes}-01`;
+  const [anio, m] = mes.split("-").map(Number);
+  const ultimoDia = new Date(anio, m, 0).getDate();
+  const hasta = `${mes}-${String(ultimoDia).padStart(2, "0")}`;
+
+  const filas = await pool.query(`
+    SELECT d.trabajador_id, d.trabajador_nombre, mo.fecha,
+           SUM(d.valor) AS valor,
+           SUM(d.descuento_otros) AS descuento_otros,
+           SUM(d.descuento_seguro) AS descuento_seguro
+    FROM distribuciones_mano_obra d
+    JOIN mano_obra mo ON mo.id = d.mano_obra_id
+    WHERE mo.fecha BETWEEN $1 AND $2
+    GROUP BY d.trabajador_id, d.trabajador_nombre, mo.fecha
+    ORDER BY d.trabajador_nombre, mo.fecha
+  `, [desde, hasta]);
+
+  const porTrabajador = new Map<number, { trabajadorId: number; nombre: string; dias: Map<string, any> }>();
+  for (const r of filas.rows) {
+    if (!porTrabajador.has(r.trabajador_id)) {
+      porTrabajador.set(r.trabajador_id, { trabajadorId: r.trabajador_id, nombre: r.trabajador_nombre, dias: new Map() });
+    }
+    const valor = parseFloat(r.valor);
+    const descuentoOtros = parseFloat(r.descuento_otros);
+    const seguro = parseFloat(r.descuento_seguro);
+    porTrabajador.get(r.trabajador_id)!.dias.set(r.fecha.toISOString().slice(0, 10), {
+      valor, descuentoOtros, seguro, total: valor - descuentoOtros - seguro,
+    });
+  }
+
+  // Rellenar TODOS los días del mes, marcando los que no tienen registro
+  const trabajadores = [...porTrabajador.values()].map((t) => {
+    const dias = [];
+    for (let d = 1; d <= ultimoDia; d++) {
+      const fecha = `${mes}-${String(d).padStart(2, "0")}`;
+      const registro = t.dias.get(fecha);
+      dias.push(registro ? { fecha, ...registro } : { fecha, sinRegistro: true });
+    }
+    return { trabajadorId: t.trabajadorId, nombre: t.nombre, dias };
+  });
+
+  const tensionadas = await pool.query(
+    `SELECT id, fecha, valor FROM tensionadas WHERE fecha BETWEEN $1 AND $2 ORDER BY fecha`,
+    [desde, hasta],
+  );
+  const totalTensionadas = tensionadas.rows.reduce((s, t) => s + parseFloat(t.valor), 0);
+
+  res.json({
+    trabajadores,
+    tensionadas: tensionadas.rows.map((t) => ({ id: t.id, fecha: t.fecha.toISOString().slice(0, 10), valor: parseFloat(t.valor) })),
+    totalTensionadas,
+  });
 });
 
 export default router;

@@ -591,7 +591,8 @@ TRUNCATE TABLE
   remachadas,
   grupos_trabajo_default,
   operaciones_sincronizadas,
-  notas
+  notas,
+  conteo_monedas
 RESTART IDENTITY CASCADE;
 ```
 

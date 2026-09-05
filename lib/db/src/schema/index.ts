@@ -14,3 +14,4 @@ export * from "./operaciones_sincronizadas";
 export * from "./remachadas";
 export * from "./grupos_trabajo";
 export * from "./conteo_monedas";
+export * from "./tensionadas";

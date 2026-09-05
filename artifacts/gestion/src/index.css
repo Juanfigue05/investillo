@@ -202,11 +202,13 @@
     display: none !important;
   }
 
-  /* Compact table */
+  /* Compact table — table-layout fixed obliga a que SIEMPRE quepa en el ancho de la hoja */
   .print-zone table {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
-    font-size: 10px;
+    font-size: 8px;
+    line-height: 1.1;
     color: black !important;
   }
 
@@ -217,15 +219,20 @@
 
   .print-zone th,
   .print-zone td {
-    padding: 3px 5px !important;
+    padding: 1px 3px !important;
+    font-size: 8px !important;
+    line-height: 1.1 !important;
+    vertical-align: middle;
     border: 1px solid #d1d5db;
     color: black !important;
-    white-space: nowrap;
+    white-space: normal;       /* deja pasar a una 2da línea en vez de estirar la columna */
+    overflow-wrap: break-word; /* corta nombres largos de productos sin romper el diseño */
+    word-break: break-word;
   }
 
   .print-zone tfoot td {
     font-weight: bold;
-    font-size: 11px;
+    font-size: 8px !important;
     background: #f3f4f6 !important;
     color: black !important;
   }
@@ -246,8 +253,17 @@
     print-color-adjust: exact !important;
   }
 
-  /* Allow table to overflow in print */
+  /* La tabla ya no necesita "desbordarse" — table-layout: fixed garantiza que siempre quepa */
   .print-zone .overflow-x-auto {
+    overflow: hidden !important;
+  }
+
+  /* Regla general: NINGÚN elemento dentro de la zona de impresión puede limitar su altura
+     ni recortar contenido — esto cubre cualquier "max-h-[...]" que tenga cualquier página,
+     hoy o en el futuro, sin tener que acordarse de arreglarlo módulo por módulo. */
+  .print-zone,
+  .print-zone * {
+    max-height: none !important;
     overflow: visible !important;
   }
 

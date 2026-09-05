@@ -1408,6 +1408,12 @@ export default function Compras() {
                                         <th className="px-4 py-3 font-medium whitespace-nowrap">
                                           Total Compra
                                         </th>
+                                        <th className="px-4 py-3 font-medium whitespace-nowrap">
+                                          Total Venta
+                                        </th>
+                                        <th className="px-4 py-3 font-medium whitespace-nowrap">
+                                          Total Ganancia
+                                        </th>
                                         <th className="px-4 py-3 font-medium whitespace-nowrap hidden lg:table-cell print:table-cell">
                                           Proveedor
                                         </th>

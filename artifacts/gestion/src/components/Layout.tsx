@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Sidebar } from "./Sidebar";
 import { FloatingNotepad } from "./FloatingNotepad";
 import { FloatingPriceCheck } from "./FloatingPriceCheck";
-import { Bell, Menu, X, CheckCheck, Trash2, Check, Pin, PinOff } from "lucide-react";
+import { Bell, Menu, X, CheckCheck, Trash2, Check, Pin, PinOff, Zap } from "lucide-react";
 import { getGetAlertasStockQueryKey, useGetAlertasStock } from "@workspace/api-client-react";
 import { BackupLocal } from "./BackupLocal";
 import { ConnectionStatus } from "./ConnectionStatus";
@@ -27,6 +27,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
     query: { queryKey: getGetAlertasStockQueryKey(), refetchInterval: 4000 },
   });
 
+  const [showTensionada, setShowTensionada] = useState(false);
+  const [tensionadaFecha, setTensionadaFecha] = useState("");
+  const [tensionadaValor, setTensionadaValor] = useState("");
+  const [guardandoTensionada, setGuardandoTensionada] = useState(false);
   const [sidebarExpandido, setSidebarExpandido] = useState(false);
   const collapseTimeout = useRef<ReturnType<typeof setTimeout> | null>(null); 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -70,6 +74,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const dismissAll = () => {
     setDismissed(new Set((alertas ?? []).map((p) => p.id)));
     setAlertsOpen(false);
+  };
+
+  const guardarTensionada = async () => {
+    if (!tensionadaFecha || !tensionadaValor) return;
+    setGuardandoTensionada(true);
+    try {
+      await fetch("/api/tensionadas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fecha: tensionadaFecha, valor: parseFloat(tensionadaValor) }),
+      });
+      setShowTensionada(false);
+      setTensionadaFecha("");
+      setTensionadaValor("");
+    } finally {
+      setGuardandoTensionada(false);
+    }
   };
 
   return (
@@ -120,6 +141,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
           <div className="flex items-center gap-3 ml-auto">
             <ConnectionStatus />
+            <button
+              onClick={() => setShowTensionada(true)}
+              className="flex flex-col items-center justify-center gap-0.5 w-14 py-1.5 rounded-xl hover:bg-muted transition-colors"
+            >
+              <Zap className="w-5 h-5 text-cyan-400" />
+              <span className="text-[9px] text-muted-foreground leading-none">Tensión</span>
+            </button>
             <FloatingPriceCheck topbar />   
             <FloatingNotepad topbar />
             <BackupLocal topbar />
@@ -144,6 +172,30 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </span>
               )}
             </button>
+
+            {showTensionada && (
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }} onClick={() => setShowTensionada(false)}>
+                <div className="bg-card border border-cyan-500/40 rounded-2xl shadow-2xl w-full max-w-xs p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+                  <h3 className="font-bold text-foreground">Registrar Tensionada</h3>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Fecha</label>
+                    <input type="date" value={tensionadaFecha} onChange={(e) => setTensionadaFecha(e.target.value)}
+                      className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Valor</label>
+                    <input type="number" value={tensionadaValor} onChange={(e) => setTensionadaValor(e.target.value)}
+                      className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={guardarTensionada} disabled={guardandoTensionada} className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm disabled:opacity-50">
+                      {guardandoTensionada ? "Guardando..." : "Guardar"}
+                    </button>
+                    <button onClick={() => setShowTensionada(false)} className="px-4 py-2 bg-muted rounded-xl text-sm">Cancelar</button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {alertsOpen && (
               <div className="absolute right-4 lg:right-8 top-14 lg:top-16 z-50 w-[min(380px,calc(100vw-2rem))] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden flex flex-col">

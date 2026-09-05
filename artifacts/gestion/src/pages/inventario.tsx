@@ -145,7 +145,7 @@ export default function Inventario() {
   const [trasladarProductoId, setTrasladarProductoId] = useState("");
   const [trasladarCantidad, setTrasladarCantidad] = useState("");
   const [trasladando, setTrasladando] = useState(false);
-
+  const [direccionTraslado, setDireccionTraslado] = useState<"bodega-local" | "local-bodega">("bodega-local");
   const [vista, setVista] = useState<"productos" | "remachadas">("productos");
 
   const [search, setSearch] = useState("");
@@ -250,7 +250,10 @@ export default function Inventario() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cantidad: parseFloat(trasladarCantidad) }),
+          body: JSON.stringify({
+            cantidad: parseFloat(trasladarCantidad),
+            direccion: direccionTraslado,
+          }),
         },
       );
       if (!res.ok) {
@@ -958,10 +961,16 @@ export default function Inventario() {
                 onClick={(e) => e.stopPropagation()}
               >
                 <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-                  <ArrowRightLeft className="w-5 h-5 text-cyan-400" /> Trasladar
-                  de Bodega a Local
+                  <ArrowRightLeft className="w-5 h-5 text-cyan-400" />
+                  {direccionTraslado === "local-bodega"
+                    ? "Trasladar de Local a Bodega"
+                    : "Trasladar de Bodega a Local"}
                 </h3>
-
+                <select value={direccionTraslado} onChange={(e) => setDireccionTraslado(e.target.value as any)}
+                  className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm mb-3">
+                  <option value="bodega-local">📦 Bodega → 🏪 Local</option>
+                  <option value="local-bodega">🏪 Local → 📦 Bodega</option>
+                </select>
                 <div>
                   <label className="block text-xs font-medium text-muted-foreground mb-1">
                     Producto
