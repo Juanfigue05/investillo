@@ -158,7 +158,7 @@ router.post("/manoobra", async (req, res) => {
     if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   }
 
-  const { fecha, referencia, valorTotal, distribuciones, productoMarca, descripcion, formaPago } = req.body;
+  const { fecha, referencia, valorTotal, distribuciones, productoNombre, productoMarca, descripcion, formaPago } = req.body;
 
   try {
     const resultado = await db.transaction(async (tx) => {
@@ -186,7 +186,7 @@ router.post("/manoobra", async (req, res) => {
 
       const [venta] = await tx.insert(ventasDiariasTable).values({
         fecha, referencia, tipoLinea: "manoobra",
-        productoNombre: "Mano de Obra",
+        productoNombre: productoNombre || "Mano de Obra",
         productoMarca: productoMarca || null,
         cantidad: "1", precioCompraUnidad: "0",
         precioVentaUnidad: String(parseFloat(valorTotal)), precioVentaTotal: String(parseFloat(valorTotal)),

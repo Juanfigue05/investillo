@@ -37,7 +37,7 @@ export function CalculadoraCierre({
   onClose: () => void;
 }) {
   const [suma, setSuma] = useState<CampoManual[]>(
-    Array.from({ length: 16 }, () => ({ concepto: "", valor: "" })),
+    Array.from({ length: 25 }, () => ({ concepto: "", valor: "" })),
   );
   const [resta, setResta] = useState<CampoManual[]>(
     Array.from({ length: 4 }, () => ({ concepto: "", valor: "" })),

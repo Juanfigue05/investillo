@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
-import { ventasDiariasTable } from "@workspace/db/schema";
+import { cierreDiarioTable, trabajadoresTable, ventasDiariasTable } from "@workspace/db/schema";
 import { gte, sql } from "drizzle-orm";
 import { fechaColombia } from "../lib/fecha";
 
@@ -66,29 +66,33 @@ router.get("/nomina", async (req, res) => {
   const ultimoDia = new Date(anio, m, 0).getDate();
   const hasta = `${mes}-${String(ultimoDia).padStart(2, "0")}`;
 
-  const filas = await pool.query(`
-    SELECT d.trabajador_id, d.trabajador_nombre, mo.fecha,
-           SUM(d.valor) AS valor,
-           SUM(d.descuento_otros) AS descuento_otros,
-           SUM(d.descuento_seguro) AS descuento_seguro
-    FROM distribuciones_mano_obra d
-    JOIN mano_obra mo ON mo.id = d.mano_obra_id
-    WHERE mo.fecha BETWEEN $1 AND $2
-    GROUP BY d.trabajador_id, d.trabajador_nombre, mo.fecha
-    ORDER BY d.trabajador_nombre, mo.fecha
-  `, [desde, hasta]);
+  const seleccionados = await db.select({ id: trabajadoresTable.id, nombre: trabajadoresTable.nombre })
+    .from(trabajadoresTable)
+    .where(sql`${trabajadoresTable.activo} = true AND ${trabajadoresTable.incluyeNomina} = true`);
+  const cierres = await db.select({ fecha: cierreDiarioTable.fecha, datos: cierreDiarioTable.datos })
+    .from(cierreDiarioTable)
+    .where(sql`${cierreDiarioTable.fecha} >= ${desde} AND ${cierreDiarioTable.fecha} <= ${hasta}`);
 
   const porTrabajador = new Map<number, { trabajadorId: number; nombre: string; dias: Map<string, any> }>();
-  for (const r of filas.rows) {
-    if (!porTrabajador.has(r.trabajador_id)) {
-      porTrabajador.set(r.trabajador_id, { trabajadorId: r.trabajador_id, nombre: r.trabajador_nombre, dias: new Map() });
+  for (const trabajador of seleccionados) {
+    porTrabajador.set(trabajador.id, { trabajadorId: trabajador.id, nombre: trabajador.nombre, dias: new Map() });
+  }
+  for (const cierre of cierres) {
+    const datos = Array.isArray(cierre.datos) ? cierre.datos : (cierre.datos as any)?.trabajadores;
+    if (!Array.isArray(datos)) continue;
+    for (const registro of datos) {
+      const trabajadorId = Number(registro?.trabajadorId);
+      const trabajador = porTrabajador.get(trabajadorId);
+      if (!trabajador) continue;
+      const calc = registro.calc || {};
+      const valor = Number(calc.mo || 0);
+      const descuentoOtros = Number(calc.descuento || 0);
+      const seguro = Number(calc.seguro || 0);
+      trabajador.dias.set(cierre.fecha, {
+        valor, descuentoOtros, seguro,
+        total: Number(calc.total ?? valor - descuentoOtros - seguro),
+      });
     }
-    const valor = parseFloat(r.valor);
-    const descuentoOtros = parseFloat(r.descuento_otros);
-    const seguro = parseFloat(r.descuento_seguro);
-    porTrabajador.get(r.trabajador_id)!.dias.set(r.fecha.toISOString().slice(0, 10), {
-      valor, descuentoOtros, seguro, total: valor - descuentoOtros - seguro,
-    });
   }
 
   // Rellenar TODOS los días del mes, marcando los que no tienen registro

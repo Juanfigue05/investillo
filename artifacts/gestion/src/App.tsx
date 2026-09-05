@@ -21,6 +21,7 @@ import ClientesPage from "@/pages/clientes";
 import NotFound from "@/pages/not-found";
 import ManoObra from "@/pages/mano-obra";
 import ReportePagos from "@/pages/reporte-pagos";
+import ReporteNomina from "@/pages/reporte-nomina";
 
 import { queryClient } from "@/lib/queryClient";
 
@@ -40,6 +41,7 @@ function Router() {
       <Route path="/clientes" component={ClientesPage} />
       <Route path="/mano-obra" component={ManoObra} />
       <Route path="/reporte-pagos" component={ReportePagos} />
+      <Route path="/reporte-nomina" component={ReporteNomina} />
       <Route component={NotFound} />
     </Switch>
   );

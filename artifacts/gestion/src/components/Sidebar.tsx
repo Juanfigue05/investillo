@@ -36,42 +36,29 @@ const NAV_ITEMS = [
 
 export function Sidebar({
   onClose,
-  expandido,
-  onMouseEnter,
-  onMouseLeave,
 }: {
   onClose?: () => void;
-  expandido: boolean;
-  onMouseEnter: () => void;
-  onMouseLeave: () => void;
 }) {
   const [location] = useLocation();
 
   return (
     <div
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      className={cn(
-        "flex flex-col h-screen bg-card border-r border-border transition-all duration-300 overflow-hidden",
-        expandido ? "w-64" : "w-20"
-      )}
+      className="flex flex-col h-screen w-40 bg-card border-r border-border overflow-hidden"
       style={{ minHeight: "100dvh" }}
     >
-      <div className={cn("pt-6 pb-3 transition-all duration-300", expandido ? "px-6" : "px-0 flex justify-center")}>
+      <div className="pt-5 pb-3 px-3">
         <div>
-          <h1 className={cn("text-2xl font-display font-bold text-primary flex items-center", expandido ? "gap-2" : "justify-center")}>
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+          <h1 className="text-lg font-display font-bold text-primary flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-base flex-shrink-0">
               I
             </div>
-            {expandido && "Investillo"}
+            <span>Investillo</span>
           </h1>
-          {expandido && (
-            <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight pl-10">Gestión con estilo y sencillo</p>
-          )}
+          <p className="text-[8px] text-muted-foreground mt-0.5 leading-tight pl-9">Gestión con estilo y sencillo</p>
         </div>
       </div>
       
-      <div className={cn("flex-1 overflow-y-auto overflow-x-hidden pt-2 pb-4 flex flex-col gap-2", expandido ? "px-4" : "px-2")}>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden pt-2 pb-4 px-2 flex flex-col gap-1">
         {NAV_ITEMS.map((item) => {
           const isActive = location === item.href;
           const Icon = item.icon;
@@ -81,22 +68,20 @@ export function Sidebar({
               key={item.href}
               href={item.href}
               onClick={onClose}
-              title={!expandido ? item.label : undefined}
               className={cn(
-                "flex items-center rounded-xl transition-all duration-200 group whitespace-nowrap",
-                expandido ? "gap-3 px-4 py-3" : "gap-0 px-0 py-3 justify-center",
+                "flex items-center gap-2 rounded-xl px-2 py-2.5 transition-colors duration-200 group whitespace-nowrap text-xs",
                 isActive
                   ? "bg-primary/10 text-primary font-medium"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
-              <Icon className={cn("w-5 h-5 flex-shrink-0 transition-transform duration-200", isActive ? "scale-110" : "group-hover:scale-110")} />
-              {expandido && item.label}
+              <Icon className={cn("w-4 h-4 flex-shrink-0", isActive ? "scale-110" : "group-hover:scale-110")} />
+              <span className="truncate">{item.label}</span>
             </Link>
           );
         })}
       </div>
-      {expandido && <RelojColombia />}
+      <RelojColombia />
     </div>
   );
 }

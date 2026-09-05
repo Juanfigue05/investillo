@@ -334,7 +334,8 @@ export default function CierreDiario() {
   const [gruposDia, setGruposDia] = useState<GrupoTrabajoDia[]>([]);
 
   const fechaHoy = fechaHoyColombia();
-  const hoyLabel = new Date().toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const [fechaCierre, setFechaCierre] = useState(fechaHoy);
+  const hoyLabel = new Date(fechaCierre + "T12:00:00").toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const hoyStr = hoyLabel.charAt(0).toUpperCase() + hoyLabel.slice(1);
 
   const [items, setItems] = useState<CierreTrabajador[]>([]);
@@ -372,6 +373,7 @@ export default function CierreDiario() {
     try {
       const parsed = JSON.parse(raw) as { fecha: string; datos: TrabajadorSnapshot[] | { trabajadores: TrabajadorSnapshot[]; gruposTrabajo?: GrupoTrabajoDia[] } };
       setEditFecha(parsed.fecha);
+      setFechaCierre(parsed.fecha);
       const datos = Array.isArray(parsed.datos) ? parsed.datos : parsed.datos.trabajadores;
       const grupos = Array.isArray(parsed.datos) ? [] : (parsed.datos.gruposTrabajo || []);
       setItems(datos.map(snapshotToItem));
@@ -428,7 +430,7 @@ export default function CierreDiario() {
       return { ...t, calc };
     });
     const datos = { trabajadores: datosTrabajadores, gruposTrabajo: gruposDia };
-    const fecha = editFecha ?? fechaHoy;
+    const fecha = editFecha ?? fechaCierre;
 
     try {
       await guardarCierre(fecha, datos, grandTotal);
@@ -474,6 +476,21 @@ export default function CierreDiario() {
           </div>
 
           <div className="flex gap-2 flex-wrap">
+            <label className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-xl text-sm text-muted-foreground">
+              Fecha del cierre
+              <input
+                type="date"
+                value={editFecha ?? fechaCierre}
+                disabled={Boolean(editFecha)}
+                onChange={(e) => {
+                  setFechaCierre(e.target.value);
+                  setItems([]);
+                  setGruposDia([]);
+                  setGuardadoOk(false);
+                }}
+                className="bg-background text-foreground border border-border px-2 py-1 rounded-lg text-sm disabled:opacity-60"
+              />
+            </label>
             <button onClick={() => setGruposPanelOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm">
               <Users className="w-4 h-4" /> Grupos de trabajo{gruposDia.length > 0 ? ` (${gruposDia.length})` : ""}
             </button>

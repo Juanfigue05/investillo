@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Sidebar } from "./Sidebar";
 import { FloatingNotepad } from "./FloatingNotepad";
 import { FloatingPriceCheck } from "./FloatingPriceCheck";
@@ -31,8 +32,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [tensionadaFecha, setTensionadaFecha] = useState("");
   const [tensionadaValor, setTensionadaValor] = useState("");
   const [guardandoTensionada, setGuardandoTensionada] = useState(false);
-  const [sidebarExpandido, setSidebarExpandido] = useState(false);
-  const collapseTimeout = useRef<ReturnType<typeof setTimeout> | null>(null); 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [read, setRead] = useState<Set<number>>(() => loadSet(KEYS.read));
@@ -111,19 +110,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
       >
         <Sidebar
           onClose={() => setSidebarOpen(false)}
-          expandido={sidebarExpandido}
-          onMouseEnter={() => {
-            if (collapseTimeout.current) clearTimeout(collapseTimeout.current);
-            setSidebarExpandido(true);
-          }}
-          onMouseLeave={() => {
-            collapseTimeout.current = setTimeout(() => setSidebarExpandido(false), 5000);
-          }}
         />
       </div>
 
       {/* Main content */}
-      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${sidebarExpandido ? "lg:ml-64" : "lg:ml-20"}`}>
+      <div className="flex-1 flex flex-col min-w-0 lg:ml-40">
         {/* Header */}
         <header className="h-16 lg:h-20 px-4 lg:px-8 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-20 flex items-center justify-between gap-4">
           {/* Mobile hamburger */}
@@ -173,8 +164,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
               )}
             </button>
 
-            {showTensionada && (
-              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }} onClick={() => setShowTensionada(false)}>
+            {showTensionada && createPortal(
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 90 }} onClick={() => setShowTensionada(false)}>
                 <div className="bg-card border border-cyan-500/40 rounded-2xl shadow-2xl w-full max-w-xs p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
                   <h3 className="font-bold text-foreground">Registrar Tensionada</h3>
                   <div>
@@ -194,7 +185,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     <button onClick={() => setShowTensionada(false)} className="px-4 py-2 bg-muted rounded-xl text-sm">Cancelar</button>
                   </div>
                 </div>
-              </div>
+              </div>,
+              document.body,
             )}
 
             {alertsOpen && (

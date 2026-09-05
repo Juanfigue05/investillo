@@ -27,6 +27,7 @@ async function mapTrabajador(t: typeof trabajadoresTable.$inferSelect) {
     totalGanado: toNum(t.totalGanado),
     totalDescuentos: toNum(t.totalDescuentos),
     activo: t.activo,
+    incluyeNomina: t.incluyeNomina,
     numeroSeguro: t.numeroSeguro,
     telefono: t.telefono,
     correo: t.correo,
@@ -46,13 +47,14 @@ router.get("/", async (_req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const { nombre, descuentoSeguro, descuentoOtros, activo, numeroSeguro, telefono, correo, eps, aplicaSeguro } = req.body;
+  const { nombre, descuentoSeguro, descuentoOtros, activo, incluyeNomina, numeroSeguro, telefono, correo, eps, aplicaSeguro } = req.body;
 
   const [trabajador] = await db.insert(trabajadoresTable).values({
     nombre,
     descuentoSeguro: String(parseFloat(descuentoSeguro || 0)),
     descuentoOtros: String(parseFloat(descuentoOtros || 0)),
     activo: activo !== undefined ? Boolean(activo) : true,
+    incluyeNomina: incluyeNomina !== undefined ? Boolean(incluyeNomina) : true,
     numeroSeguro: numeroSeguro || null,
     telefono: telefono || null,
     correo: correo || null,
@@ -65,7 +67,7 @@ router.post("/", async (req, res) => {
 
 router.put("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
-  const { nombre, descuentoSeguro, descuentoOtros, activo, numeroSeguro, telefono, correo, eps, aplicaSeguro, fechaProximoPagoSeguro } = req.body;
+  const { nombre, descuentoSeguro, descuentoOtros, activo, incluyeNomina, numeroSeguro, telefono, correo, eps, aplicaSeguro, fechaProximoPagoSeguro } = req.body;
 
   const [trabajador] = await db
     .update(trabajadoresTable)
@@ -74,6 +76,7 @@ router.put("/:id", async (req, res) => {
       descuentoSeguro: descuentoSeguro !== undefined ? String(parseFloat(descuentoSeguro)) : undefined,
       descuentoOtros: descuentoOtros !== undefined ? String(parseFloat(descuentoOtros)) : undefined,
       activo: activo !== undefined ? Boolean(activo) : undefined,
+      incluyeNomina: incluyeNomina !== undefined ? Boolean(incluyeNomina) : undefined,
       numeroSeguro: numeroSeguro !== undefined ? (numeroSeguro || null) : undefined,
       telefono: telefono !== undefined ? (telefono || null) : undefined,
       correo: correo !== undefined ? (correo || null) : undefined,

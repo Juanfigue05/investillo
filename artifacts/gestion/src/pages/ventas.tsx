@@ -25,7 +25,14 @@ import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-ki
 import { FilaVentaSortable } from "@/components/FilaVentaSortable";
 
 const SPECIAL_MANOOBRA = "__manoobra__";
+const SPECIAL_SOLDADURA = "__soldadura__";
 const SPECIAL_ABONO = "__abono__";
+
+const SERVICIOS_SOLDADURA: Record<string, string> = {
+  soldadura: "Soldadura",
+  chispeada: "Chispeada",
+  pulida: "Pulida",
+};
 
 function agregarFilaOptimista(queryClient: any, fecha: string, fila: any) {
   const idTemporal = -Date.now() - Math.random();
@@ -135,6 +142,9 @@ export default function VentasDiarias() {
 
   const opcionesProducto: ProductoOpcion[] = [
     { id: SPECIAL_MANOOBRA, nombre: "🔧 Mano de Obra", special: "manoobra" },
+    { id: `${SPECIAL_SOLDADURA}:soldadura`, nombre: "⚡ Soldadura", special: "manoobra" },
+    { id: `${SPECIAL_SOLDADURA}:chispeada`, nombre: "⚡ Chispeada", special: "manoobra" },
+    { id: `${SPECIAL_SOLDADURA}:pulida`, nombre: "⚡ Pulida", special: "manoobra" },
     { id: SPECIAL_ABONO, nombre: "💳 Abono A", special: "abono" },
     ...(productos || []).map((p) => ({
       id: String(p.id),
@@ -147,10 +157,15 @@ export default function VentasDiarias() {
 
   const modoActual =
     newRow.productoSeleccionado === SPECIAL_MANOOBRA ? "manoobra" :
+    newRow.productoSeleccionado.startsWith(SPECIAL_SOLDADURA) ? "soldadura" :
     newRow.productoSeleccionado === SPECIAL_ABONO ? "abono" : "normal";
 
+  const servicioActual = newRow.productoSeleccionado.startsWith(`${SPECIAL_SOLDADURA}:`)
+    ? SERVICIOS_SOLDADURA[newRow.productoSeleccionado.split(":")[1]]
+    : "Mano de Obra";
+
   const handleProductoSelect = (id: string) => {
-    if (id === SPECIAL_MANOOBRA) {
+    if (id === SPECIAL_MANOOBRA || id.startsWith(`${SPECIAL_SOLDADURA}:`)) {
       setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "X", cantidad: "1", precioCompra: 0, precioVenta: 0, precioManoObra: 0, valorAbono: 0, trabajadoresSeleccionados: [] }));
       setStockAlerta(null);
     } else if (id === SPECIAL_ABONO) {
@@ -229,9 +244,9 @@ export default function VentasDiarias() {
   const handleAddRow = () => {
     if (!newRow.referencia) { alert("Escribe una referencia / No. Remisión"); return; }
 
-    if (modoActual === "manoobra") {
+    if (modoActual === "manoobra" || modoActual === "soldadura") {
       if (!newRow.precioManoObra || newRow.trabajadoresSeleccionados.length === 0) {
-        alert("Llena el precio de mano de obra y selecciona los trabajadores");
+        alert("Llena el valor del servicio y selecciona los trabajadores");
         return;
       }
       const valor = newRow.precioManoObra;
@@ -243,6 +258,8 @@ export default function VentasDiarias() {
 
       const payloadManoObra = {
         fecha, referencia: newRow.referencia, valorTotal: valor, distribuciones,
+        productoNombre: servicioActual,
+        formaPago: newRow.formaPago,
         productoMarca: distribuciones.map((d) => `${d.trabajadorNombre.toUpperCase()}(${Math.round(d.valor / 1000)})`).join(""),
         descripcion: distribuciones.map((d) => `${d.trabajadorNombre}: ${formatCurrency(d.valor)}`).join(" | "),
       };
@@ -252,7 +269,7 @@ export default function VentasDiarias() {
 
       agregarFilaOptimista(queryClient, fecha, {
         referencia: newRow.referencia, tipoLinea: "manoobra",
-        productoNombre: "Mano de Obra", productoMarca: payloadManoObra.productoMarca,
+        productoNombre: servicioActual, productoMarca: payloadManoObra.productoMarca,
         cantidad: 1, precioCompraUnidad: 0, precioVentaUnidad: valor, precioVentaTotal: valor, beneficio: valor,
       });
 
@@ -400,7 +417,7 @@ export default function VentasDiarias() {
   const totalVentaTotal = ventasRows.reduce((acc, v) => acc + v.precioVentaTotal, 0);
   const totalBeneficio = ventasRows.reduce((acc, v) => acc + v.beneficio, 0);
   const cantNum = parseFloat(newRow.cantidad.replace(",", ".")) || 0;
-  const previewTotal = modoActual === "normal" ? newRow.precioVenta * cantNum : modoActual === "manoobra" ? newRow.precioManoObra : 0;
+  const previewTotal = modoActual === "normal" ? newRow.precioVenta * cantNum : modoActual === "manoobra" || modoActual === "soldadura" ? newRow.precioManoObra : 0;
   const previewBeneficio = modoActual === "normal" ? (newRow.precioVenta - newRow.precioCompra) * cantNum : 0;
 
   const fechaFormateada = new Date(fecha + "T12:00:00").toLocaleDateString("es-CO", {
@@ -461,7 +478,7 @@ export default function VentasDiarias() {
             Ventas Diarias — {fechaFormateada}
           </div>
 
-          <div className="overflow-auto max-h-[62vh] print:max-h-none print:overflow-visible">
+          <div className="overflow-visible print:max-h-none print:overflow-visible">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={ventasOrdenadas.map((venta: any) => venta.id)} strategy={verticalListSortingStrategy}>
             <table className="w-full text-left border-collapse text-xs lg:text-sm">
@@ -481,109 +498,6 @@ export default function VentasDiarias() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                <tr className={`no-print bg-background/40 ${modoActual === "manoobra" ? "row-manoobra" : modoActual === "abono" ? "row-credito" : ""}`}>
-                  <td className="p-2 no-print">
-                    <button
-                      onClick={handleAddRow}
-                      disabled={crearMutation.isPending}
-                      className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow"
-                      title="Guardar fila"
-                    >
-                      <Save className="w-4 h-4" />
-                    </button>
-                  </td>
-                  <td className="p-2">
-                    <input
-                      type="text"
-                      placeholder="R 1234 24-ENE"
-                      value={newRow.referencia}
-                      onChange={(e) => setNewRow({ ...newRow, referencia: e.target.value })}
-                      className="w-full bg-background border border-border px-3 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm"
-                    />
-                  </td>
-                  <td className="p-2 min-w-[180px]">
-                    <SearchableSelect
-                      opciones={opcionesProducto}
-                      value={newRow.productoSeleccionado}
-                      onChange={handleProductoSelect}
-                      placeholder="Seleccionar producto..."
-                    />
-                    {modoActual === "normal" && stockAlerta !== null && (
-                      stockAlerta.stock === 0
-                        ? <p className="text-red-500 dark:text-red-400 text-[11px] mt-1 leading-tight font-medium">⚠ Sin existencias — stock en 0</p>
-                        : stockAlerta.stock <= stockAlerta.minimo
-                          ? <p className="text-yellow-500 dark:text-yellow-400 text-[11px] mt-1 leading-tight font-medium">⚠ Pocas existencias ({stockAlerta.stock} en stock)</p>
-                          : null
-                    )}
-                    {modoActual === "abono" && (
-                      <input
-                        type="text"
-                        placeholder="Nombre cliente..."
-                        value={newRow.productoNombreManual}
-                        onChange={(e) => setNewRow({ ...newRow, productoNombreManual: e.target.value })}
-                        className="w-full mt-1 bg-background border border-blue-500/50 px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
-                      />
-                    )}
-                  </td>
-                  <td className="p-2">
-                    {modoActual === "normal" && (
-                      <input type="text" value={newRow.marca || "X"} readOnly disabled className="w-20 bg-muted border border-border px-2 py-2 rounded-lg text-sm text-muted-foreground cursor-not-allowed" />
-                    )}
-                    {modoActual === "manoobra" && (
-                      <div className="max-w-[160px]">
-                        <ManoObraSelector
-                          trabajadores={trabajadores || []}
-                          total={newRow.precioManoObra}
-                          seleccionados={newRow.trabajadoresSeleccionados}
-                          fijados={newRow.valoresFijados}
-                          onChangeSeleccionados={(ids) => setNewRow((prev) => ({ ...prev, trabajadoresSeleccionados: ids }))}
-                          onChangeFijados={(fijados) => setNewRow((prev) => ({ ...prev, valoresFijados: fijados }))}
-                        />
-                      </div>
-                    )}
-                    {modoActual === "abono" && <span className="text-xs text-blue-400 italic">Abono</span>}
-                  </td>
-                  <td className="p-2">
-                    {modoActual === "normal" && (
-                      <input type="number" min="0" step="0.25" placeholder="1" value={newRow.cantidad} onChange={(e) => setNewRow({ ...newRow, cantidad: e.target.value })} className="w-20 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" />
-                    )}
-                    {modoActual === "manoobra" && <span className="text-xs text-muted-foreground">{newRow.trabajadoresSeleccionados.length} trab.</span>}
-                    {modoActual === "abono" && <span className="text-xs text-muted-foreground">—</span>}
-                  </td>
-                  <td className="p-2">
-                    {modoActual === "normal" && (
-                      <input type="number" value={newRow.precioCompra || ""} onChange={(e) => setNewRow({ ...newRow, precioCompra: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="P.Compra" />
-                    )}
-                    {modoActual === "manoobra" && (
-                      <input type="number" value={newRow.precioManoObra || ""} onChange={(e) => setNewRow({ ...newRow, precioManoObra: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-yellow-500/50 px-2 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 outline-none text-sm" placeholder="Precio M.O." />
-                    )}
-                    {modoActual === "abono" && (
-                      <input type="number" value={newRow.valorAbono || ""} onChange={(e) => setNewRow({ ...newRow, valorAbono: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-blue-500/50 px-2 py-2 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm" placeholder="Valor" />
-                    )}
-                  </td>
-                  <td className="p-2">
-                    {modoActual === "normal" ? (
-                      <input type="number" value={newRow.precioVenta || ""} onChange={(e) => setNewRow({ ...newRow, precioVenta: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="P.Venta" />
-                    ) : (
-                      <span className="text-xs text-muted-foreground px-2">—</span>
-                    )}
-                  </td>
-                  <td className="p-2 font-medium text-primary whitespace-nowrap">{formatCurrency(previewTotal)}</td>
-                  <td className="p-2 font-medium text-green-500 whitespace-nowrap">
-                    {modoActual === "normal" ? formatCurrency(previewBeneficio) : "—"}
-                  </td>
-                  <td className="p-2 no-print">
-                    <select value={newRow.formaPago} onChange={(e) => setNewRow({ ...newRow, formaPago: e.target.value })}
-                      className="w-full bg-background border border-border px-2 py-2 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none">
-                      <option value="efectivo">Efectivo</option>
-                      <option value="cuenta_ernesto">Cuenta Ernesto</option>
-                      <option value="cuenta_olga">Cuenta Olga</option>
-                      <option value="cuenta_juan">Cuenta Juan</option>
-                    </select>
-                  </td>
-                  <td className="p-2 no-print"></td>
-                </tr>
-
                 {isLoading ? (
                   <tr><td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">Cargando ventas...</td></tr>
                 ) : ventasOrdenadas.length === 0 ? (
@@ -604,6 +518,43 @@ export default function VentasDiarias() {
                     />
                   ))
                 )}
+                <tr className={`no-print bg-background/40 ${modoActual === "manoobra" || modoActual === "soldadura" ? "row-manoobra" : modoActual === "abono" ? "row-credito" : ""}`}>
+                  <td className="p-2 no-print">
+                    <button onClick={handleAddRow} disabled={crearMutation.isPending} className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow" title="Guardar fila">
+                      <Save className="w-4 h-4" />
+                    </button>
+                  </td>
+                  <td className="p-2">
+                    <input type="text" placeholder="R 1234 24-ENE" value={newRow.referencia} onChange={(e) => setNewRow({ ...newRow, referencia: e.target.value })} className="w-full bg-background border border-border px-3 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" />
+                  </td>
+                  <td className="p-2 min-w-[180px]">
+                    <SearchableSelect opciones={opcionesProducto} value={newRow.productoSeleccionado} onChange={handleProductoSelect} placeholder="Seleccionar producto..." />
+                    {modoActual === "normal" && stockAlerta !== null && (
+                      stockAlerta.stock === 0 ? <p className="text-red-500 text-[11px] mt-1 leading-tight font-medium">⚠ Sin existencias — stock en 0</p> : stockAlerta.stock <= stockAlerta.minimo ? <p className="text-yellow-500 text-[11px] mt-1 leading-tight font-medium">⚠ Pocas existencias ({stockAlerta.stock} en stock)</p> : null
+                    )}
+                    {modoActual === "abono" && <input type="text" placeholder="Nombre cliente..." value={newRow.productoNombreManual} onChange={(e) => setNewRow({ ...newRow, productoNombreManual: e.target.value })} className="w-full mt-1 bg-background border border-blue-500/50 px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />}
+                  </td>
+                  <td className="p-2">
+                    {modoActual === "normal" && <input type="text" value={newRow.marca || "X"} readOnly disabled className="w-20 bg-muted border border-border px-2 py-2 rounded-lg text-sm text-muted-foreground cursor-not-allowed" />}
+                    {(modoActual === "manoobra" || modoActual === "soldadura") && <div className="max-w-[160px]"><ManoObraSelector trabajadores={trabajadores || []} total={newRow.precioManoObra} seleccionados={newRow.trabajadoresSeleccionados} fijados={newRow.valoresFijados} onChangeSeleccionados={(ids) => setNewRow((prev) => ({ ...prev, trabajadoresSeleccionados: ids }))} onChangeFijados={(fijados) => setNewRow((prev) => ({ ...prev, valoresFijados: fijados }))} /></div>}
+                    {modoActual === "abono" && <span className="text-xs text-blue-400 italic">Abono</span>}
+                  </td>
+                  <td className="p-2">
+                    {modoActual === "normal" && <input type="number" min="0" step="0.25" placeholder="1" value={newRow.cantidad} onChange={(e) => setNewRow({ ...newRow, cantidad: e.target.value })} className="w-20 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" />}
+                    {(modoActual === "manoobra" || modoActual === "soldadura") && <span className="text-xs text-muted-foreground">{newRow.trabajadoresSeleccionados.length} trab.</span>}
+                    {modoActual === "abono" && <span className="text-xs text-muted-foreground">—</span>}
+                  </td>
+                  <td className="p-2">
+                    {modoActual === "normal" && <input type="number" value={newRow.precioCompra || ""} onChange={(e) => setNewRow({ ...newRow, precioCompra: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="P.Compra" />}
+                    {(modoActual === "manoobra" || modoActual === "soldadura") && <input type="number" value={newRow.precioManoObra || ""} onChange={(e) => setNewRow({ ...newRow, precioManoObra: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-yellow-500/50 px-2 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 outline-none text-sm" placeholder="Valor servicio" />}
+                    {modoActual === "abono" && <input type="number" value={newRow.valorAbono || ""} onChange={(e) => setNewRow({ ...newRow, valorAbono: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-blue-500/50 px-2 py-2 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm" placeholder="Valor" />}
+                  </td>
+                  <td className="p-2">{modoActual === "normal" ? <input type="number" value={newRow.precioVenta || ""} onChange={(e) => setNewRow({ ...newRow, precioVenta: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="P.Venta" /> : <span className="text-xs text-muted-foreground px-2">—</span>}</td>
+                  <td className="p-2 font-medium text-primary whitespace-nowrap">{formatCurrency(previewTotal)}</td>
+                  <td className="p-2 font-medium text-green-500 whitespace-nowrap">{modoActual === "normal" ? formatCurrency(previewBeneficio) : "—"}</td>
+                  <td className="p-2 no-print"><select value={newRow.formaPago} onChange={(e) => setNewRow({ ...newRow, formaPago: e.target.value })} className="w-full bg-background border border-border px-2 py-2 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"><option value="efectivo">Efectivo</option><option value="cuenta_ernesto">Cuenta Ernesto</option><option value="cuenta_olga">Cuenta Olga</option><option value="cuenta_juan">Cuenta Juan</option></select></td>
+                  <td className="p-2 no-print"></td>
+                </tr>
               </tbody>
 
               <tfoot className="border-t-2 border-border">

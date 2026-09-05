@@ -37,10 +37,36 @@ export default function ReporteNomina() {
           <p className="text-center py-10 text-muted-foreground">Cargando...</p>
         ) : (
           <div className="flex flex-wrap gap-4 items-start justify-center print:gap-2">
-            {data?.trabajadores?.map((t: any, idx: number) => (
-              <>
+            <div className="border-2 border-cyan-500 rounded-lg overflow-hidden text-xs" style={{ minWidth: 180 }}>
+              <div className="bg-cyan-400 text-black font-bold text-center py-1">
+                TENSIONADAS MES {NOMBRES_MES[parseInt(mes.split("-")[1])].toUpperCase()} {mes.split("-")[0]}
+              </div>
+              <table className="w-full bg-cyan-50">
+                <thead>
+                  <tr className="bg-cyan-200 text-black">
+                    <th className="px-2 py-1 text-left">FECHA</th>
+                    <th className="px-2 py-1 text-right">TOTAL TENSIONADA</th>
+                  </tr>
+                </thead>
+                <tbody className="text-black">
+                  {data.tensionadas.map((tn: any) => (
+                    <tr key={tn.id} className="border-t border-cyan-200">
+                      <td className="px-2 py-1">{fmtFecha(tn.fecha)}</td>
+                      <td className="px-2 py-1 text-right">{formatCurrency(tn.valor)}</td>
+                    </tr>
+                  ))}
+                  <tr className="border-t-2 border-cyan-400 font-bold bg-cyan-100">
+                    <td className="px-2 py-1">TOTAL</td>
+                    <td className="px-2 py-1 text-right">{formatCurrency(data.totalTensionadas)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {data?.trabajadores?.map((t: any) => (
+              <div key={t.trabajadorId}>
                 {/* Tabla amarilla del trabajador */}
-                <div key={t.trabajadorId} className="border-2 border-amber-500 rounded-lg overflow-hidden text-xs" style={{ minWidth: 280 }}>
+                <div className="border-2 border-amber-500 rounded-lg overflow-hidden text-xs" style={{ minWidth: 280 }}>
                   <div className="bg-amber-400 text-black font-bold text-center py-1">
                     MES {NOMBRES_MES[parseInt(mes.split("-")[1])].toUpperCase()} {mes.split("-")[0]} {t.nombre.toUpperCase()}
                   </div>
@@ -76,35 +102,7 @@ export default function ReporteNomina() {
                   </table>
                 </div>
 
-                {/* La tabla azul de Tensionadas va justo después de la primera tabla */}
-                {idx === 0 && (
-                  <div className="border-2 border-cyan-500 rounded-lg overflow-hidden text-xs" style={{ minWidth: 180 }}>
-                    <div className="bg-cyan-400 text-black font-bold text-center py-1">
-                      TENSIONADAS MES {NOMBRES_MES[parseInt(mes.split("-")[1])].toUpperCase()} {mes.split("-")[0]}
-                    </div>
-                    <table className="w-full bg-cyan-50">
-                      <thead>
-                        <tr className="bg-cyan-200 text-black">
-                          <th className="px-2 py-1 text-left">FECHA</th>
-                          <th className="px-2 py-1 text-right">TOTAL TENSIONADA</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-black">
-                        {data.tensionadas.map((tn: any) => (
-                          <tr key={tn.id} className="border-t border-cyan-200">
-                            <td className="px-2 py-1">{fmtFecha(tn.fecha)}</td>
-                            <td className="px-2 py-1 text-right">{formatCurrency(tn.valor)}</td>
-                          </tr>
-                        ))}
-                        <tr className="border-t-2 border-cyan-400 font-bold bg-cyan-100">
-                          <td className="px-2 py-1">TOTAL</td>
-                          <td className="px-2 py-1 text-right">{formatCurrency(data.totalTensionadas)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </>
+              </div>
             ))}
           </div>
         )}

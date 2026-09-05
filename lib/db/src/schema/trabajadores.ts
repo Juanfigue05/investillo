@@ -10,6 +10,7 @@ export const trabajadoresTable = pgTable("trabajadores", {
   totalGanado: numeric("total_ganado", { precision: 15, scale: 2 }).notNull().default("0"),
   totalDescuentos: numeric("total_descuentos", { precision: 15, scale: 2 }).notNull().default("0"),
   activo: boolean("activo").notNull().default(true),
+  incluyeNomina: boolean("incluye_nomina").notNull().default(true),
 
   // ── Perfil del trabajador ──
   numeroSeguro: text("numero_seguro"),
