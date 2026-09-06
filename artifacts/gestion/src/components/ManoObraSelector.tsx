@@ -72,6 +72,25 @@ export function ManoObraSelector({ trabajadores, total, seleccionados, fijados, 
     setIsOpen((o) => !o);
   };
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const updatePosition = () => {
+      const el = triggerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const width = 288;
+      let left = rect.left;
+      if (left + width > window.innerWidth - 16) left = window.innerWidth - width - 16;
+      setPos({ top: rect.bottom + 4, left });
+    };
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [isOpen]);
+
   const distribucion = useMemo(() => calcularDistribucion(total, seleccionados, fijados), [total, seleccionados, fijados]);
   const totalRedondeado = Math.round(total) || 0;
   const sumaFijados = seleccionados

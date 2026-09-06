@@ -41,9 +41,19 @@ router.get("/", async (_req, res) => {
   }
 });
 
+router.get("/por-fecha", async (req, res) => {
+  const fecha = String(req.query.fecha || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    res.status(400).json({ error: "fecha inválida" });
+    return;
+  }
+  const [cierre] = await db.select().from(cierreDiarioTable).where(eq(cierreDiarioTable.fecha, fecha)).limit(1);
+  res.json(cierre || null);
+});
+
 router.post("/", async (req, res) => {
   try {
-    const { fecha, datos, totalPagar } = req.body as { fecha: string; datos: unknown; totalPagar: number };
+    const { fecha, datos, totalPagar, editar } = req.body as { fecha: string; datos: unknown; totalPagar: number; editar?: boolean };
     if (!fecha || !datos) { res.status(400).json({ error: "fecha y datos son requeridos" }); return; }
 
     const operationId = req.header("x-operation-id");
@@ -56,6 +66,9 @@ router.post("/", async (req, res) => {
 
     const resultado = await db.transaction(async (tx) => {
       const [existing] = await tx.select().from(cierreDiarioTable).where(eq(cierreDiarioTable.fecha, fecha)).limit(1);
+      if (existing && !editar) {
+        throw new Error("CIERRE_YA_EXISTE");
+      }
       const anterior = existing ? seguroPorTrabajador(existing.datos) : new Map<number, number>();
 
       // Calcula el delta (nuevo - anterior) por trabajador, para no duplicar si se edita un cierre ya guardado
@@ -89,6 +102,10 @@ router.post("/", async (req, res) => {
     }
     res.status(resultado ? 201 : 500).json(resultado);
   } catch (err) {
+    if (String(err).includes("CIERRE_YA_EXISTE")) {
+      res.status(409).json({ error: "Ya existe un cierre para esta fecha. Ábrelo desde Historial de Cierres para editarlo." });
+      return;
+    }
     res.status(500).json({ error: String(err) });
   }
 });

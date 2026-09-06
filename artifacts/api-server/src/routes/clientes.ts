@@ -16,6 +16,7 @@ async function mapCliente(c: typeof clientesTable.$inferSelect) {
     id: c.id,
     nombre: c.nombre,
     telefono: c.telefono ?? null,
+    telefono2: c.telefono2 ?? null,
     correo: c.correo ?? null,
     notas: c.notas ?? null,
     creadoEn: c.creadoEn,
@@ -41,6 +42,7 @@ router.get("/", async (req, res) => {
           or(
             ilike(clientesTable.nombre, `%${q}%`),
             ilike(clientesTable.telefono, `%${q}%`),
+            ilike(clientesTable.telefono2, `%${q}%`),
             ilike(clientesTable.correo, `%${q}%`),
           ),
         )

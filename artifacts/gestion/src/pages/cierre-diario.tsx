@@ -80,16 +80,17 @@ function calcTrabajador(t: CierreTrabajador, grupos: GrupoTrabajoDia[], trabajad
   const moPropia = t.moEntradas.reduce((s, v) => s + parseMiles(v), 0);
   const moGrupo = shareDeGrupos(t.trabajadorId, grupos);
   const mo = moPropia + moGrupo;
-  const descuento = mo > 0 ? roundUp1000(mo * 0.3) : 0;
 
   const trabInfo = trabajadores.find((w) => w.id === t.trabajadorId);
+  const aplicaDescuento30 = trabInfo ? Boolean(trabInfo.aplicaDescuento30) : true;
+  const descuento = aplicaDescuento30 && mo > 0 ? roundUp1000(mo * 0.3) : 0;
   const aplicaSeguro = trabInfo ? Boolean(trabInfo.aplicaSeguro) : false;
   const seguro = aplicaSeguro ? parseMiles(t.seguro) : 0;
 
   const leDamos = sumaConceptos(t.leDamos);
   const nosDebe = sumaConceptos(t.nosDebe);
   const total = mo - descuento - seguro + leDamos - nosDebe;
-  return { mo, moPropia, moGrupo, descuento, seguro, aplicaSeguro, leDamos, nosDebe, total };
+  return { mo, moPropia, moGrupo, descuento, aplicaDescuento30, seguro, aplicaSeguro, leDamos, nosDebe, total };
 }
 
 // ---------- sub-components ----------
@@ -297,11 +298,11 @@ function GruposTrabajoPanel({
 // ---------- API helpers ----------
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
-async function guardarCierre(fecha: string, datos: unknown, totalPagar: number) {
+async function guardarCierre(fecha: string, datos: unknown, totalPagar: number, editar: boolean) {
   const res = await fetch(`${API}/cierre-diario`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fecha, datos, totalPagar }),
+    body: JSON.stringify({ fecha, datos, totalPagar, editar }),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -355,6 +356,7 @@ export default function CierreDiario() {
   const [guardando, setGuardando] = useState(false);
   const [guardadoOk, setGuardadoOk] = useState(false);
   const [editFecha, setEditFecha] = useState<string | null>(null);
+  const [cierreInicialCargado, setCierreInicialCargado] = useState(false);
 
   const cargarGruposDefault = async () => {
     const res = await fetch(`${API}/grupos-trabajo`);
@@ -379,23 +381,38 @@ export default function CierreDiario() {
 
   useEffect(() => {
     const raw = sessionStorage.getItem("editarCierre");
-    if (!raw) return;
-    sessionStorage.removeItem("editarCierre");
-    try {
-      const parsed = JSON.parse(raw) as { fecha: string; datos: TrabajadorSnapshot[] | { trabajadores: TrabajadorSnapshot[]; gruposTrabajo?: GrupoTrabajoDia[] } };
-      setEditFecha(parsed.fecha);
-      setFechaCierre(parsed.fecha);
-      const datos = Array.isArray(parsed.datos) ? parsed.datos : parsed.datos.trabajadores;
-      const grupos = Array.isArray(parsed.datos) ? [] : (parsed.datos.gruposTrabajo || []);
-      setItems(datos.map(snapshotToItem));
+    const cargarDatos = (fecha: string, datos: TrabajadorSnapshot[] | { trabajadores: TrabajadorSnapshot[]; gruposTrabajo?: GrupoTrabajoDia[] }) => {
+      setEditFecha(fecha);
+      setFechaCierre(fecha);
+      const trabajadoresGuardados = Array.isArray(datos) ? datos : datos.trabajadores;
+      const grupos = Array.isArray(datos) ? [] : (datos.gruposTrabajo || []);
+      setItems(trabajadoresGuardados.map(snapshotToItem));
       setGruposDia(grupos);
-    } catch {
-      // ignore malformed data
+    };
+
+    if (raw) {
+      sessionStorage.removeItem("editarCierre");
+      try {
+        const parsed = JSON.parse(raw) as { fecha: string; datos: TrabajadorSnapshot[] | { trabajadores: TrabajadorSnapshot[]; gruposTrabajo?: GrupoTrabajoDia[] } };
+        cargarDatos(parsed.fecha, parsed.datos);
+      } catch {
+        // ignore malformed data
+      }
+      setCierreInicialCargado(true);
+      return;
     }
+
+    fetch(`${API}/cierre-diario/por-fecha?fecha=${fechaCierre}`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((cierre) => {
+        if (cierre?.datos) cargarDatos(cierre.fecha, cierre.datos);
+        setCierreInicialCargado(true);
+      })
+      .catch(() => setCierreInicialCargado(true));
   }, []);
 
   useEffect(() => {
-    if (editFecha || items.length > 0 || !trabajadores) return;
+    if (!cierreInicialCargado || editFecha || items.length > 0 || !trabajadores) return;
     const activos = trabajadores.filter((trabajador) => trabajador.activo);
     if (activos.length > 0) {
       setItems(activos.map((trabajador) => newTrabajador(trabajador.nombre, trabajador.id)));
@@ -452,7 +469,7 @@ export default function CierreDiario() {
     const fecha = editFecha ?? fechaCierre;
 
     try {
-      await guardarCierre(fecha, datos, grandTotal);
+      await guardarCierre(fecha, datos, grandTotal, Boolean(editFecha));
       setGuardadoOk(true);
       setTimeout(() => setGuardadoOk(false), 3000);
     } catch (e) {
@@ -572,7 +589,7 @@ export default function CierreDiario() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {items.map((t) => {
-            const { mo, moPropia, moGrupo, descuento, seguro, aplicaSeguro, leDamos, nosDebe, total } = calcTrabajador(t, gruposDia, trabajadores || []);
+            const { mo, moPropia, moGrupo, descuento, aplicaDescuento30, seguro, aplicaSeguro, leDamos, nosDebe, total } = calcTrabajador(t, gruposDia, trabajadores || []);
 
             return (
               <div key={t.id} className="bg-card border border-border rounded-2xl shadow-lg overflow-hidden flex flex-col">
@@ -638,7 +655,7 @@ export default function CierreDiario() {
                     <div className="bg-muted/50 border border-border rounded-xl p-3">
                       <div className="space-y-1 text-xs">
                         <div className="flex justify-between"><span className="text-muted-foreground">Total MO (propia + grupo)</span><span className="font-semibold">{formatCurrency(mo)}</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">Desc. 30%</span><span className="font-semibold text-destructive">− {formatCurrency(descuento)}</span></div>
+                        {aplicaDescuento30 && <div className="flex justify-between"><span className="text-muted-foreground">Desc. 30%</span><span className="font-semibold text-destructive">− {formatCurrency(descuento)}</span></div>}
                         {aplicaSeguro && <div className="flex justify-between"><span className="text-muted-foreground">Seguro</span><span className="font-semibold text-destructive">− {formatCurrency(seguro)}</span></div>}
                         {leDamos > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Le damos</span><span className="font-semibold text-green-400">+ {formatCurrency(leDamos)}</span></div>}
                         {nosDebe > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Nos debe</span><span className="font-semibold text-destructive">− {formatCurrency(nosDebe)}</span></div>}

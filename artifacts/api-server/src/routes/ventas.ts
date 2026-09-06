@@ -70,6 +70,11 @@ router.get("/", async (req, res) => {
   if (fecha) {
     const ventas = await db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.fecha, String(fecha)));
     const ordenadas = [...ventas].sort((a, b) => {
+      if (a.orden != null || b.orden != null) {
+        if (a.orden == null) return 1;
+        if (b.orden == null) return -1;
+        if (a.orden !== b.orden) return a.orden - b.orden;
+      }
       const aCreado = a.creadoEn ? new Date(a.creadoEn).getTime() : 0;
       const bCreado = b.creadoEn ? new Date(b.creadoEn).getTime() : 0;
       if (aCreado !== bCreado) return aCreado - bCreado;
@@ -80,6 +85,11 @@ router.get("/", async (req, res) => {
   }
   const ventas = await db.select().from(ventasDiariasTable);
   const ordenadas = [...ventas].sort((a, b) => {
+    if (a.orden != null || b.orden != null) {
+      if (a.orden == null) return 1;
+      if (b.orden == null) return -1;
+      if (a.orden !== b.orden) return a.orden - b.orden;
+    }
     const aCreado = a.creadoEn ? new Date(a.creadoEn).getTime() : 0;
     const bCreado = b.creadoEn ? new Date(b.creadoEn).getTime() : 0;
     if (aCreado !== bCreado) return aCreado - bCreado;
@@ -208,6 +218,35 @@ router.post("/manoobra", async (req, res) => {
   }
 });
 
+// ─── PUT /reordenar — guarda el nuevo orden después de arrastrar filas ──
+// Debe declararse antes de PUT /:id para que "reordenar" no se interprete como un ID.
+router.put("/reordenar", async (req, res) => {
+  const { ids, fecha } = req.body as { ids: number[]; fecha?: string };
+  if (!Array.isArray(ids) || !ids.length || ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+    res.status(400).json({ error: "ids requerido" });
+    return;
+  }
+  if (fecha !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    res.status(400).json({ error: "fecha inválida" });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    const posiciones = ids.map((_, i) => i + 1);
+    await client.query(
+      `UPDATE ventas_diarias AS v SET orden = u.orden
+       FROM UNNEST($1::int[], $2::int[]) AS u(id, orden)
+        WHERE v.id = u.id
+        ${fecha ? "AND v.fecha = $3::date" : ""}`,
+            fecha ? [ids, posiciones, fecha] : [ids, posiciones],
+    );
+    res.json({ ok: true });
+  } finally {
+    client.release();
+  }
+});
+
 router.put("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
   const {
@@ -332,26 +371,6 @@ router.post("/:id/trasladar", async (req, res) => {
     .returning();
 
   res.json(actualizado);
-});
-
-// ─── PUT /reordenar — guarda el nuevo orden después de arrastrar filas ──
-router.put("/reordenar", async (req, res) => {
-  const { ids } = req.body as { ids: number[] }; // el arreglo COMPLETO de IDs, ya en el orden nuevo
-  if (!Array.isArray(ids) || !ids.length) { res.status(400).json({ error: "ids requerido" }); return; }
-
-  const client = await pool.connect();
-  try {
-    const posiciones = ids.map((_, i) => i + 1);
-    await client.query(
-      `UPDATE ventas_diarias AS v SET orden = u.orden
-       FROM UNNEST($1::int[], $2::int[]) AS u(id, orden)
-       WHERE v.id = u.id`,
-      [ids, posiciones],
-    );
-    res.json({ ok: true });
-  } finally {
-    client.release();
-  }
 });
 
 export default router;

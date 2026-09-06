@@ -16,6 +16,7 @@ interface PagoSeguro {
 interface PerfilForm {
   nombre: string;
   incluyeNomina: boolean;
+  aplicaDescuento30: boolean;
   numeroSeguro: string;
   telefono: string;
   correo: string;
@@ -64,6 +65,7 @@ export default function Trabajadores() {
           nuevos[t.id] = {
             nombre: t.nombre,
               incluyeNomina: t.incluyeNomina !== false,
+              aplicaDescuento30: t.aplicaDescuento30 !== false,
             numeroSeguro: t.numeroSeguro || "",
             telefono: t.telefono || "",
             correo: t.correo || "",
@@ -249,6 +251,11 @@ export default function Trabajadores() {
                     <label className="flex items-center gap-2 text-sm text-foreground">
                       <input type="checkbox" checked={form.incluyeNomina} onChange={(e) => actualizarCampoPerfil(t.id, { incluyeNomina: e.target.checked })} className="accent-primary" />
                       Incluir en reporte de nómina
+                    </label>
+
+                    <label className="flex items-center gap-2 text-sm text-foreground">
+                      <input type="checkbox" checked={form.aplicaDescuento30} onChange={(e) => actualizarCampoPerfil(t.id, { aplicaDescuento30: e.target.checked })} className="accent-primary" />
+                      Aplicar descuento del 30%
                     </label>
 
                     <button onClick={() => guardarPerfil(t.id)} disabled={guardandoPerfilId === t.id}

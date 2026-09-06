@@ -1174,18 +1174,17 @@ export default function Creditos() {
                     Cliente <span className="text-destructive">*</span>
                   </label>
                   <input
-                    type="text"
+                    type="hidden"
                     value={form.nombreCliente}
-                    onChange={(e) => handleClienteSelect(e.target.value)}
-                    list="clientes-list-cr"
-                    placeholder="Nombre del cliente (selecciona o escribe)"
-                    className="w-full bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
+                    readOnly
                   />
-                  <datalist id="clientes-list-cr">
-                    {clientes?.map((c) => (
-                      <option key={c.id} value={c.nombre} />
-                    ))}
-                  </datalist>
+                  <SearchableSelect
+                    opciones={(clientes || []).map((c) => ({ id: c.nombre, nombre: c.nombre }))}
+                    value={form.nombreCliente}
+                    onChange={handleClienteSelect}
+                    placeholder="Nombre del cliente (selecciona o escribe)"
+                    allowCustom
+                  />
                   {clientes && clientes.length > 0 && (
                     <p className="text-xs text-muted-foreground mt-1">
                       Escribe para buscar clientes guardados o ingresa uno

@@ -27,6 +27,7 @@ import { FilaVentaSortable } from "@/components/FilaVentaSortable";
 const SPECIAL_MANOOBRA = "__manoobra__";
 const SPECIAL_SOLDADURA = "__soldadura__";
 const SPECIAL_ABONO = "__abono__";
+const SPECIAL_EXTERNO = "__externo__";
 
 const SERVICIOS_SOLDADURA: Record<string, string> = {
   soldadura: "Soldadura",
@@ -44,6 +45,7 @@ function agregarFilaOptimista(queryClient: any, fecha: string, fila: any) {
 
 interface EditValues {
   referencia: string;
+  productoId: number | string;
   productoNombre: string;
   productoMarca: string;
   cantidad: string;
@@ -97,12 +99,27 @@ export default function VentasDiarias() {
 
     setOrdenLocal(nuevoOrden); // se ve el cambio al instante, sin esperar al servidor
 
-    await fetch(`${API}/ventas/reordenar`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: nuevoOrden.map((v: any) => v.id) }),
-    });
-    queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+    const idsPersistidos = nuevoOrden
+      .map((v: any) => v.id)
+      .filter((id: unknown): id is number => typeof id === "number" && Number.isInteger(id) && id > 0);
+    try {
+      const response = await fetch(`${API}/ventas/reordenar`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: idsPersistidos, fecha }),
+      });
+      if (!response.ok) {
+        throw new Error((await response.json().catch(() => null))?.error || `Error ${response.status}`);
+      }
+      queryClient.setQueryData(["/api/ventas", { fecha }], nuevoOrden);
+      await queryClient.invalidateQueries({ queryKey: ["/api/ventas", { fecha }] });
+    } catch (error) {
+      toast({
+        title: "No se pudo guardar el orden",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    }
   };
 
   const [newRow, setNewRow] = useState({
@@ -125,6 +142,7 @@ export default function VentasDiarias() {
   const [editingId, setEditingId] = useState<number | null>(null);
     const [editValues, setEditValues] = useState<EditValues>({
     referencia: "",
+      productoId: "",
     productoNombre: "",
     productoMarca: "",
     cantidad: "1",
@@ -155,6 +173,7 @@ export default function VentasDiarias() {
     { id: `${SPECIAL_SOLDADURA}:chispeada`, nombre: "⚡ Chispeada", special: "manoobra" },
     { id: `${SPECIAL_SOLDADURA}:pulida`, nombre: "⚡ Pulida", special: "manoobra" },
     { id: SPECIAL_ABONO, nombre: "💳 Abono A", special: "abono" },
+    { id: SPECIAL_EXTERNO, nombre: "🧾 Producto externo (compra única)" },
     ...(productos || []).map((p) => ({
       id: String(p.id),
       nombre: p.nombre,
@@ -179,6 +198,9 @@ export default function VentasDiarias() {
       setStockAlerta(null);
     } else if (id === SPECIAL_ABONO) {
       setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "X", cantidad: "1", precioCompra: 0, precioVenta: 0, precioManoObra: 0, valorAbono: 0, productoNombreManual: "" }));
+      setStockAlerta(null);
+    } else if (id === SPECIAL_EXTERNO) {
+      setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "X", productoNombreManual: "", precioCompra: 0, precioVenta: 0, trabajadoresSeleccionados: [] }));
       setStockAlerta(null);
     } else {
       const prod = productos?.find((p) => String(p.id) === id);
@@ -206,6 +228,7 @@ export default function VentasDiarias() {
     setEditingId(venta.id);
     setEditValues({
       referencia: venta.referencia,
+      productoId: venta.productoId || "",
       productoNombre: venta.productoNombre || "",
       productoMarca: venta.productoMarca || "",
       cantidad: String(venta.cantidad),
@@ -223,6 +246,24 @@ export default function VentasDiarias() {
     const pcU = parseFloat(editValues.precioCompraUnidad) || 0;
     const total = pvU * cant;
     const beneficio = venta.tipoLinea === "venta" ? (pvU - pcU) * cant : parseFloat(editValues.beneficio) || 0;
+    const ventaActualizada = {
+      ...venta,
+      referencia: editValues.referencia,
+      productoNombre: editValues.productoNombre || undefined,
+      productoMarca: editValues.productoMarca || undefined,
+      cantidad: cant,
+      precioCompraUnidad: pcU,
+      precioVentaUnidad: pvU,
+      precioVentaTotal: total,
+      beneficio,
+      formaPago: editValues.formaPago,
+    };
+    queryClient.setQueryData(["/api/ventas", { fecha }], (actuales: any[] = []) =>
+      actuales.map((actual) => actual.id === venta.id ? ventaActualizada : actual),
+    );
+    setOrdenLocal((actuales) =>
+      actuales?.map((actual) => actual.id === venta.id ? ventaActualizada : actual) ?? null,
+    );
     actualizarMutation.mutate(
       {
         id: venta.id,
@@ -230,7 +271,7 @@ export default function VentasDiarias() {
           fecha: venta.fecha,
           referencia: editValues.referencia,
           tipoLinea: venta.tipoLinea,
-          productoId: venta.productoId || undefined,
+          productoId: editValues.productoId ? Number(editValues.productoId) : undefined,
           productoNombre: editValues.productoNombre || undefined,
           productoCodigo: venta.productoCodigo || undefined,
           productoMarca: editValues.productoMarca || undefined,
@@ -239,6 +280,7 @@ export default function VentasDiarias() {
           precioVentaUnidad: pvU,
           precioVentaTotal: total,
           beneficio,
+          formaPago: editValues.formaPago,
         },
       },
       {
@@ -276,6 +318,7 @@ export default function VentasDiarias() {
       const limpiarFilaManoObra = () =>
         setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioManoObra: 0, trabajadoresSeleccionados: [], valoresFijados: {} }));
 
+      setOrdenLocal(null);
       agregarFilaOptimista(queryClient, fecha, {
         referencia: newRow.referencia, tipoLinea: "manoobra",
         productoNombre: servicioActual, productoMarca: payloadManoObra.productoMarca,
@@ -324,6 +367,7 @@ export default function VentasDiarias() {
         precioVentaTotal: newRow.valorAbono, beneficio: 0, descripcion: "Abono a crédito",
       };
 
+      setOrdenLocal(null);
       agregarFilaOptimista(queryClient, fecha, payloadAbono);
 
       crearMutation.mutate(
@@ -349,9 +393,13 @@ export default function VentasDiarias() {
       return;
     }
 
+    const esProductoExterno = newRow.productoSeleccionado === SPECIAL_EXTERNO;
     const prod = productos?.find((p) => String(p.id) === newRow.productoSeleccionado);
-    const nombreProducto = prod?.nombre || "";
-    if (!nombreProducto) { alert("Selecciona un producto del inventario"); return; }
+    const nombreProducto = esProductoExterno ? newRow.productoNombreManual.trim() : prod?.nombre || "";
+    if (!nombreProducto) {
+      alert(esProductoExterno ? "Escribe el nombre del producto externo" : "Selecciona un producto del inventario");
+      return;
+    }
     const cantNumNueva = parseFloat(newRow.cantidad.replace(",", "."));
     if (isNaN(cantNumNueva) || cantNumNueva <= 0) { alert("Cantidad inválida. Usa coma para decimales, ej: 1,5"); return; }
     const beneficio = (newRow.precioVenta - newRow.precioCompra) * cantNumNueva;
@@ -366,6 +414,7 @@ export default function VentasDiarias() {
       formaPago: newRow.formaPago,
     };
 
+    setOrdenLocal(null);
     agregarFilaOptimista(queryClient, fecha, payloadVenta);
 
     crearMutation.mutate(
@@ -524,6 +573,7 @@ export default function VentasDiarias() {
                       onOpenEdit={openEdit}
                       onDelete={handleDelete}
                       guardando={actualizarMutation.isPending}
+                      opcionesProducto={opcionesProducto}
                     />
                   ))
                 )}
@@ -542,6 +592,7 @@ export default function VentasDiarias() {
                       stockAlerta.stock === 0 ? <p className="text-red-500 text-[11px] mt-1 leading-tight font-medium">⚠ Sin existencias — stock en 0</p> : stockAlerta.stock <= stockAlerta.minimo ? <p className="text-yellow-500 text-[11px] mt-1 leading-tight font-medium">⚠ Pocas existencias ({stockAlerta.stock} en stock)</p> : null
                     )}
                     {modoActual === "abono" && <input type="text" placeholder="Nombre cliente..." value={newRow.productoNombreManual} onChange={(e) => setNewRow({ ...newRow, productoNombreManual: e.target.value })} className="w-full mt-1 bg-background border border-blue-500/50 px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none" />}
+                    {newRow.productoSeleccionado === SPECIAL_EXTERNO && <input type="text" placeholder="Nombre del producto comprado" value={newRow.productoNombreManual} onChange={(e) => setNewRow({ ...newRow, productoNombreManual: e.target.value })} className="w-full mt-1 bg-background border border-amber-500/50 px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-amber-500 outline-none" />}
                   </td>
                   <td className="p-2">
                     {modoActual === "normal" && <input type="text" value={newRow.marca || "X"} readOnly disabled className="w-20 bg-muted border border-border px-2 py-2 rounded-lg text-sm text-muted-foreground cursor-not-allowed" />}

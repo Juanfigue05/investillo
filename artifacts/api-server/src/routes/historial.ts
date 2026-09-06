@@ -24,6 +24,7 @@ function mapVenta(v: typeof ventasDiariasTable.$inferSelect) {
     precioVentaUnidad: toNum(v.precioVentaUnidad),
     precioVentaTotal: toNum(v.precioVentaTotal),
     beneficio: toNum(v.beneficio),
+    orden: v.orden,
     descripcion: v.descripcion,
     creadoEn: v.creadoEn,
   };
@@ -33,8 +34,18 @@ async function mapHistorial(dia: typeof historialDiasTable.$inferSelect) {
   const ventas = await db
     .select()
     .from(ventasDiariasTable)
-    .where(eq(ventasDiariasTable.fecha, dia.fecha))
-    .orderBy(ventasDiariasTable.creadoEn);
+    .where(eq(ventasDiariasTable.fecha, dia.fecha));
+  ventas.sort((a, b) => {
+    if (a.orden != null || b.orden != null) {
+      if (a.orden == null) return 1;
+      if (b.orden == null) return -1;
+      if (a.orden !== b.orden) return a.orden - b.orden;
+    }
+    const aCreado = a.creadoEn ? new Date(a.creadoEn).getTime() : 0;
+    const bCreado = b.creadoEn ? new Date(b.creadoEn).getTime() : 0;
+    if (aCreado !== bCreado) return aCreado - bCreado;
+    return a.id - b.id;
+  });
   return {
     id: dia.id,
     fecha: dia.fecha,

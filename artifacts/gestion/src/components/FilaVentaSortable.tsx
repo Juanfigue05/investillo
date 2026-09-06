@@ -3,6 +3,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Check, GripVertical, Pencil, Trash2, X } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { SearchableSelect, type ProductoOpcion } from "@/components/SearchableSelect";
 
 const FORMAS_PAGO_LABEL: Record<string, string> = {
   efectivo: "Efectivo",
@@ -21,6 +22,7 @@ interface Props {
   onOpenEdit: (venta: any) => void;
   onDelete: (id: number) => void;
   guardando: boolean;
+  opcionesProducto: ProductoOpcion[];
 }
 
 export function FilaVentaSortable({
@@ -33,6 +35,7 @@ export function FilaVentaSortable({
   onOpenEdit,
   onDelete,
   guardando,
+  opcionesProducto,
 }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: venta.id });
 
@@ -63,8 +66,25 @@ export function FilaVentaSortable({
       <tr ref={setNodeRef} style={style} className={`${rowCls} ring-2 ring-inset ring-primary/40`}>
         {dragHandle}
         <td className="p-2"><input value={editValues.referencia} onChange={(e) => setEditValues((v: any) => ({ ...v, referencia: e.target.value }))} className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-        <td className="p-2"><input value={editValues.productoNombre} onChange={(e) => setEditValues((v: any) => ({ ...v, productoNombre: e.target.value }))} className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-        <td className="p-2"><input value={editValues.productoMarca} onChange={(e) => setEditValues((v: any) => ({ ...v, productoMarca: e.target.value }))} className="w-20 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
+        <td className="p-2 min-w-[180px]"><SearchableSelect
+          opciones={opcionesProducto}
+          value={editValues.productoId ? String(editValues.productoId) : ""}
+          onChange={(id) => {
+            const producto = opcionesProducto.find((opcion) => opcion.id === id);
+            if (!producto || producto.special) return;
+            setEditValues((v: any) => ({
+              ...v,
+              productoId: Number(id),
+              productoNombre: producto.nombre,
+              productoCodigo: producto.codigo || "",
+              productoMarca: producto.marca || "X",
+              precioCompraUnidad: String(producto.precioCompra ?? 0),
+              precioVentaUnidad: String(producto.precioVenta ?? 0),
+            }));
+          }}
+          placeholder="Seleccionar producto..."
+        /></td>
+        <td className="p-2"><span className="block w-20 truncate text-sm text-muted-foreground">{editValues.productoMarca || "X"}</span></td>
         <td className="p-2"><input type="number" min="0" step="0.25" value={editValues.cantidad} onChange={(e) => setEditValues((v: any) => ({ ...v, cantidad: e.target.value }))} className="w-20 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
         <td className="p-2"><input type="number" value={editValues.precioCompraUnidad} onChange={(e) => setEditValues((v: any) => ({ ...v, precioCompraUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
         <td className="p-2"><input type="number" value={editValues.precioVentaUnidad} onChange={(e) => setEditValues((v: any) => ({ ...v, precioVentaUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>

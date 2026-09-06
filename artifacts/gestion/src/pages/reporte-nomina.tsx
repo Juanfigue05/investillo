@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Layout } from "@/components/Layout";
 import { formatCurrency } from "@/lib/utils";
-import { Check, Pencil, Printer, X } from "lucide-react";
+import { Check, Pencil, Printer, Trash2, X } from "lucide-react";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 const NOMBRES_MES = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -31,6 +31,8 @@ export default function ReporteNomina() {
   const [mostrarEjemplo, setMostrarEjemplo] = useState(false);
   const [editando, setEditando] = useState<string | null>(null);
   const [borrador, setBorrador] = useState<Record<string, string>>({});
+  const [imprimirTensionadas, setImprimirTensionadas] = useState(true);
+  const [trabajadoresSeleccionados, setTrabajadoresSeleccionados] = useState<string[]>([]);
 
   useEffect(() => {
     setCargando(true);
@@ -39,6 +41,22 @@ export default function ReporteNomina() {
 
   const recargar = () => fetch(`${API}/reportes/nomina?mes=${mes}`).then((r) => r.json()).then(setData);
   const vista = mostrarEjemplo ? datosDeEjemplo(mes) : data;
+
+  useEffect(() => {
+    if (vista?.trabajadores) {
+      setTrabajadoresSeleccionados(vista.trabajadores.map((t: any) => String(t.trabajadorId)));
+    }
+  }, [data, mes, mostrarEjemplo]);
+
+  const todosTrabajadoresSeleccionados = Boolean(vista?.trabajadores?.length) &&
+    vista.trabajadores.every((t: any) => trabajadoresSeleccionados.includes(String(t.trabajadorId)));
+  const alternarTodosTrabajadores = () => {
+    if (todosTrabajadoresSeleccionados) {
+      setTrabajadoresSeleccionados([]);
+    } else {
+      setTrabajadoresSeleccionados((vista?.trabajadores || []).map((t: any) => String(t.trabajadorId)));
+    }
+  };
 
   const fmtFecha = (f: string) => new Date(f + "T12:00:00").toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit" });
   const iniciarEdicion = (key: string, d: any) => {
@@ -61,7 +79,14 @@ export default function ReporteNomina() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fecha: borrador[`${key}:fecha`], valor: Number(borrador[`${key}:valor`]) }),
     });
-    if (!res.ok) { alert("No se pudo guardar la tensionada"); return; }
+    if (!res.ok) { alert((await res.json().catch(() => null))?.error || "No se pudo guardar la tensionada"); return; }
+    setEditando(null);
+    await recargar();
+  };
+  const eliminarTensionada = async (id: number) => {
+    if (!confirm("¿Eliminar esta tensionada? Esta acción no se puede deshacer.")) return;
+    const res = await fetch(`${API}/tensionadas/${id}`, { method: "DELETE" });
+    if (!res.ok) { alert("No se pudo eliminar la tensionada"); return; }
     setEditando(null);
     await recargar();
   };
@@ -71,7 +96,7 @@ export default function ReporteNomina() {
       <div className="space-y-4">
         <div className="flex justify-between items-center no-print">
           <h1 className="text-2xl font-display font-bold text-foreground">Reporte de Nómina</h1>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <input type="month" value={mes} onChange={(e) => setMes(e.target.value)}
               className="bg-card border border-border px-3 py-2 rounded-xl text-sm" />
             <button onClick={() => setMostrarEjemplo((actual) => !actual)} className="px-4 py-2 bg-secondary text-secondary-foreground rounded-xl text-sm font-medium">
@@ -83,11 +108,36 @@ export default function ReporteNomina() {
           </div>
         </div>
 
+        <div className="no-print flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+          <span className="font-medium text-foreground">Imprimir:</span>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={imprimirTensionadas} onChange={(e) => setImprimirTensionadas(e.target.checked)} className="accent-primary" />
+            Tensionadas
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={todosTrabajadoresSeleccionados} onChange={alternarTodosTrabajadores} className="accent-primary" />
+            Todos los trabajadores
+          </label>
+          {vista?.trabajadores?.map((t: any) => (
+            <label key={t.trabajadorId} className="flex items-center gap-2 cursor-pointer text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={trabajadoresSeleccionados.includes(String(t.trabajadorId))}
+                onChange={(e) => setTrabajadoresSeleccionados((prev) => e.target.checked
+                  ? [...prev, String(t.trabajadorId)]
+                  : prev.filter((id) => id !== String(t.trabajadorId)))}
+                className="accent-primary"
+              />
+              {t.nombre}
+            </label>
+          ))}
+        </div>
+
         {cargando ? (
           <p className="text-center py-10 text-muted-foreground">Cargando...</p>
         ) : (
-          <div className="flex flex-wrap gap-4 items-start justify-center print:gap-2">
-            <div className="border-2 border-cyan-500 rounded-lg overflow-hidden text-xs" style={{ minWidth: 180 }}>
+          <div className="flex flex-wrap gap-4 items-start justify-center print:gap-2 nomina-report-print">
+            <div className={`border-2 border-cyan-500 rounded-lg overflow-hidden text-xs nomina-tensionadas ${imprimirTensionadas ? "" : "print-omit"}`} style={{ minWidth: 180 }}>
               <div className="bg-cyan-400 text-black font-bold text-center py-1">
                 TENSIONADAS MES {NOMBRES_MES[parseInt(mes.split("-")[1])].toUpperCase()} {mes.split("-")[0]}
               </div>
@@ -96,6 +146,7 @@ export default function ReporteNomina() {
                   <tr className="bg-cyan-200 text-black">
                     <th className="px-2 py-1 text-left">FECHA</th>
                     <th className="px-2 py-1 text-right">TOTAL TENSIONADA</th>
+                    <th className="px-2 py-1 text-center no-print">ACCIONES</th>
                   </tr>
                 </thead>
                 <tbody className="text-black">
@@ -109,8 +160,21 @@ export default function ReporteNomina() {
                       </td>
                       <td className="px-2 py-1 text-right">
                         {editandoEsta ? <input className="w-24 text-right" type="number" value={borrador[`${key}:valor`] || tn.valor} onChange={(e) => setBorrador((p) => ({ ...p, [`${key}:valor`]: e.target.value }))} /> : formatCurrency(tn.valor)}
-                        {!mostrarEjemplo && <button className="no-print ml-1" onClick={() => editandoEsta ? guardarTensionada(tn.id, key) : iniciarEdicion(key, { fecha: tn.fecha, valor: tn.valor })}>{editandoEsta ? <Check className="inline w-3 h-3" /> : <Pencil className="inline w-3 h-3" />}</button>}
-                        {editandoEsta && <button className="no-print ml-1" onClick={() => setEditando(null)}><X className="inline w-3 h-3" /></button>}
+                      </td>
+                      <td className="px-2 py-1 text-center no-print whitespace-nowrap">
+                        {!mostrarEjemplo && (
+                          editandoEsta ? (
+                            <>
+                              <button title="Guardar" className="ml-1 text-green-700 hover:text-green-900" onClick={() => guardarTensionada(tn.id, key)}><Check className="inline w-3.5 h-3.5" /></button>
+                              <button title="Cancelar" className="ml-1 text-slate-600 hover:text-slate-900" onClick={() => setEditando(null)}><X className="inline w-3.5 h-3.5" /></button>
+                            </>
+                          ) : (
+                            <>
+                              <button title="Editar" className="ml-1 text-slate-700 hover:text-slate-950" onClick={() => iniciarEdicion(key, { fecha: tn.fecha, valor: tn.valor })}><Pencil className="inline w-3.5 h-3.5" /></button>
+                              <button title="Eliminar" className="ml-2 text-red-600 hover:text-red-800" onClick={() => eliminarTensionada(tn.id)}><Trash2 className="inline w-3.5 h-3.5" /></button>
+                            </>
+                          )
+                        )}
                       </td>
                     </tr>
                     );
@@ -118,13 +182,15 @@ export default function ReporteNomina() {
                   <tr className="border-t-2 border-cyan-400 font-bold bg-cyan-100">
                     <td className="px-2 py-1">TOTAL</td>
                     <td className="px-2 py-1 text-right">{formatCurrency(vista.totalTensionadas)}</td>
+                    <td className="no-print"></td>
                   </tr>
                 </tbody>
               </table>
             </div>
 
+            <div className="nomina-trabajadores-print">
             {vista?.trabajadores?.map((t: any) => (
-              <div key={t.trabajadorId}>
+              <div key={t.trabajadorId} className={`nomina-trabajador ${trabajadoresSeleccionados.includes(String(t.trabajadorId)) ? "" : "print-omit"}`}>
                 {/* Tabla amarilla del trabajador */}
                 <div className="border-2 border-amber-500 rounded-lg overflow-hidden text-xs" style={{ minWidth: 280 }}>
                   <div className="bg-amber-400 text-black font-bold text-center py-1">
@@ -135,9 +201,9 @@ export default function ReporteNomina() {
                       <tr className="bg-amber-200 text-black">
                         <th className="px-2 py-1 text-left">FECHA</th>
                         <th className="px-2 py-1 text-right">TOTAL MANO DE OBRA</th>
-                        <th className="px-2 py-1 text-right">%</th>
-                        <th className="px-2 py-1 text-right">TOTAL %</th>
-                        <th className="px-2 py-1 text-right">SEGURO</th>
+                        {t.aplicaDescuento30 && <th className="px-2 py-1 text-right">%</th>}
+                        {t.aplicaDescuento30 && <th className="px-2 py-1 text-right">TOTAL %</th>}
+                        {t.aplicaSeguro && <th className="px-2 py-1 text-right">SEGURO</th>}
                         <th className="px-2 py-1 text-right">TOTAL MANO OBRA</th>
                       </tr>
                     </thead>
@@ -150,15 +216,14 @@ export default function ReporteNomina() {
                             {editandoEsta ? <input type="date" value={borrador.fecha || d.fecha} onChange={(e) => setBorrador((p) => ({ ...p, fecha: e.target.value }))} /> : fmtFecha(d.fecha)}
                           </td>
                           {d.sinRegistro || d.noVino ? (
-                            <td colSpan={5} className={`px-2 py-1 italic ${d.noVino ? "text-red-600" : "text-muted-foreground"}`}>
+                            <td colSpan={2 + (t.aplicaDescuento30 ? 2 : 0) + (t.aplicaSeguro ? 1 : 0)} className={`px-2 py-1 italic ${d.noVino ? "text-red-600" : "text-muted-foreground"}`}>
                               {d.noVino ? "No vino" : "No se trabajó"}
                             </td>
                           ) : (
                             <>
                               <td className="px-2 py-1 text-right">{editandoEsta ? <input className="w-20 text-right" type="number" value={borrador.valor} onChange={(e) => setBorrador((p) => ({ ...p, valor: e.target.value }))} /> : formatCurrency(d.valor)}</td>
-                              <td className="px-2 py-1 text-right">30%</td>
-                              <td className="px-2 py-1 text-right">{editandoEsta ? <input className="w-20 text-right" type="number" value={borrador.descuentoOtros} onChange={(e) => setBorrador((p) => ({ ...p, descuentoOtros: e.target.value }))} /> : formatCurrency(d.descuentoOtros)}</td>
-                              <td className="px-2 py-1 text-right">{editandoEsta ? <input className="w-20 text-right" type="number" value={borrador.seguro} onChange={(e) => setBorrador((p) => ({ ...p, seguro: e.target.value }))} /> : formatCurrency(d.seguro)}</td>
+                              {t.aplicaDescuento30 && <><td className="px-2 py-1 text-right">30%</td><td className="px-2 py-1 text-right">{editandoEsta ? <input className="w-20 text-right" type="number" value={borrador.descuentoOtros} onChange={(e) => setBorrador((p) => ({ ...p, descuentoOtros: e.target.value }))} /> : formatCurrency(d.descuentoOtros)}</td></>}
+                              {t.aplicaSeguro && <td className="px-2 py-1 text-right">{editandoEsta ? <input className="w-20 text-right" type="number" value={borrador.seguro} onChange={(e) => setBorrador((p) => ({ ...p, seguro: e.target.value }))} /> : formatCurrency(d.seguro)}</td>}
                               <td className="px-2 py-1 text-right font-bold">{editandoEsta ? <input className="w-20 text-right" type="number" value={borrador.total} onChange={(e) => setBorrador((p) => ({ ...p, total: e.target.value }))} /> : formatCurrency(d.total)}
                                 {!mostrarEjemplo && d.cierreId && <button className="no-print ml-1" onClick={() => editandoEsta ? guardarDia(d.fecha, t.trabajadorId, key) : iniciarEdicion(key, d)}>{editandoEsta ? <Check className="inline w-3 h-3" /> : <Pencil className="inline w-3 h-3" />}</button>}
                                 {editandoEsta && <button className="no-print ml-1" onClick={() => setEditando(null)}><X className="inline w-3 h-3" /></button>}
@@ -173,6 +238,7 @@ export default function ReporteNomina() {
 
               </div>
             ))}
+            </div>
           </div>
         )}
       </div>

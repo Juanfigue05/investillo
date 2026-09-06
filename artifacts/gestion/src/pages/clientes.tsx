@@ -73,9 +73,15 @@ export default function Clientes() {
   const [form, setForm] = useState({ ...emptyForm });
   const [vehiculos, setVehiculos] = useState<VehiculoForm[]>([]);
   const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [conflictoTelefonoManual, setConflictoTelefonoManual] = useState<{
+    numero: string;
+    campo: "telefono" | "telefono2";
+    clientes: string[];
+  } | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const [ordenNombre, setOrdenNombre] = useState<"az" | "za">("az");
   const [soloSinTelefono, setSoloSinTelefono] = useState(false);
+  const [soloConDosTelefonos, setSoloConDosTelefonos] = useState(false);
 
   // Expanded vehicle detail per client card
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -156,6 +162,25 @@ export default function Clientes() {
       setFormErrors(errors);
       return;
     }
+    const telefonosFormulario = ([
+      ["telefono", form.telefono],
+      ["telefono2", form.telefono2],
+    ] as const).filter(([, numero]) => soloDigitos(numero).length > 0);
+    for (const [campo, numero] of telefonosFormulario) {
+      const digitos = soloDigitos(numero);
+      const clientesConNumero = (clientes || [])
+        .filter((c) => c.id !== editingId)
+        .filter((c) => [c.telefono, (c as any).telefono2].some((t) => soloDigitos(t).length > 0 && soloDigitos(t) === digitos))
+        .map((c) => c.nombre);
+      if (clientesConNumero.length > 0) {
+        setConflictoTelefonoManual({ numero, campo, clientes: clientesConNumero });
+        return;
+      }
+    }
+    if (soloDigitos(form.telefono) && soloDigitos(form.telefono) === soloDigitos(form.telefono2)) {
+      setConflictoTelefonoManual({ numero: form.telefono, campo: "telefono2", clientes: ["este mismo cliente"] });
+      return;
+    }
     setFormErrors([]);
 
     const vehs = vehiculos.filter((v) => v.placa.trim());
@@ -168,6 +193,7 @@ export default function Clientes() {
         setForm({ ...emptyForm });
         setVehiculos([]);
       },
+      onError: (error: any) => setFormErrors([error?.message || "No se pudo guardar el cliente"]),
     };
 
     if (editingId) {
@@ -190,6 +216,7 @@ export default function Clientes() {
           data: {
             nombre: form.nombre.trim(),
             telefono: form.telefono || null,
+            telefono2: form.telefono2 || null,
             correo: form.correo || null,
             notas: form.notas || null,
             vehiculos: vehs.map((v) => ({
@@ -273,7 +300,7 @@ export default function Clientes() {
         );
 
       return coincideBusqueda && (!soloSinTelefono || !tieneTelefono);
-    });
+    }).filter((c) => !soloConDosTelefonos || Boolean(c.telefono?.trim() && (c as any).telefono2?.trim()));
 
     return resultados.sort((a, b) => {
       const comparacion = a.nombre.localeCompare(b.nombre, "es", {
@@ -281,7 +308,7 @@ export default function Clientes() {
       });
       return ordenNombre === "az" ? comparacion : -comparacion;
     });
-  }, [clientes, q, ordenNombre, soloSinTelefono]);
+  }, [clientes, q, ordenNombre, soloSinTelefono, soloConDosTelefonos]);
 
   const isSaving = crearMutation.isPending || actualizarMutation.isPending;
 
@@ -575,6 +602,15 @@ export default function Clientes() {
               />
               Solo sin teléfono
             </label>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer mt-6">
+              <input
+                type="checkbox"
+                checked={soloConDosTelefonos}
+                onChange={(e) => setSoloConDosTelefonos(e.target.checked)}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+              />
+              Solo con dos teléfonos
+            </label>
           </div>
         </div>
 
@@ -597,6 +633,18 @@ export default function Clientes() {
                       • {e}
                     </p>
                   ))}
+                </div>
+              )}
+              {conflictoTelefonoManual && (
+                <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 space-y-3">
+                  <p className="text-sm font-semibold text-amber-300">Número repetido</p>
+                  <p className="text-sm text-foreground">
+                    El número <strong>{conflictoTelefonoManual.numero}</strong> ya aparece en: {conflictoTelefonoManual.clientes.join(", ")}.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => setConflictoTelefonoManual(null)} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm">Modificar número</button>
+                    <button type="button" onClick={() => { setForm((prev) => ({ ...prev, [conflictoTelefonoManual.campo]: "" })); setConflictoTelefonoManual(null); }} className="px-3 py-2 rounded-lg border border-border text-sm hover:bg-muted">Dejar sin número</button>
+                  </div>
                 </div>
               )}
 

@@ -20,11 +20,13 @@ export function SearchableSelect({
   value,
   onChange,
   placeholder,
+  allowCustom = false,
 }: {
   opciones: ProductoOpcion[];
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  allowCustom?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [busqueda, setBusqueda] = useState("");
@@ -35,6 +37,9 @@ export function SearchableSelect({
   const [openAbove, setOpenAbove] = useState(false);
 
   const selected = opciones.find((o) => o.id === value);
+  const updatePosition = () => {
+    if (triggerRef.current) setDropdownRect(triggerRef.current.getBoundingClientRect());
+  };
 
   const filtered = busqueda.trim()
     ? opciones.filter((o) => {
@@ -64,12 +69,12 @@ export function SearchableSelect({
 
   useEffect(() => {
     if (!open) return;
-    const close = (e: Event) => {
-      if (portalRef.current && portalRef.current.contains(e.target as Node)) return;
-      setOpen(false); setBusqueda("");
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
     };
-    window.addEventListener("scroll", close, true);
-    return () => window.removeEventListener("scroll", close, true);
   }, [open]);
 
   const handleSelect = (id: string) => {
@@ -128,7 +133,11 @@ export function SearchableSelect({
           </div>
           <div className="max-h-80 overflow-y-auto">
             {filtered.length === 0 ? (
-              <p className="text-center py-4 text-muted-foreground text-sm">Sin resultados</p>
+              allowCustom && busqueda.trim() ? (
+                <button type="button" onClick={() => handleSelect(busqueda.trim())} className="w-full text-left px-3 py-3 text-sm text-primary hover:bg-muted">
+                  Usar “{busqueda.trim()}”
+                </button>
+              ) : <p className="text-center py-4 text-muted-foreground text-sm">Sin resultados</p>
             ) : (
               filtered.map((o) => {
                 const sinStock = o.stockActual === 0;
@@ -163,6 +172,11 @@ export function SearchableSelect({
                   </button>
                 );
               })
+            )}
+            {allowCustom && busqueda.trim() && filtered.length > 0 && !selected && (
+              <button type="button" onClick={() => handleSelect(busqueda.trim())} className="w-full text-left px-3 py-3 text-sm text-primary hover:bg-muted border-t border-border">
+                Usar “{busqueda.trim()}”
+              </button>
             )}
           </div>
         </div>,

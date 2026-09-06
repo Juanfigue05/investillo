@@ -169,6 +169,17 @@
   display: none;
 }
 
+.nomina-report-print {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.nomina-trabajadores-print {
+  display: contents;
+}
+
 @media print {
   /* Hide everything by default */
   body * {
@@ -177,8 +188,70 @@
 
   /* Only show the print zone */
   .print-zone,
-  .print-zone * {
+  .print-zone *,
+  .nomina-report-print,
+  .nomina-report-print * {
     visibility: visible;
+  }
+
+  .nomina-report-print {
+    display: grid !important;
+    position: static !important;
+    width: 100% !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5mm;
+    color: #000 !important;
+    background: #fff !important;
+  }
+
+  .nomina-tensionadas {
+    grid-column: 1 / -1;
+    width: 72% !important;
+    justify-self: center;
+    min-width: 0 !important;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .nomina-trabajadores-print {
+    display: contents !important;
+  }
+
+  .nomina-trabajador {
+    min-width: 0 !important;
+    width: 100% !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .nomina-trabajador > div {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  .nomina-report-print table {
+    width: 100% !important;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 7px !important;
+  }
+
+  .nomina-report-print th,
+  .nomina-report-print td {
+    padding: 1.5px 2px !important;
+    border: 1px solid #9ca3af !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
+    color: #000 !important;
+  }
+
+  .nomina-report-print .no-print {
+    display: none !important;
+  }
+
+  .print-omit {
+    display: none !important;
   }
 
   /* Position print zone at top-left, use absolute so multi-page works */
@@ -186,7 +259,9 @@
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
+    width: 100vw;
+    min-height: 100vh;
+    box-sizing: border-box;
     background: white !important;
     color: black !important;
     padding: 8px 12px;
@@ -205,8 +280,10 @@
   /* Compact table — table-layout fixed obliga a que SIEMPRE quepa en el ancho de la hoja */
   .print-zone table {
     width: 100%;
+    min-width: 100%;
     table-layout: fixed;
     border-collapse: collapse;
+    border: 1px solid #6b7280;
     font-size: 8px;
     line-height: 1.1;
     color: black !important;
@@ -225,10 +302,22 @@
     vertical-align: middle;
     border: 1px solid #d1d5db;
     color: black !important;
-    white-space: normal;       /* deja pasar a una 2da línea en vez de estirar la columna */
-    overflow-wrap: break-word; /* corta nombres largos de productos sin romper el diseño */
-    word-break: break-word;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
+    overflow-wrap: normal;
+    word-break: normal;
   }
+
+  /* Repartir el ancho: referencia y producto ganan espacio; cantidad y valores numericos ocupan lo minimo. */
+  .print-zone th:nth-child(2), .print-zone td:nth-child(2) { width: 15%; }
+  .print-zone th:nth-child(3), .print-zone td:nth-child(3) { width: 29%; }
+  .print-zone th:nth-child(4), .print-zone td:nth-child(4) { width: 11%; }
+  .print-zone th:nth-child(5), .print-zone td:nth-child(5) { width: 4%; }
+  .print-zone th:nth-child(6), .print-zone td:nth-child(6),
+  .print-zone th:nth-child(7), .print-zone td:nth-child(7) { width: 9%; }
+  .print-zone th:nth-child(8), .print-zone td:nth-child(8),
+  .print-zone th:nth-child(9), .print-zone td:nth-child(9) { width: 10%; }
 
   .print-zone tfoot td {
     font-weight: bold;
@@ -283,7 +372,7 @@
 
   /* Credits print: spacer row for handwritten annotations */
   .print-credito-spacer td {
-    height: 44px !important;
+    height: 62px !important;
     border-top: none !important;
     border-left: 1px solid #d1d5db;
     border-right: 1px solid #d1d5db;
@@ -292,7 +381,7 @@
   }
 
   @page {
-    size: landscape;
+    size: letter portrait;
     margin: 8mm;
   }
 }

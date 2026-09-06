@@ -71,16 +71,36 @@ router.get("/nomina", async (req, res) => {
   const ultimoDia = new Date(anio, m, 0).getDate();
   const hasta = `${mes}-${String(ultimoDia).padStart(2, "0")}`;
 
-  const seleccionados = await db.select({ id: trabajadoresTable.id, nombre: trabajadoresTable.nombre })
+  const seleccionados = await db.select({
+    id: trabajadoresTable.id,
+    nombre: trabajadoresTable.nombre,
+    incluyeNomina: trabajadoresTable.incluyeNomina,
+    aplicaDescuento30: trabajadoresTable.aplicaDescuento30,
+    aplicaSeguro: trabajadoresTable.aplicaSeguro,
+  })
     .from(trabajadoresTable)
-    .where(sql`${trabajadoresTable.activo} = true AND ${trabajadoresTable.incluyeNomina} = true`);
+    .where(eq(trabajadoresTable.activo, true));
   const cierres = await db.select({ id: cierreDiarioTable.id, fecha: cierreDiarioTable.fecha, datos: cierreDiarioTable.datos })
     .from(cierreDiarioTable)
     .where(sql`${cierreDiarioTable.fecha} >= ${desde} AND ${cierreDiarioTable.fecha} <= ${hasta}`);
 
-  const porTrabajador = new Map<number, { trabajadorId: number; nombre: string; dias: Map<string, any> }>();
+  const porTrabajador = new Map<number, {
+    trabajadorId: number;
+    nombre: string;
+    incluyeNomina: boolean;
+    aplicaDescuento30: boolean;
+    aplicaSeguro: boolean;
+    dias: Map<string, any>;
+  }>();
   for (const trabajador of seleccionados) {
-    porTrabajador.set(trabajador.id, { trabajadorId: trabajador.id, nombre: trabajador.nombre, dias: new Map() });
+    porTrabajador.set(trabajador.id, {
+      trabajadorId: trabajador.id,
+      nombre: trabajador.nombre,
+      incluyeNomina: trabajador.incluyeNomina,
+      aplicaDescuento30: trabajador.aplicaDescuento30,
+      aplicaSeguro: trabajador.aplicaSeguro,
+      dias: new Map(),
+    });
   }
   for (const cierre of cierres) {
     const datos = Array.isArray(cierre.datos) ? cierre.datos : (cierre.datos as any)?.trabajadores;
@@ -91,12 +111,12 @@ router.get("/nomina", async (req, res) => {
       if (!trabajador) continue;
       const calc = registro.calc || {};
       const valor = Number(calc.mo || 0);
-      const descuentoOtros = Number(calc.descuento || 0);
-      const seguro = Number(calc.seguro || 0);
+      const descuentoOtros = trabajador.aplicaDescuento30 ? Number(calc.descuento || 0) : 0;
+      const seguro = trabajador.aplicaSeguro ? Number(calc.seguro || 0) : 0;
       trabajador.dias.set(cierre.fecha, {
         cierreId: cierre.id,
         valor, descuentoOtros, seguro,
-        total: Number(calc.total ?? valor - descuentoOtros - seguro),
+        total: valor - descuentoOtros - seguro,
       });
     }
   }
@@ -117,7 +137,14 @@ router.get("/nomina", async (req, res) => {
           ? { fecha, noVino: true }
           : { fecha, sinRegistro: true });
     }
-    return { trabajadorId: t.trabajadorId, nombre: t.nombre, dias };
+    return {
+      trabajadorId: t.trabajadorId,
+      nombre: t.nombre,
+      incluyeNomina: t.incluyeNomina,
+      aplicaDescuento30: t.aplicaDescuento30,
+      aplicaSeguro: t.aplicaSeguro,
+      dias,
+    };
   });
 
   const tensionadas = await pool.query(
