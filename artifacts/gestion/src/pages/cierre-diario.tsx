@@ -89,7 +89,7 @@ function calcTrabajador(t: CierreTrabajador, grupos: GrupoTrabajoDia[], trabajad
 
   const leDamos = sumaConceptos(t.leDamos);
   const nosDebe = sumaConceptos(t.nosDebe);
-  const total = mo - descuento - seguro + leDamos - nosDebe;
+  const total = Math.max(0, mo - descuento - seguro + leDamos - nosDebe);
   return { mo, moPropia, moGrupo, descuento, aplicaDescuento30, seguro, aplicaSeguro, leDamos, nosDebe, total };
 }
 

@@ -54,6 +54,10 @@ function trabajadoresDe(datos: any): any[] {
   return Array.isArray(datos) ? datos : (datos?.trabajadores || []);
 }
 
+function totalEfectivoCierre(datos: any): number {
+  return trabajadoresDe(datos).reduce((suma, trabajador) => suma + Math.max(0, Number(trabajador?.calc?.total) || 0), 0);
+}
+
 // ---------- main ----------
 export default function HistorialCierres() {
   const [, navigate] = useLocation();
@@ -142,6 +146,7 @@ export default function HistorialCierres() {
           {cierres.map((c) => {
             const isExpanded = expanded.has(c.id);
             const fechaLabel = fmtFecha(c.fecha);
+            const totalEfectivo = totalEfectivoCierre(c.datos);
             return (
               <div key={c.id} className="bg-card border border-border rounded-2xl shadow-lg overflow-hidden">
                 {/* Row header */}
@@ -163,7 +168,7 @@ export default function HistorialCierres() {
                   <div className="flex items-center gap-3">
                     <div className="text-right">
                       <p className="text-xs text-muted-foreground">Total a pagar</p>
-                      <p className="text-lg font-bold text-primary">{formatCurrency(c.totalPagar)}</p>
+                      <p className="text-lg font-bold text-primary">{formatCurrency(totalEfectivo)}</p>
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleEditar(c); }}
@@ -231,8 +236,8 @@ export default function HistorialCierres() {
                           </div>
                           <div className="border-t border-border mt-3 pt-2 flex justify-between">
                             <span className="text-xs font-bold text-foreground">Total</span>
-                            <span className={`text-sm font-bold ${t.calc.total >= 0 ? "text-primary" : "text-destructive"}`}>
-                              {formatCurrency(t.calc.total)}
+                            <span className="text-sm font-bold text-primary">
+                              {formatCurrency(Math.max(0, Number(t.calc.total) || 0))}
                             </span>
                           </div>
                         </div>

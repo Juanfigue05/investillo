@@ -61,7 +61,7 @@ export default function ReporteNomina() {
   const fmtFecha = (f: string) => new Date(f + "T12:00:00").toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit" });
   const iniciarEdicion = (key: string, d: any) => {
     setEditando(key);
-    setBorrador({ fecha: d.fecha, valor: String(d.valor), descuentoOtros: String(d.descuentoOtros), seguro: String(d.seguro), total: String(d.total) });
+    setBorrador({ fecha: d.fecha, valor: String(d.valor), descuentoOtros: String(d.descuentoOtros), seguro: String(d.seguro), total: String(Math.max(0, Number(d.total) || 0)) });
   };
   const guardarDia = async (fechaOriginal: string, trabajadorId: number, key: string) => {
     const res = await fetch(`${API}/reportes/nomina/dia`, {
@@ -232,7 +232,7 @@ export default function ReporteNomina() {
                               <td className="px-2 py-1 text-right">{editandoEsta ? <input className="w-20 text-right" type="number" value={borrador.valor} onChange={(e) => setBorrador((p) => ({ ...p, valor: e.target.value }))} /> : formatCurrency(d.valor)}</td>
                               {t.aplicaDescuento30 && <><td className="px-2 py-1 text-right">30%</td><td className="px-2 py-1 text-right">{editandoEsta ? <input className="w-20 text-right" type="number" value={borrador.descuentoOtros} onChange={(e) => setBorrador((p) => ({ ...p, descuentoOtros: e.target.value }))} /> : formatCurrency(d.descuentoOtros)}</td></>}
                               {t.aplicaSeguro && <td className="px-2 py-1 text-right">{editandoEsta ? <input className="w-20 text-right" type="number" value={borrador.seguro} onChange={(e) => setBorrador((p) => ({ ...p, seguro: e.target.value }))} /> : formatCurrency(d.seguro)}</td>}
-                              <td className="px-2 py-1 text-right font-bold">{editandoEsta ? <input className="w-20 text-right" type="number" value={borrador.total} onChange={(e) => setBorrador((p) => ({ ...p, total: e.target.value }))} /> : formatCurrency(d.total)}
+                              <td className="px-2 py-1 text-right font-bold">{editandoEsta ? <input className="w-20 text-right" type="number" min="0" value={borrador.total} onChange={(e) => setBorrador((p) => ({ ...p, total: e.target.value }))} /> : formatCurrency(Math.max(0, Number(d.total) || 0))}
                                 {!mostrarEjemplo && d.cierreId && <button className="no-print ml-1" onClick={() => editandoEsta ? guardarDia(d.fecha, t.trabajadorId, key) : iniciarEdicion(key, d)}>{editandoEsta ? <Check className="inline w-3 h-3" /> : <Pencil className="inline w-3 h-3" />}</button>}
                                 {editandoEsta && <button className="no-print ml-1" onClick={() => setEditando(null)}><X className="inline w-3 h-3" /></button>}
                               </td>
@@ -247,7 +247,7 @@ export default function ReporteNomina() {
                         const totalValor = diasConRegistro.reduce((suma: number, d: any) => suma + (Number(d.valor) || 0), 0);
                         const totalDescuento = diasConRegistro.reduce((suma: number, d: any) => suma + (Number(d.descuentoOtros) || 0), 0);
                         const totalSeguro = diasConRegistro.reduce((suma: number, d: any) => suma + (Number(d.seguro) || 0), 0);
-                        const totalFinal = diasConRegistro.reduce((suma: number, d: any) => suma + (Number(d.total) || 0), 0);
+                        const totalFinal = diasConRegistro.reduce((suma: number, d: any) => suma + Math.max(0, Number(d.total) || 0), 0);
                         return (
                           <tr className="nomina-total-row border-t-2 border-amber-500 bg-amber-300 font-bold text-black">
                             <td className="px-2 py-1">TOTAL</td>

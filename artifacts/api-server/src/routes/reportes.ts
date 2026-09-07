@@ -116,7 +116,7 @@ router.get("/nomina", async (req, res) => {
       trabajador.dias.set(cierre.fecha, {
         cierreId: cierre.id,
         valor, descuentoOtros, seguro,
-        total: valor - descuentoOtros - seguro,
+        total: Math.max(0, valor - descuentoOtros - seguro),
       });
     }
   }
@@ -201,7 +201,7 @@ router.patch("/nomina/dia", async (req, res) => {
     mo: nuevoValor,
     descuento: nuevoDescuento,
     seguro: nuevoSeguro,
-    total: total === undefined ? nuevoValor - nuevoDescuento - nuevoSeguro : parseReportNumber(total),
+    total: total === undefined ? Math.max(0, nuevoValor - nuevoDescuento - nuevoSeguro) : Math.max(0, parseReportNumber(total)),
   };
   const nuevoTotalPagar = datos.reduce((sum: number, item: any) => sum + parseReportNumber(item?.calc?.total), 0);
   try {
