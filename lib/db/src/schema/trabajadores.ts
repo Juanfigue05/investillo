@@ -12,6 +12,7 @@ export const trabajadoresTable = pgTable("trabajadores", {
   activo: boolean("activo").notNull().default(true),
   incluyeNomina: boolean("incluye_nomina").notNull().default(true),
   aplicaDescuento30: boolean("aplica_descuento_30").notNull().default(true),
+  obraElectronica: boolean("obra_electronica").notNull().default(false),
 
   // ── Perfil del trabajador ──
   numeroSeguro: text("numero_seguro"),

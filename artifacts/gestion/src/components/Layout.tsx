@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Sidebar } from "./Sidebar";
 import { FloatingNotepad } from "./FloatingNotepad";
 import { FloatingPriceCheck } from "./FloatingPriceCheck";
-import { Bell, Menu, X, CheckCheck, Trash2, Check, Pin, PinOff, Zap } from "lucide-react";
+import { Bell, Menu, X, CheckCheck, Trash2, Check, Pin, PinOff, Zap, Hand } from "lucide-react";
 import { getGetAlertasStockQueryKey, useGetAlertasStock } from "@workspace/api-client-react";
 import { BackupLocal } from "./BackupLocal";
 import { ConnectionStatus } from "./ConnectionStatus";
@@ -11,6 +11,7 @@ import { CalculadoraCierre } from "./CalculadoraCierre";
 import { Calculator as CalcIcon } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { RelojColombia } from "./RelojColombia";
+import { fechaHoyColombia } from "@/lib/utils";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 function loadSet(key: string): Set<number> {
@@ -28,11 +29,27 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const { data: alertas } = useGetAlertasStock({
     query: { queryKey: getGetAlertasStockQueryKey(), refetchInterval: 4000 },
   });
+  const [trabajadores, setTrabajadores] = useState<any[]>([]);
 
   const [showTensionada, setShowTensionada] = useState(false);
   const [tensionadaFecha, setTensionadaFecha] = useState("");
   const [tensionadaValor, setTensionadaValor] = useState("");
   const [guardandoTensionada, setGuardandoTensionada] = useState(false);
+  const [showObraElectronica, setShowObraElectronica] = useState(false);
+  const [obraFecha, setObraFecha] = useState(fechaHoyColombia());
+  const [obraTrabajadorId, setObraTrabajadorId] = useState("");
+  const [obraNumeroFactura, setObraNumeroFactura] = useState("");
+  const [obraVehiculo, setObraVehiculo] = useState("");
+  const [obraValor, setObraValor] = useState("");
+  const [guardandoObra, setGuardandoObra] = useState(false);
+  const [obraError, setObraError] = useState("");
+
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}api/trabajadores`.replace(/\/+/g, "/"))
+      .then((res) => res.json())
+      .then(setTrabajadores)
+      .catch(() => setTrabajadores([]));
+  }, [showObraElectronica]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [read, setRead] = useState<Set<number>>(() => loadSet(KEYS.read));
@@ -93,6 +110,32 @@ export function Layout({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const guardarObraElectronica = async () => {
+    setObraError("");
+    if (!obraTrabajadorId || !obraFecha || !obraVehiculo.trim() || !obraValor.trim()) {
+      setObraError("Completa empleado, fecha, vehículo y valor.");
+      return;
+    }
+    setGuardandoObra(true);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/obra-electronica`.replace(/\/+/g, "/"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trabajadorId: Number(obraTrabajadorId), fecha: obraFecha, numeroFactura: obraNumeroFactura, vehiculo: obraVehiculo, valor: obraValor }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "No se pudo guardar");
+      setShowObraElectronica(false);
+      setObraNumeroFactura("");
+      setObraVehiculo("");
+      setObraValor("");
+      window.dispatchEvent(new Event("obra-electronica-actualizada"));
+    } catch (error) {
+      setObraError(error instanceof Error ? error.message : "No se pudo guardar");
+    } finally {
+      setGuardandoObra(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background flex">
       {/* Mobile overlay */}
@@ -142,6 +185,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Zap className="w-5 h-5 text-cyan-400" />
               <span className="text-[9px] text-muted-foreground leading-none">Tensión</span>
             </button>
+            <button
+              onClick={() => { setObraFecha(fechaHoyColombia()); setObraError(""); setShowObraElectronica(true); }}
+              className="flex flex-col items-center justify-center gap-0.5 w-16 py-1.5 rounded-xl hover:bg-muted transition-colors"
+              aria-label="Registrar obra electrónica"
+            >
+              <Hand className="w-5 h-5 text-amber-400" />
+              <span className="text-[9px] text-muted-foreground leading-none">Obra elec.</span>
+            </button>
             <FloatingPriceCheck topbar />   
             <FloatingNotepad topbar />
             <BackupLocal topbar />
@@ -186,6 +237,43 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       {guardandoTensionada ? "Guardando..." : "Guardar"}
                     </button>
                     <button onClick={() => setShowTensionada(false)} className="px-4 py-2 bg-muted rounded-xl text-sm">Cancelar</button>
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )}
+
+            {showObraElectronica && createPortal(
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 90 }} onClick={() => setShowObraElectronica(false)}>
+                <div className="bg-card border border-amber-500/40 rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+                  <h3 className="font-bold text-foreground flex items-center gap-2"><Hand className="w-5 h-5 text-amber-400" /> Obra electrónica</h3>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Empleado</label>
+                    <select value={obraTrabajadorId} onChange={(e) => setObraTrabajadorId(e.target.value)} className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm">
+                      <option value="">Selecciona un empleado</option>
+                      {trabajadores.filter((t) => t.obraElectronica && t.activo !== false).map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Fecha</label>
+                    <input type="date" value={obraFecha} onChange={(e) => setObraFecha(e.target.value)} className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Número factura</label>
+                    <input type="text" value={obraNumeroFactura} onChange={(e) => setObraNumeroFactura(e.target.value)} placeholder="Número de factura" className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Placa o vehículo</label>
+                    <input type="text" value={obraVehiculo} onChange={(e) => setObraVehiculo(e.target.value)} placeholder="Ej. BTA 123" className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Valor (12,5 = $12.500)</label>
+                    <input type="text" inputMode="decimal" value={obraValor} onChange={(e) => setObraValor(e.target.value)} placeholder="60 o 12,5" className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+                  </div>
+                  {obraError && <p className="text-sm text-destructive">{obraError}</p>}
+                  <div className="flex gap-2">
+                    <button onClick={guardarObraElectronica} disabled={guardandoObra} className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm disabled:opacity-50">{guardandoObra ? "Guardando..." : "Guardar"}</button>
+                    <button onClick={() => setShowObraElectronica(false)} className="px-4 py-2 bg-muted rounded-xl text-sm">Cancelar</button>
                   </div>
                 </div>
               </div>,

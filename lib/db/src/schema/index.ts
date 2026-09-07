@@ -15,3 +15,4 @@ export * from "./remachadas";
 export * from "./grupos_trabajo";
 export * from "./conteo_monedas";
 export * from "./tensionadas";
+export * from "./obra_electronica";

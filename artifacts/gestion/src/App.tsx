@@ -22,6 +22,7 @@ import NotFound from "@/pages/not-found";
 import ManoObra from "@/pages/mano-obra";
 import ReportePagos from "@/pages/reporte-pagos";
 import ReporteNomina from "@/pages/reporte-nomina";
+import ObraElectronica from "@/pages/obra-electronica";
 
 import { queryClient } from "@/lib/queryClient";
 
@@ -42,6 +43,7 @@ function Router() {
       <Route path="/mano-obra" component={ManoObra} />
       <Route path="/reporte-pagos" component={ReportePagos} />
       <Route path="/reporte-nomina" component={ReporteNomina} />
+      <Route path="/obra-electronica" component={ObraElectronica} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -66,6 +68,7 @@ function DocumentTitle() {
       "/mano-obra": "Mano de obra",
       "/reporte-pagos": "Reporte pagos",
       "/reporte-nomina": "Nomina",
+      "/obra-electronica": "OBRA ELECTRONICA",
     };
     document.title = titulos[location] || "Investillo";
   }, [location]);

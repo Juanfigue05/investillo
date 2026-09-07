@@ -50,6 +50,7 @@ const API = `${import.meta.env.BASE_URL}api`
 const TIPO = "credito";
 const MO_NOMBRE = "Mano de Obra";
 const IVA_NOMBRE = "IVA (19%)";
+const SPECIAL_EXTERNO = "__externo__";
 
 function agregarFilaOptimista(
   queryClient: any,
@@ -193,6 +194,19 @@ export default function Creditos() {
         precioCompra: "0",
       },
     ]);
+  const addProductoExterno = () =>
+    setLineas((prev) => [
+      ...prev,
+      {
+        id: -Date.now(),
+        cantidad: "1",
+        productoCodigo: SPECIAL_EXTERNO,
+        productoNombre: "",
+        marca: "X",
+        precioVenta: "",
+        precioCompra: "0",
+      },
+    ]);
   const removeLinea = (id: number) => {
     if (lineas.length > 1) setLineas((prev) => prev.filter((l) => l.id !== id));
   };
@@ -202,6 +216,12 @@ export default function Creditos() {
     );
 
   const handleProductoSelect = (lineaId: number, prodId: string) => {
+    if (prodId === SPECIAL_EXTERNO) {
+      setLineas((prev) => prev.map((l) => l.id === lineaId ? {
+        ...l, productoId: undefined, productoCodigo: SPECIAL_EXTERNO, productoNombre: "", marca: "X", stockActual: null, stockMinimo: null,
+      } : l));
+      return;
+    }
     const prod = productos?.find((p) => String(p.id) === prodId);
     if (prod) {
       const stock = parseFloat(String(prod.stockActual ?? 0)) || 0;
@@ -1303,13 +1323,14 @@ export default function Creditos() {
                                 }),
                               )}
                               value={
-                                linea.productoId ? String(linea.productoId) : ""
+                                linea.productoId ? String(linea.productoId) : linea.productoCodigo === SPECIAL_EXTERNO ? SPECIAL_EXTERNO : ""
                               }
                               onChange={(id) =>
                                 handleProductoSelect(linea.id, id)
                               }
                               placeholder="Buscar producto..."
                             />
+                            {linea.productoCodigo === SPECIAL_EXTERNO && <input type="text" value={linea.productoNombre} onChange={(e) => updateLinea(linea.id, "productoNombre", e.target.value)} placeholder="Nombre del producto externo" className="w-full mt-1 bg-background border border-amber-500/50 px-3 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-amber-500 outline-none" />}
                             {linea.stockActual !== null &&
                               linea.stockActual !== undefined &&
                               (linea.stockActual === 0 ? (
@@ -1479,6 +1500,14 @@ export default function Creditos() {
                   >
                     <Plus className="w-3.5 h-3.5" />
                     Agregar producto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={addProductoExterno}
+                    className="flex items-center gap-1.5 text-xs text-amber-500 hover:text-amber-400 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Producto externo
                   </button>
                   {!manoObra.activo && (
                     <button

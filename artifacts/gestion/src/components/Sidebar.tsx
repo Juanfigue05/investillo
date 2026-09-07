@@ -12,7 +12,8 @@ import {
   History,
   Users,
   Wrench,
-  Wallet
+  Wallet,
+  Hand,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +31,8 @@ const NAV_ITEMS = [
   { href: "/mano-obra", label: "Trabajadores", icon: Wrench },
   { href: "/historial-cierres", label: "Historial Cierres", icon: History },
   { href: "/historial-precios", label: "Historial de Precios", icon: TrendingUp },
-  { href: "/reporte-nomina", label: "Reporte de Nómina", icon: Wallet }
+  { href: "/reporte-nomina", label: "Reporte de Nómina", icon: Wallet },
+  { href: "/obra-electronica", label: "Obra Electrónica", icon: Hand },
 ];
 
 export function Sidebar({

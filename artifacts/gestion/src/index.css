@@ -212,6 +212,72 @@
   border: 1px solid #6b7280;
 }
 
+.obra-electronica-table,
+.obra-electronica-total {
+  border-collapse: collapse;
+  border: 2px solid #d97706;
+  table-layout: fixed;
+}
+
+.obra-electronica-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.obra-electronica-grupo {
+  min-width: 0;
+}
+
+.obra-electronica-total {
+  grid-column: 1 / -1;
+}
+
+.obra-electronica-table th,
+.obra-electronica-table td,
+.obra-electronica-total td {
+  border: 1px solid #f59e0b;
+  padding: 0.5rem;
+}
+
+.obra-electronica-table thead {
+  background: #fde68a;
+  color: #000;
+}
+
+.obra-electronica-table tfoot,
+.obra-electronica-total tfoot {
+  background: #fcd34d;
+  color: #000;
+  font-weight: 700;
+}
+
+.obra-electronica-table th,
+.obra-electronica-table td {
+  white-space: nowrap;
+}
+
+.obra-electronica-table th {
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.15;
+  vertical-align: middle;
+}
+
+.obra-electronica-table th:nth-child(1),
+.obra-electronica-table td:nth-child(1) { width: 20%; }
+.obra-electronica-table th:nth-child(2),
+.obra-electronica-table td:nth-child(2) { width: 25%; }
+.obra-electronica-table th:nth-child(3),
+.obra-electronica-table td:nth-child(3) { width: 27%; }
+.obra-electronica-table th:nth-child(4),
+.obra-electronica-table td:nth-child(4) { width: 16%; }
+.obra-electronica-table th:nth-child(5),
+.obra-electronica-table td:nth-child(5) { width: 12%; }
+
 @media print {
   /* Hide everything by default */
   body * {
@@ -459,6 +525,69 @@
     display: block;
     height: 58px;
     width: 100%;
+  }
+
+  .obra-electronica-print-zone {
+    display: block !important;
+  }
+
+  .obra-electronica-print-zone .obra-electronica-grupo {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin-bottom: 5mm;
+  }
+
+  .obra-electronica-print-zone .obra-electronica-grid {
+    display: block !important;
+  }
+
+  .obra-electronica-print-zone .obra-electronica-total {
+    margin-top: 5mm;
+  }
+
+  .obra-electronica-print-zone .obra-electronica-table,
+  .obra-electronica-print-zone .obra-electronica-total {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed;
+    border: 2px solid #374151 !important;
+    font-size: 9px !important;
+  }
+
+  .obra-electronica-print-zone .obra-electronica-table th,
+  .obra-electronica-print-zone .obra-electronica-table td,
+  .obra-electronica-print-zone .obra-electronica-total td {
+    border: 1px solid #4b5563 !important;
+    padding: 3px 4px !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .obra-electronica-print-zone .obra-electronica-table tfoot td,
+  .obra-electronica-print-zone .obra-electronica-total td {
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+  }
+
+  .obra-electronica-print-zone .obra-electronica-table th {
+    text-align: center !important;
+    white-space: normal !important;
+    line-height: 1.15 !important;
+    vertical-align: middle !important;
+  }
+
+  .obra-electronica-print-zone .obra-electronica-table th:last-child,
+  .obra-electronica-print-zone .obra-electronica-table td:last-child {
+    width: 12%;
+  }
+
+  .obra-electronica-print-zone .obra-electronica-table tfoot td,
+  .obra-electronica-print-zone .obra-electronica-total td {
+    background: #fcd34d !important;
+    font-weight: 700 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   @page {

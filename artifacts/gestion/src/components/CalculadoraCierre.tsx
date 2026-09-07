@@ -48,6 +48,9 @@ export function CalculadoraCierre({
   const [billetes, setBilletes] = useState<Record<number, string>>({});
   const [bolsa, setBolsa] = useState("");
   const [caja, setCaja] = useState("");
+  const [borradorCargado, setBorradorCargado] = useState(false);
+
+  const CLAVE_BORRADOR = "investillo-calculadora-cierre";
 
   // ── Remachadas: solo consulta (la administración vive en Inventario) ──
   const [remachadas, setRemachadas] = useState<RemachadaRow[]>([]);
@@ -66,6 +69,18 @@ export function CalculadoraCierre({
 
   useEffect(() => {
     if (!open) return;
+    try {
+      const guardado = localStorage.getItem(CLAVE_BORRADOR);
+      if (guardado) {
+        const datos = JSON.parse(guardado);
+        if (Array.isArray(datos.suma)) setSuma(datos.suma);
+        if (Array.isArray(datos.resta)) setResta(datos.resta);
+        if (typeof datos.manoObra === "string") setManoObra(datos.manoObra);
+        if (datos.monedas && typeof datos.monedas === "object") setMonedas(datos.monedas);
+        if (datos.billetes && typeof datos.billetes === "object") setBilletes(datos.billetes);
+      }
+    } catch { /* borrador inválido: continuar vacío */ }
+    setBorradorCargado(true);
     fetch(`${API}/conteo-monedas`)
       .then((r) => r.json())
       .then((d) => {
@@ -73,6 +88,11 @@ export function CalculadoraCierre({
         setCaja(String(d.caja || 0));
       });
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !borradorCargado) return;
+    localStorage.setItem(CLAVE_BORRADOR, JSON.stringify({ suma, resta, manoObra, monedas, billetes }));
+  }, [open, borradorCargado, suma, resta, manoObra, monedas, billetes]);
 
   const guardarConteoMonedas = async (
     nuevaBolsa: string,

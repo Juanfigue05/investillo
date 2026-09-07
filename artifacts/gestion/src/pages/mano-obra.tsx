@@ -15,6 +15,7 @@ interface PagoSeguro {
 
 interface PerfilForm {
   nombre: string;
+  obraElectronica: boolean;
   incluyeNomina: boolean;
   aplicaDescuento30: boolean;
   numeroSeguro: string;
@@ -64,6 +65,7 @@ export default function Trabajadores() {
         if (!nuevos[t.id]) {
           nuevos[t.id] = {
             nombre: t.nombre,
+              obraElectronica: Boolean(t.obraElectronica),
               incluyeNomina: t.incluyeNomina !== false,
               aplicaDescuento30: t.aplicaDescuento30 !== false,
             numeroSeguro: t.numeroSeguro || "",
@@ -256,6 +258,11 @@ export default function Trabajadores() {
                     <label className="flex items-center gap-2 text-sm text-foreground">
                       <input type="checkbox" checked={form.aplicaDescuento30} onChange={(e) => actualizarCampoPerfil(t.id, { aplicaDescuento30: e.target.checked })} className="accent-primary" />
                       Aplicar descuento del 30%
+                    </label>
+
+                    <label className="flex items-center gap-2 text-sm text-foreground">
+                      <input type="checkbox" checked={form.obraElectronica} onChange={(e) => actualizarCampoPerfil(t.id, { obraElectronica: e.target.checked })} className="accent-primary" />
+                      Habilitar obra electrónica
                     </label>
 
                     <button onClick={() => guardarPerfil(t.id)} disabled={guardandoPerfilId === t.id}

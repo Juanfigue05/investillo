@@ -19,6 +19,7 @@ import gruposTrabajoRouter from "./grupos-trabajo";
 import conteoMonedasRouter from "./conteo-monedas";
 import reportesRouter from "./reportes";
 import tensionadasRouter from "./tensionadas";
+import obraElectronicaRouter from "./obra-electronica";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use("/grupos-trabajo", gruposTrabajoRouter);
 router.use("/conteo-monedas", conteoMonedasRouter);
 router.use("/tensionadas", tensionadasRouter);
 router.use("/reportes", reportesRouter);
+router.use("/obra-electronica", obraElectronicaRouter);
 
 export default router;
