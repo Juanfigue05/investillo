@@ -181,8 +181,7 @@
 }
 
 .nomina-print-page {
-  display: block !important;
-  width: 100% !important;
+  display: contents;
 }
 
 .nomina-tensionadas-table,
