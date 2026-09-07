@@ -5,6 +5,8 @@ import {
   Coins,
   MinusCircle,
   PlusCircle,
+  Save,
+  Trash2,
   X,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
@@ -49,8 +51,7 @@ export function CalculadoraCierre({
   const [bolsa, setBolsa] = useState("");
   const [caja, setCaja] = useState("");
   const [borradorCargado, setBorradorCargado] = useState(false);
-
-  const CLAVE_BORRADOR = "investillo-calculadora-cierre";
+  const [guardandoBorrador, setGuardandoBorrador] = useState(false);
 
   // ── Remachadas: solo consulta (la administración vive en Inventario) ──
   const [remachadas, setRemachadas] = useState<RemachadaRow[]>([]);
@@ -69,30 +70,55 @@ export function CalculadoraCierre({
 
   useEffect(() => {
     if (!open) return;
-    try {
-      const guardado = localStorage.getItem(CLAVE_BORRADOR);
-      if (guardado) {
-        const datos = JSON.parse(guardado);
-        if (Array.isArray(datos.suma)) setSuma(datos.suma);
-        if (Array.isArray(datos.resta)) setResta(datos.resta);
-        if (typeof datos.manoObra === "string") setManoObra(datos.manoObra);
-        if (datos.monedas && typeof datos.monedas === "object") setMonedas(datos.monedas);
-        if (datos.billetes && typeof datos.billetes === "object") setBilletes(datos.billetes);
-      }
-    } catch { /* borrador inválido: continuar vacío */ }
-    setBorradorCargado(true);
-    fetch(`${API}/conteo-monedas`)
-      .then((r) => r.json())
-      .then((d) => {
-        setBolsa(String(d.bolsa || 0));
-        setCaja(String(d.caja || 0));
-      });
+    setBorradorCargado(false);
+    Promise.all([
+      fetch(`${API}/calculadora-cierre`).then((r) => r.json()),
+      fetch(`${API}/conteo-monedas`).then((r) => r.json()),
+    ]).then(([datos, conteo]) => {
+      if (Array.isArray(datos.suma)) setSuma(datos.suma);
+      if (Array.isArray(datos.resta)) setResta(datos.resta);
+      if (typeof datos.manoObra === "string") setManoObra(datos.manoObra);
+      if (datos.monedas && typeof datos.monedas === "object") setMonedas(datos.monedas);
+      if (datos.billetes && typeof datos.billetes === "object") setBilletes(datos.billetes);
+      if (typeof datos.bandaBuscada === "string") setBandaBuscada(datos.bandaBuscada);
+      setBolsa(String(conteo.bolsa || 0));
+      setCaja(String(conteo.caja || 0));
+      setBorradorCargado(true);
+    }).catch(() => setBorradorCargado(true));
   }, [open]);
 
   useEffect(() => {
     if (!open || !borradorCargado) return;
-    localStorage.setItem(CLAVE_BORRADOR, JSON.stringify({ suma, resta, manoObra, monedas, billetes }));
-  }, [open, borradorCargado, suma, resta, manoObra, monedas, billetes]);
+    const temporizador = window.setTimeout(() => {
+      void guardarBorrador();
+    }, 500);
+    return () => window.clearTimeout(temporizador);
+  }, [open, borradorCargado, suma, resta, manoObra, monedas, billetes, bandaBuscada]);
+
+  const datosBorrador = () => ({ suma, resta, manoObra, monedas, billetes, bandaBuscada });
+
+  const guardarBorrador = async () => {
+    setGuardandoBorrador(true);
+    try {
+      await fetch(`${API}/calculadora-cierre`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(datosBorrador()),
+      });
+    } finally {
+      setGuardandoBorrador(false);
+    }
+  };
+
+  const borrarBorrador = async () => {
+    await fetch(`${API}/calculadora-cierre`, { method: "DELETE" });
+    setSuma(Array.from({ length: 25 }, () => ({ concepto: "", valor: "" })));
+    setResta(Array.from({ length: 4 }, () => ({ concepto: "", valor: "" })));
+    setManoObra("");
+    setMonedas({});
+    setBilletes({});
+    setBandaBuscada("");
+  };
 
   const guardarConteoMonedas = async (
     nuevaBolsa: string,
@@ -176,12 +202,30 @@ export function CalculadoraCierre({
             </span>
             <span>Calculadora de Cierre</span>
           </h2>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void guardarBorrador()}
+              disabled={guardandoBorrador || !borradorCargado}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50"
+            >
+              <Save className="w-3.5 h-3.5" />
+              {guardandoBorrador ? "Guardando..." : "Guardar"}
+            </button>
+            <button
+              onClick={() => { if (confirm("¿Borrar Suma, Resta, Monedas y la consulta de remachadas? Bolsa y Caja no se modificarán.")) void borrarBorrador(); }}
+              disabled={!borradorCargado}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-destructive/15 text-destructive text-xs font-medium disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Borrar
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
+              aria-label="Cerrar calculadora"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="p-5 lg:p-6 space-y-5 overflow-hidden bg-[#0b1324]">
