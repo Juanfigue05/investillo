@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { Fragment, useState, useMemo, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import {
   useGetCreditos,
@@ -825,13 +825,12 @@ export default function Creditos() {
   const pagados = allCreditos.filter((c) => c.valorRestante <= 0);
   const totalDeben = pendientes.reduce((s, c) => s + c.valorRestante, 0);
 
-  // For print: pending credits sorted oldest first
+  // Print follows the active filters, including an exact creation date.
   const creditosParaImprimir = useMemo(() => {
-    if (!creditos) return [];
-    return creditos
+    return allCreditos
       .filter((c) => c.valorRestante > 0)
       .sort((a, b) => a.fechaFactura.localeCompare(b.fechaFactura));
-  }, [creditos]);
+  }, [allCreditos]);
 
   const hoyStr = new Date().toLocaleDateString("es-CO", {
     weekday: "long",
@@ -869,9 +868,9 @@ export default function Creditos() {
       <div className="print-zone print-only">
         {/* Date header */}
         <div className="print-date-header">
-          Créditos Pendientes — {hoyLabel}
+          Créditos Pendientes{filtroFechaExacta ? ` del ${new Date(filtroFechaExacta + "T12:00:00").toLocaleDateString("es-CO")}` : ""} — {hoyLabel}
         </div>
-        <table>
+        <table className="creditos-print-table">
           <thead>
             <tr>
               <th style={{ width: "7%" }}>Fecha</th>
@@ -894,37 +893,37 @@ export default function Creditos() {
                     "es-CO",
                   )
                 : "—";
+              const espacioParaNotas = <span className="credit-note-space" aria-hidden="true" />;
               return (
-                <>
-                  {/* Data row — no bottom border so it merges with spacer */}
+                <Fragment key={c.id}>
                   <tr key={`data-${c.id}`} className="print-credito-data">
                     <td>
                       {new Date(
                         c.fechaFactura + "T12:00:00",
                       ).toLocaleDateString("es-CO")}
+                      {espacioParaNotas}
                     </td>
-                    <td>{c.placaVehiculo || "—"}</td>
-                    <td>{c.nombreCliente}</td>
-                    <td>{formatTelefono(c.telefonoCliente) || "—"}</td>
-                    <td>{c.concepto || "—"}</td>
+                    <td>{c.placaVehiculo || "—"}{espacioParaNotas}</td>
+                    <td>{c.nombreCliente}{espacioParaNotas}</td>
+                    <td>{formatTelefono(c.telefonoCliente) || "—"}{espacioParaNotas}</td>
+                    <td>{c.concepto || "—"}{espacioParaNotas}</td>
                     <td style={{ textAlign: "right" }}>
                       $ {c.valorCredito.toLocaleString("es-CO")}
+                      {espacioParaNotas}
                     </td>
                     <td style={{ textAlign: "right" }}>
                       {c.valorAbonado > 0
                         ? `$ ${c.valorAbonado.toLocaleString("es-CO")}`
                         : "—"}
+                      {espacioParaNotas}
                     </td>
-                    <td>{fechaAbonoStr}</td>
+                    <td>{fechaAbonoStr}{espacioParaNotas}</td>
                     <td style={{ textAlign: "right" }}>
                       $ {c.valorRestante.toLocaleString("es-CO")}
+                      {espacioParaNotas}
                     </td>
                   </tr>
-                  {/* Spacer row — blank space for handwritten annotations */}
-                  <tr key={`spacer-${c.id}`} className="print-credito-spacer">
-                    <td colSpan={9}></td>
-                  </tr>
-                </>
+                </Fragment>
               );
             })}
             {creditosParaImprimir.length === 0 && (

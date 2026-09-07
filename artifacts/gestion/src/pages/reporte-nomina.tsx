@@ -91,6 +91,12 @@ export default function ReporteNomina() {
     await recargar();
   };
 
+  const trabajadores = vista?.trabajadores || [];
+  const paginasDeTrabajadores = Array.from(
+    { length: Math.ceil(trabajadores.length / 4) },
+    (_, indice) => trabajadores.slice(indice * 4, indice * 4 + 4),
+  );
+
   return (
     <Layout>
       <div className="space-y-4">
@@ -141,7 +147,7 @@ export default function ReporteNomina() {
               <div className="bg-cyan-400 text-black font-bold text-center py-1">
                 TENSIONADAS MES {NOMBRES_MES[parseInt(mes.split("-")[1])].toUpperCase()} {mes.split("-")[0]}
               </div>
-              <table className="w-full bg-cyan-50">
+              <table className="w-full bg-cyan-50 nomina-tensionadas-table">
                 <thead>
                   <tr className="bg-cyan-200 text-black">
                     <th className="px-2 py-1 text-left">FECHA</th>
@@ -189,14 +195,16 @@ export default function ReporteNomina() {
             </div>
 
             <div className="nomina-trabajadores-print">
-            {vista?.trabajadores?.map((t: any) => (
+            {paginasDeTrabajadores.map((pagina, indicePagina) => (
+              <div key={indicePagina} className="nomina-print-page">
+              {pagina.map((t: any) => (
               <div key={t.trabajadorId} className={`nomina-trabajador ${trabajadoresSeleccionados.includes(String(t.trabajadorId)) ? "" : "print-omit"}`}>
                 {/* Tabla amarilla del trabajador */}
                 <div className="border-2 border-amber-500 rounded-lg overflow-hidden text-xs" style={{ minWidth: 280 }}>
                   <div className="bg-amber-400 text-black font-bold text-center py-1">
                     MES {NOMBRES_MES[parseInt(mes.split("-")[1])].toUpperCase()} {mes.split("-")[0]} {t.nombre.toUpperCase()}
                   </div>
-                  <table className="w-full bg-amber-50">
+                  <table className="w-full bg-amber-50 nomina-table">
                     <thead>
                       <tr className="bg-amber-200 text-black">
                         <th className="px-2 py-1 text-left">FECHA</th>
@@ -233,9 +241,29 @@ export default function ReporteNomina() {
                         </tr>
                       })}
                     </tbody>
+                    <tfoot>
+                      {(() => {
+                        const diasConRegistro = t.dias.filter((d: any) => !d.sinRegistro && !d.noVino);
+                        const totalValor = diasConRegistro.reduce((suma: number, d: any) => suma + (Number(d.valor) || 0), 0);
+                        const totalDescuento = diasConRegistro.reduce((suma: number, d: any) => suma + (Number(d.descuentoOtros) || 0), 0);
+                        const totalSeguro = diasConRegistro.reduce((suma: number, d: any) => suma + (Number(d.seguro) || 0), 0);
+                        const totalFinal = diasConRegistro.reduce((suma: number, d: any) => suma + (Number(d.total) || 0), 0);
+                        return (
+                          <tr className="nomina-total-row border-t-2 border-amber-500 bg-amber-300 font-bold text-black">
+                            <td className="px-2 py-1">TOTAL</td>
+                            <td className="px-2 py-1 text-right">{formatCurrency(totalValor)}</td>
+                            {t.aplicaDescuento30 && <><td className="px-2 py-1"></td><td className="px-2 py-1 text-right">{formatCurrency(totalDescuento)}</td></>}
+                            {t.aplicaSeguro && <td className="px-2 py-1 text-right">{formatCurrency(totalSeguro)}</td>}
+                            <td className="px-2 py-1 text-right">{formatCurrency(totalFinal)}</td>
+                          </tr>
+                        );
+                      })()}
+                    </tfoot>
                   </table>
                 </div>
 
+              </div>
+              ))}
               </div>
             ))}
             </div>

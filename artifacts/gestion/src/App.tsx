@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -47,15 +47,43 @@ function Router() {
   );
 }
 
+function DocumentTitle() {
+  const [location] = useLocation();
+
+  useEffect(() => {
+    const titulos: Record<string, string> = {
+      "/": "Inicio",
+      "/inventario": "Inventario",
+      "/ventas": "Ventas",
+      "/creditos": "Creditos",
+      "/compras": "Compras",
+      "/historial": "Historial",
+      "/nos-debe": "Nos debe",
+      "/historial-precios": "hist. precios",
+      "/cierre-diario": "Cierre diario",
+      "/historial-cierres": "hist. cierres",
+      "/clientes": "Clientes",
+      "/mano-obra": "Mano de obra",
+      "/reporte-pagos": "Reporte pagos",
+      "/reporte-nomina": "Nomina",
+    };
+    document.title = titulos[location] || "Investillo";
+  }, [location]);
+
+  return null;
+}
+
 function App() {
-    useEffect(() => {
+  useEffect(() => {
     iniciarSincronizacionAutomatica();
-    }, []);
+  }, []);
+
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <DocumentTitle />
             <Router />
           </WouterRouter>
           <Toaster />

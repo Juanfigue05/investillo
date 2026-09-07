@@ -555,6 +555,42 @@ Cada vez que subas cambios nuevos (`git push`), **ambas plataformas se actualiza
 
 Las rutas principales se registran en `artifacts/api-server/src/routes/index.ts`. El contrato OpenAPI cubre los hooks generados, pero algunas rutas de importación, reportes y funciones auxiliares se consumen desde el frontend con `fetch` manual. Después de cambiar una ruta documentada, regenera los clientes con `pnpm --filter @workspace/api-spec codegen` y ejecuta `pnpm run typecheck`.
 
+### 8.7 Reiniciar o reactivar manualmente (cuando algo se pausa o falla)
+
+Estos son los pasos para cuando algo deja de responder y necesitas arreglarlo a mano — por ejemplo, si te llega el correo de alerta del "Keep Alive" avisando que Render o Supabase no respondieron.
+
+#### Supabase se pausó (plan gratis, 7 días sin actividad)
+
+1. Entra a **[supabase.com](https://supabase.com)** e inicia sesión.
+2. Abre tu proyecto — vas a ver un aviso de que está "Paused" (pausado).
+3. Clic en **"Restore project"** (o "Reanudar proyecto").
+4. Espera 1-2 minutos mientras Supabase lo reactiva — después de eso, el sistema vuelve a funcionar normal, sin perder ningún dato (la pausa no borra información, solo apaga el acceso).
+
+#### Render dejó de responder o se quedó "atascado"
+
+1. Entra a **[dashboard.render.com](https://dashboard.render.com)** e inicia sesión.
+2. Abre tu servicio (`investillo` o el nombre que le hayas puesto).
+3. Si se ve "Suspended" o con un ícono de error: clic en **"Manual Deploy"** (arriba a la derecha) → **"Deploy latest commit"** — esto vuelve a desplegar tu código desde cero, tal como está en GitHub ahora mismo.
+4. Si necesitas ver qué pasó exactamente, revisa la pestaña **"Logs"** de ese mismo panel — ahí queda el detalle de cualquier error del servidor.
+
+#### Railway (si ya lo tienes configurado como respaldo)
+
+1. Entra a **[railway.com](https://railway.com)** e inicia sesión.
+2. Abre tu proyecto → clic en el servicio.
+3. En la pestaña **"Deployments"**, clic en los 3 puntos del despliegue más reciente → **"Redeploy"**.
+
+#### El sistema local (portátil de la oficina) no arrancó solo
+
+1. Revisa el archivo de log que configuramos en el Programador de Tareas (`logs\sistema.txt`) — ahí debería decir por qué falló, si falló.
+2. Abre el **Símbolo del sistema (CMD)**, ve a la carpeta del proyecto, y corre `pnpm run start:prod` a mano — si arranca bien así, el problema fue puntual (por ejemplo, el portátil tardó en tener internet al prender, y la tarea automática corrió antes de tiempo).
+3. Si sigue sin arrancar, revisa que tu archivo `.env.api` siga existiendo y con los datos correctos — es la causa más común de que el sistema no inicie.
+
+#### Aiven se pausó (respaldo, plan gratis, 7 días sin uso)
+
+1. Entra a **[console.aiven.io](https://console.aiven.io)**.
+2. Abre el servicio pausado → clic en **"Power on"** (o el botón equivalente para reactivarlo).
+3. Esto no afecta tu sistema principal — Aiven es solo la copia de respaldo, así que aunque esté pausada, Investillo sigue funcionando normal desde Supabase.
+
 ---
 
 ## 9. 🧹 Reiniciar la base de datos antes de empezar de verdad
