@@ -297,6 +297,28 @@ function GruposTrabajoPanel({
 
 // ---------- API helpers ----------
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
+const BORRADOR_CIERRE_PREFIX = "investillo-cierre-borrador:";
+
+function claveBorradorCierre(fecha: string) {
+  return `${BORRADOR_CIERRE_PREFIX}${fecha}`;
+}
+
+function leerBorradorCierre(fecha: string): { items: CierreTrabajador[]; gruposDia: GrupoTrabajoDia[] } | null {
+  try {
+    const raw = localStorage.getItem(claveBorradorCierre(fecha));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function eliminarBorradorCierre(fecha: string) {
+  try {
+    localStorage.removeItem(claveBorradorCierre(fecha));
+  } catch {
+    return;
+  }
+}
 
 async function guardarCierre(fecha: string, datos: unknown, totalPagar: number, editar: boolean) {
   const res = await fetch(`${API}/cierre-diario`, {
@@ -380,6 +402,7 @@ export default function CierreDiario() {
   }, [gruposDefault, editFecha]);
 
   useEffect(() => {
+    if (editFecha) return;
     const raw = sessionStorage.getItem("editarCierre");
     const cargarDatos = (fecha: string, datos: TrabajadorSnapshot[] | { trabajadores: TrabajadorSnapshot[]; gruposTrabajo?: GrupoTrabajoDia[] }) => {
       setEditFecha(fecha);
@@ -402,6 +425,14 @@ export default function CierreDiario() {
       return;
     }
 
+    const borrador = leerBorradorCierre(fechaCierre);
+    if (borrador) {
+      setItems(borrador.items);
+      setGruposDia(borrador.gruposDia);
+      setCierreInicialCargado(true);
+      return;
+    }
+
     fetch(`${API}/cierre-diario/por-fecha?fecha=${fechaCierre}`)
       .then((res) => res.ok ? res.json() : null)
       .then((cierre) => {
@@ -409,7 +440,16 @@ export default function CierreDiario() {
         setCierreInicialCargado(true);
       })
       .catch(() => setCierreInicialCargado(true));
-  }, []);
+  }, [editFecha, fechaCierre]);
+
+  useEffect(() => {
+    if (!cierreInicialCargado || editFecha) return;
+    try {
+      localStorage.setItem(claveBorradorCierre(fechaCierre), JSON.stringify({ items, gruposDia }));
+    } catch {
+      return;
+    }
+  }, [cierreInicialCargado, editFecha, fechaCierre, gruposDia, items]);
 
   useEffect(() => {
     if (!cierreInicialCargado || editFecha || items.length > 0 || !trabajadores) return;
@@ -470,6 +510,7 @@ export default function CierreDiario() {
 
     try {
       await guardarCierre(fecha, datos, grandTotal, Boolean(editFecha));
+      eliminarBorradorCierre(fecha);
       setGuardadoOk(true);
       setTimeout(() => setGuardadoOk(false), 3000);
     } catch (e) {
@@ -477,6 +518,7 @@ export default function CierreDiario() {
         alert("Error al guardar: " + e);
       } else {
         await encolarOperacion({ tipo: "cierre_diario", metodo: "POST", endpoint: "/cierre-diario", payload: { fecha, datos, totalPagar: grandTotal } });
+        eliminarBorradorCierre(fecha);
         toast({ title: "Guardado sin conexión", description: "Este cierre diario se sincronizará automáticamente cuando vuelva internet." });
         setGuardadoOk(true);
         setTimeout(() => setGuardadoOk(false), 3000);
@@ -520,6 +562,7 @@ export default function CierreDiario() {
                 disabled={Boolean(editFecha)}
                 onChange={(e) => {
                   setFechaCierre(e.target.value);
+                  setCierreInicialCargado(false);
                   setItems([]);
                   setGruposDia([]);
                   setGuardadoOk(false);
