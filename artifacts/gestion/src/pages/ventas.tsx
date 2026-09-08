@@ -531,7 +531,7 @@ export default function VentasDiarias() {
           </div>
         </div>
 
-        <div className="print-zone bg-card border border-border rounded-2xl overflow-hidden shadow-xl shadow-black/10">
+        <div className="print-zone ventas-print-zone bg-card border border-border rounded-2xl overflow-hidden shadow-xl shadow-black/10">
           <div className="print-only print-date-header">
             Ventas Diarias — {fechaFormateada}
           </div>

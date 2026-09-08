@@ -406,6 +406,15 @@
     padding: 4px 8px;
   }
 
+  .ventas-print-zone {
+    width: 100vw !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
   /* Show print-only elements */
   .print-only {
     display: block;
@@ -461,8 +470,8 @@
     text-align: center !important;
   }
 
-  .ventas-print-table th:nth-child(2), .ventas-print-table td:nth-child(2) { width: 19%; }
-  .ventas-print-table th:nth-child(3), .ventas-print-table td:nth-child(3) { width: 27%; }
+  .ventas-print-table th:nth-child(2), .ventas-print-table td:nth-child(2) { width: 23%; }
+  .ventas-print-table th:nth-child(3), .ventas-print-table td:nth-child(3) { width: 23%; }
   .ventas-print-table th:nth-child(4), .ventas-print-table td:nth-child(4) { width: 11%; }
   .ventas-print-table th:nth-child(5), .ventas-print-table td:nth-child(5) { width: 5%; }
   .ventas-print-table th:nth-child(6), .ventas-print-table td:nth-child(6),
