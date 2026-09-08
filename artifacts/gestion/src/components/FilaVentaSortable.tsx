@@ -109,8 +109,8 @@ export function FilaVentaSortable({
     );
   }
 
-  return (
-    <tr ref={setNodeRef} style={style} className={`${rowCls} group hover:brightness-110 transition-all`}>
+  const filaNormal = (
+    <tr ref={setNodeRef} style={style} className={`${rowCls} group hover:brightness-110 transition-all ${venta.tipoLinea === "manoobra" ? "print-manoobra-screen-row" : ""}`}>
       {dragHandle}
       <td className="px-3 py-3 font-mono text-xs">{venta.referencia}</td>
       <td className="px-3 py-3 font-medium">{venta.productoNombre}</td>
@@ -136,5 +136,27 @@ export function FilaVentaSortable({
         )}
       </td>
     </tr>
+  );
+
+  if (venta.tipoLinea !== "manoobra") return filaNormal;
+
+  return (
+    <>
+      {filaNormal}
+      <tr className="row-manoobra print-manoobra-row">
+        <td className="no-print" />
+        <td className="px-3 py-3 font-mono text-xs">{venta.referencia}</td>
+        <td className="px-3 py-3 font-medium" colSpan={2}>
+          Mano de Obra - {venta.productoMarca || "—"}
+        </td>
+        <td className="px-3 py-3">{String(venta.cantidad).replace(".", ",")}</td>
+        <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioCompraUnidad)}</td>
+        <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioVentaUnidad)}</td>
+        <td className="px-3 py-3 font-bold text-primary">{formatCurrency(venta.precioVentaTotal)}</td>
+        <td className="px-3 py-3 font-medium text-green-500">—</td>
+        <td className="no-print" />
+        <td className="no-print" />
+      </tr>
+    </>
   );
 }

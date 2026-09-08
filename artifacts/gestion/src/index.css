@@ -173,6 +173,10 @@
   display: none;
 }
 
+.print-manoobra-row {
+  display: none;
+}
+
 .nomina-report-print {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -426,6 +430,14 @@
 
   .print-only-inline {
     display: inline !important;
+  }
+
+  .print-manoobra-screen-row {
+    display: none !important;
+  }
+
+  .print-manoobra-row {
+    display: table-row !important;
   }
 
   /* Hide screen-only elements inside print zone */
