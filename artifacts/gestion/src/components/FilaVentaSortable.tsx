@@ -117,7 +117,9 @@ export function FilaVentaSortable({
       <td className="px-3 py-3 text-muted-foreground text-xs">{venta.productoMarca || "—"}</td>
       <td className="px-3 py-3">
         <span className="screen-only-inline">{String(venta.cantidad).replace(".", ",")}</span>
-        <span className="print-only-inline" />
+        {venta.tipoLinea !== "manoobra" && (
+          <span className="print-only-inline">{String(venta.cantidad).replace(".", ",")}</span>
+        )}
       </td>
       <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioCompraUnidad)}</td>
       <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioVentaUnidad)}</td>
