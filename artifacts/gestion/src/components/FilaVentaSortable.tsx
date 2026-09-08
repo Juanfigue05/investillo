@@ -115,7 +115,10 @@ export function FilaVentaSortable({
       <td className="px-3 py-3 font-mono text-xs">{venta.referencia}</td>
       <td className="px-3 py-3 font-medium">{venta.productoNombre}</td>
       <td className="px-3 py-3 text-muted-foreground text-xs">{venta.productoMarca || "—"}</td>
-      <td className="px-3 py-3">{String(venta.cantidad).replace(".", ",")}</td>
+      <td className="px-3 py-3">
+        <span className="screen-only-inline">{String(venta.cantidad).replace(".", ",")}</span>
+        <span className="print-only-inline" />
+      </td>
       <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioCompraUnidad)}</td>
       <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioVentaUnidad)}</td>
       <td className="px-3 py-3 font-bold text-primary">{formatCurrency(venta.precioVentaTotal)}</td>
@@ -149,7 +152,7 @@ export function FilaVentaSortable({
         <td className="px-3 py-3 font-medium" colSpan={2}>
           Mano de Obra - {venta.productoMarca || "—"}
         </td>
-        <td className="px-3 py-3">{String(venta.cantidad).replace(".", ",")}</td>
+        <td className="px-3 py-3" />
         <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioCompraUnidad)}</td>
         <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioVentaUnidad)}</td>
         <td className="px-3 py-3 font-bold text-primary">{formatCurrency(venta.precioVentaTotal)}</td>
