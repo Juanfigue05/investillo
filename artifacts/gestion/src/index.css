@@ -169,6 +169,10 @@
   display: none;
 }
 
+.print-only-inline {
+  display: none;
+}
+
 .nomina-report-print {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -396,16 +400,23 @@
     top: 0;
     left: 0;
     width: 100vw;
-    min-height: 100vh;
     box-sizing: border-box;
     background: white !important;
     color: black !important;
-    padding: 8px 12px;
+    padding: 4px 8px;
   }
 
   /* Show print-only elements */
   .print-only {
     display: block;
+  }
+
+  .screen-only-inline {
+    display: none !important;
+  }
+
+  .print-only-inline {
+    display: inline !important;
   }
 
   /* Hide screen-only elements inside print zone */
@@ -434,7 +445,7 @@
   .print-zone td {
     padding: 1px 3px !important;
     font-size: 8px !important;
-    line-height: 1.1 !important;
+    line-height: 1 !important;
     vertical-align: middle;
     border: 1px solid #d1d5db;
     color: black !important;
@@ -445,15 +456,19 @@
     word-break: normal;
   }
 
-  /* Repartir el ancho: referencia y producto ganan espacio; cantidad y valores numericos ocupan lo minimo. */
-  .print-zone th:nth-child(2), .print-zone td:nth-child(2) { width: 15%; }
-  .print-zone th:nth-child(3), .print-zone td:nth-child(3) { width: 29%; }
-  .print-zone th:nth-child(4), .print-zone td:nth-child(4) { width: 11%; }
-  .print-zone th:nth-child(5), .print-zone td:nth-child(5) { width: 4%; }
-  .print-zone th:nth-child(6), .print-zone td:nth-child(6),
-  .print-zone th:nth-child(7), .print-zone td:nth-child(7) { width: 9%; }
-  .print-zone th:nth-child(8), .print-zone td:nth-child(8),
-  .print-zone th:nth-child(9), .print-zone td:nth-child(9) { width: 10%; }
+  .ventas-print-table th,
+  .ventas-print-table td {
+    text-align: center !important;
+  }
+
+  .ventas-print-table th:nth-child(2), .ventas-print-table td:nth-child(2) { width: 19%; }
+  .ventas-print-table th:nth-child(3), .ventas-print-table td:nth-child(3) { width: 27%; }
+  .ventas-print-table th:nth-child(4), .ventas-print-table td:nth-child(4) { width: 11%; }
+  .ventas-print-table th:nth-child(5), .ventas-print-table td:nth-child(5) { width: 5%; }
+  .ventas-print-table th:nth-child(6), .ventas-print-table td:nth-child(6),
+  .ventas-print-table th:nth-child(7), .ventas-print-table td:nth-child(7),
+  .ventas-print-table th:nth-child(8), .ventas-print-table td:nth-child(8),
+  .ventas-print-table th:nth-child(9), .ventas-print-table td:nth-child(9) { width: 9.5%; }
 
   .print-zone tfoot td {
     font-weight: bold;
@@ -486,11 +501,28 @@
   /* Regla general: NINGÚN elemento dentro de la zona de impresión puede limitar su altura
      ni recortar contenido — esto cubre cualquier "max-h-[...]" que tenga cualquier página,
      hoy o en el futuro, sin tener que acordarse de arreglarlo módulo por módulo. */
-  .print-zone,
-  .print-zone * {
-    max-height: none !important;
-    overflow: visible !important;
-  }
+.print-zone,
+.print-zone * {
+  max-height: none !important;
+}
+
+/* Las celdas SÍ deben recortar el texto que no quepa en su ancho —
+   si no, un texto largo se "monta" encima de la celda de al lado. */
+.print-zone td,
+.print-zone th {
+  overflow: hidden !important;
+  text-overflow: clip;
+}
+
+  /* Anchos base de las demas tablas impresas. */
+  .print-zone th:nth-child(2), .print-zone td:nth-child(2) { width: 15%; }
+  .print-zone th:nth-child(3), .print-zone td:nth-child(3) { width: 29%; }
+  .print-zone th:nth-child(4), .print-zone td:nth-child(4) { width: 11%; }
+  .print-zone th:nth-child(5), .print-zone td:nth-child(5) { width: 4%; }
+  .print-zone th:nth-child(6), .print-zone td:nth-child(6),
+  .print-zone th:nth-child(7), .print-zone td:nth-child(7) { width: 9%; }
+  .print-zone th:nth-child(8), .print-zone td:nth-child(8),
+  .print-zone th:nth-child(9), .print-zone td:nth-child(9) { width: 10%; }
 
   /* Date header */
   .print-date-header {
@@ -508,7 +540,9 @@
   .creditos-print-table th,
   .creditos-print-table td {
     border: 1px solid #4b5563 !important;
+    font-size: 10px !important;
     white-space: normal !important;
+    overflow: hidden !important;
     overflow-wrap: anywhere !important;
     word-break: break-word !important;
     vertical-align: top !important;
@@ -592,6 +626,6 @@
 
   @page {
     size: letter portrait;
-    margin: 8mm;
+    margin: 4mm;
   }
 }

@@ -539,7 +539,7 @@ export default function VentasDiarias() {
           <div className="overflow-visible print:max-h-none print:overflow-visible">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={ventasOrdenadas.map((venta: any) => venta.id)} strategy={verticalListSortingStrategy}>
-            <table className="w-full text-left border-collapse text-xs lg:text-sm">
+            <table className="ventas-print-table w-full text-left border-collapse text-xs lg:text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-muted text-muted-foreground border-b border-border">
                   <th className="px-2 py-3 font-medium no-print w-10"></th>
@@ -550,7 +550,10 @@ export default function VentasDiarias() {
                   <th className="px-3 py-3 font-medium whitespace-nowrap">P. Compra</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">P. Venta</th>
                   <th className="px-3 py-3 font-medium whitespace-nowrap">Total Venta</th>
-                  <th className="px-3 py-3 font-medium whitespace-nowrap">Beneficio/Ganancia</th>
+                  <th className="px-3 py-3 font-medium whitespace-nowrap">
+                    <span className="screen-only-inline">Beneficio/Ganancia</span>
+                    <span className="print-only-inline">Ganancia</span>
+                  </th>
                   <th className="px-3 py-3 font-medium no-print whitespace-nowrap">Forma de Pago</th>
                   <th className="px-3 py-3 font-medium no-print w-20"></th>
                 </tr>

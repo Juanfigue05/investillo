@@ -773,16 +773,28 @@ export default router;
 
 /** Nombre de la línea IVA — se usa para excluirla del cómputo de ventas y beneficio. */
 const IVA_NOMBRE = "IVA (19%)";
+const MESES_ABREVIADOS = [
+  "ENE", "FEB", "MAR", "ABR", "MAY", "JUN",
+  "JUL", "AGO", "SEP", "OCT", "NOV", "DIC",
+];
+
+function fechaReferencia(fechaFactura: string | null): string {
+  if (!fechaFactura) return "";
+  const [anio, mes, dia] = fechaFactura.split("-");
+  const indiceMes = Number(mes) - 1;
+  if (!anio || !dia || indiceMes < 0 || indiceMes >= MESES_ABREVIADOS.length) return "";
+
+  const anioActual = fechaHoyColombia().slice(0, 4);
+  const anioCorto = anio !== anioActual ? ` ${anio.slice(2)}` : "";
+  return `${dia} ${MESES_ABREVIADOS[indiceMes]}${anioCorto}`;
+}
 
 /** Referencia (No.Remisión/Ref) para filas de ventas_diarias generadas desde un crédito/nos debe. */
 function refCredito(credito: typeof creditosTable.$inferSelect, customRef?: string): string {
   if (customRef) return customRef;
   const nombre = abreviarNombre(credito.nombreCliente);
-  if (credito.tipo === "nosdebe") return nombre;
-  // Para créditos: incluir fecha corta (dd/mm/aa) para facilitar rastreo en impresión
-  const fecha = credito.fechaFactura
-    ? (() => { const [y, m, d] = credito.fechaFactura.split("-"); return `${d}/${m}/${y.slice(2)}`; })()
-    : "";
+  const fecha = fechaReferencia(credito.fechaFactura);
+  if (credito.tipo === "nosdebe") return [nombre, fecha].filter(Boolean).join(" ");
   return [credito.concepto, nombre, fecha].filter(Boolean).join(" ");
 }
 
