@@ -519,6 +519,53 @@
     overflow: hidden !important;
   }
 
+  /* Compras: compactar Marca/Cant. y reservar espacio para Producto/Proveedor. */
+  .print-zone .compras-print-table {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed !important;
+    font-size: 7px !important;
+  }
+
+  .print-zone .compras-print-table th,
+  .print-zone .compras-print-table td {
+    padding: 2px !important;
+    font-size: 7px !important;
+    white-space: nowrap !important;
+  }
+
+  .print-zone .compras-print-table th {
+    text-align: center !important;
+  }
+
+  .print-zone .compras-print-table th:nth-child(3),
+  .print-zone .compras-print-table td:nth-child(3),
+  .print-zone .compras-print-table th:nth-child(4),
+  .print-zone .compras-print-table td:nth-child(4),
+  .print-zone .compras-print-table th:nth-child(5),
+  .print-zone .compras-print-table td:nth-child(5),
+  .print-zone .compras-print-table th:nth-child(6),
+  .print-zone .compras-print-table td:nth-child(6),
+  .print-zone .compras-print-table th:nth-child(7),
+  .print-zone .compras-print-table td:nth-child(7),
+  .print-zone .compras-print-table th:nth-child(8),
+  .print-zone .compras-print-table td:nth-child(8),
+  .print-zone .compras-print-table th:nth-child(9),
+  .print-zone .compras-print-table td:nth-child(9) {
+    text-align: center !important;
+  }
+
+  .print-zone .compras-print-table th:nth-child(1), .print-zone .compras-print-table td:nth-child(1) { width: 6%; text-align: center !important; }
+  .print-zone .compras-print-table th:nth-child(2), .print-zone .compras-print-table td:nth-child(2) { width: 22%; }
+  .print-zone .compras-print-table th:nth-child(3), .print-zone .compras-print-table td:nth-child(3) { width: 9%; }
+  .print-zone .compras-print-table th:nth-child(4), .print-zone .compras-print-table td:nth-child(4) { width: 3%; }
+  .print-zone .compras-print-table th:nth-child(5), .print-zone .compras-print-table td:nth-child(5) { width: 8%; }
+  .print-zone .compras-print-table th:nth-child(6), .print-zone .compras-print-table td:nth-child(6) { width: 8%; }
+  .print-zone .compras-print-table th:nth-child(7), .print-zone .compras-print-table td:nth-child(7) { width: 11%; }
+  .print-zone .compras-print-table th:nth-child(8), .print-zone .compras-print-table td:nth-child(8) { width: 9%; }
+  .print-zone .compras-print-table th:nth-child(9), .print-zone .compras-print-table td:nth-child(9) { width: 9%; }
+  .print-zone .compras-print-table th:nth-child(10), .print-zone .compras-print-table td:nth-child(10) { width: 15%; }
+
   /* Regla general: NINGÚN elemento dentro de la zona de impresión puede limitar su altura
      ni recortar contenido — esto cubre cualquier "max-h-[...]" que tenga cualquier página,
      hoy o en el futuro, sin tener que acordarse de arreglarlo módulo por módulo. */

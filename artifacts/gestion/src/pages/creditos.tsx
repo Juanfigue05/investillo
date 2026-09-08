@@ -103,6 +103,9 @@ const emptyForm = {
   nombreCliente: "",
   telefonoCliente: "",
   valorAbonado: "0",
+  abonoInicialFecha: fechaHoyColombia(),
+  abonoInicialRef: "",
+  abonoInicialFormaPago: "efectivo",
   descripcion: "",
 };
 
@@ -151,6 +154,9 @@ export default function Creditos() {
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [showPay, setShowPay] = useState<number | null>(null);
   const [abono, setAbono] = useState("");
+  const [abonoFecha, setAbonoFecha] = useState(fechaHoyColombia());
+  const [abonoVentaFecha, setAbonoVentaFecha] = useState(fechaHoyColombia());
+  const [abonoRef, setAbonoRef] = useState("");
   const [abonoFormaPago, setAbonoFormaPago] = useState("efectivo");
   const [lineasSeleccionadas, setLineasSeleccionadas] = useState<number[]>([]);
   const [busqueda, setBusqueda] = useState("");
@@ -337,6 +343,9 @@ export default function Creditos() {
       nombreCliente: c.nombreCliente,
       telefonoCliente: c.telefonoCliente || "",
       valorAbonado: String(c.valorAbonado || 0),
+      abonoInicialFecha: "",
+      abonoInicialRef: "",
+      abonoInicialFormaPago: "efectivo",
       descripcion: c.descripcion || "",
     });
     const moLine = c.lineas.find((l: any) => l.productoNombre === MO_NOMBRE);
@@ -395,6 +404,8 @@ export default function Creditos() {
     if (!form.nombreCliente.trim())
       errors.push("El nombre del cliente es obligatorio");
     if (!form.fechaFactura) errors.push("La fecha es obligatoria");
+    if ((parseFloat(form.valorAbonado) || 0) > 0 && !form.abonoInicialFecha)
+      errors.push("La fecha del abono inicial es obligatoria");
     if (baseTotal <= 0) errors.push("Agrega al menos un producto con precio");
     if (
       manoObra.activo &&
@@ -495,6 +506,25 @@ export default function Creditos() {
       const { total: _t, prevAbonado: _p, ...rest } = l;
       return { ...rest, valorAbonado: applied };
     });
+    if (!editingId && initialAbono > 0) {
+      const detalle = payloadLineas
+        .filter((l: any) => l.valorAbonado > 0)
+        .map((l: any) => `${l.valorAbonado >= l.cantidad * l.precioVenta ? "PAGO COMPLETO" : "ABONO PARCIAL"}: ${l.productoNombre} - ${formatCurrency(l.valorAbonado)}`)
+        .join("\n");
+      const confirmado = window.confirm(
+        `Ventas Diarias para el abono inicial (${formatCurrency(initialAbono)}):\n\n${detalle}\n\n¿Confirmas registrar estos productos en Ventas Diarias?`,
+      );
+      if (!confirmado) return;
+      const fechaVenta = window.prompt(
+        "¿En qué fecha se descargan estos productos en Ventas Diarias?\nDeja la fecha de hoy o escribe otra fecha (AAAA-MM-DD).",
+        fechaHoyColombia(),
+      );
+      if (!fechaVenta || !/^\d{4}-\d{2}-\d{2}$/.test(fechaVenta)) {
+        alert("La fecha de Ventas Diarias no es válida");
+        return;
+      }
+      (form as any).abonoInicialVentaFecha = fechaVenta;
+    }
 
     const data = {
       tipo: TIPO,
@@ -508,6 +538,14 @@ export default function Creditos() {
       valorAbonado: editingId
         ? parseFloat(form.valorAbonado) || 0
         : initialAbono,
+      ...( !editingId && initialAbono > 0
+        ? {
+            abonoInicialFecha: form.abonoInicialFecha,
+            abonoInicialVentaFecha: (form as any).abonoInicialVentaFecha,
+            abonoInicialRef: form.abonoInicialRef.trim() || undefined,
+            abonoInicialFormaPago: form.abonoInicialFormaPago,
+          }
+        : {}),
       lineas: payloadLineas,
       // El servidor crea/actualiza/revierte la distribución de trabajadores de forma atómica
       manoObra:
@@ -639,6 +677,9 @@ export default function Creditos() {
   const resetPay = () => {
     setShowPay(null);
     setAbono("");
+    setAbonoFecha(fechaHoyColombia());
+    setAbonoVentaFecha(fechaHoyColombia());
+    setAbonoRef("");
     setLineasSeleccionadas([]);
     setEditingAbonoId(null);
     setAbonoFormaPago("efectivo");
@@ -679,6 +720,19 @@ export default function Creditos() {
         return { lineaId: l.id, valor: v };
       })
       .filter((la: any) => la.valor > 0);
+    const sumaLineas = lineasAbono.reduce((suma: number, linea: any) => suma + linea.valor, 0);
+    if (Math.abs(sumaLineas - abonoNum) > 0.01) {
+      alert("La suma de los productos seleccionados no coincide con el valor del abono");
+      return;
+    }
+    const detalle = lineasAbono
+      .map((linea: any) => {
+        const producto = selected.find((item: any) => item.id === linea.lineaId);
+        const total = producto ? parseFloat(producto.cantidad) * parseFloat(producto.precioVenta) : 0;
+        return `${linea.valor >= total - 0.01 ? "PAGO COMPLETO" : "ABONO PARCIAL"}: ${producto?.productoNombre || "Producto"} - ${formatCurrency(linea.valor)}`;
+      })
+      .join("\n");
+    if (!window.confirm(`Ventas Diarias para el abono (${formatCurrency(abonoNum)}):\n\n${detalle}\n\n¿Confirmas registrar estos productos?`)) return;
 
     const onSuccess = () => {
       queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
@@ -689,6 +743,9 @@ export default function Creditos() {
     const payload: any = {
       valor: abonoNum,
       lineas: lineasAbono,
+      fechaAbono: abonoFecha,
+      fechaVentaDiaria: abonoVentaFecha,
+      customRef: abonoRef.trim() || undefined,
       formaPago: abonoFormaPago,
     };
 
@@ -1600,6 +1657,34 @@ export default function Creditos() {
                   }
                   className="w-40 bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
                 />
+                {!editingId && (parseFloat(form.valorAbonado) || 0) > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 max-w-2xl">
+                    <input
+                      type="date"
+                      value={form.abonoInicialFecha}
+                      onChange={(e) => setForm({ ...form, abonoInicialFecha: e.target.value })}
+                      className="bg-background border border-border px-3 py-2 rounded-xl text-sm"
+                      aria-label="Fecha del abono inicial"
+                    />
+                    <input
+                      type="text"
+                      placeholder="No. Remisión / REF"
+                      value={form.abonoInicialRef}
+                      onChange={(e) => setForm({ ...form, abonoInicialRef: e.target.value.slice(0, 35) })}
+                      className="bg-background border border-border px-3 py-2 rounded-xl text-sm"
+                    />
+                    <select
+                      value={form.abonoInicialFormaPago}
+                      onChange={(e) => setForm({ ...form, abonoInicialFormaPago: e.target.value })}
+                      className="bg-background border border-border px-3 py-2 rounded-xl text-sm"
+                    >
+                      <option value="efectivo">Efectivo</option>
+                      <option value="cuenta_ernesto">Cuenta Ernesto</option>
+                      <option value="cuenta_olga">Cuenta Olga</option>
+                      <option value="cuenta_juan">Cuenta Juan</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               {/* IVA */}
@@ -1895,6 +1980,29 @@ export default function Creditos() {
                             <option value="cuenta_olga">Cuenta Olga</option>
                             <option value="cuenta_juan">Cuenta Juan</option>
                           </select>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                            <input
+                              type="date"
+                              value={abonoFecha}
+                              onChange={(e) => setAbonoFecha(e.target.value)}
+                              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                              aria-label="Fecha del abono"
+                            />
+                            <input
+                              type="date"
+                              value={abonoVentaFecha}
+                              onChange={(e) => setAbonoVentaFecha(e.target.value)}
+                              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                              aria-label="Fecha de Ventas Diarias"
+                            />
+                            <input
+                              type="text"
+                              placeholder="No. Remisión / REF"
+                              value={abonoRef}
+                              onChange={(e) => setAbonoRef(e.target.value.slice(0, 35))}
+                              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                            />
+                          </div>
                           <p className="text-[10px] text-muted-foreground mb-2">
                             Selecciona el/los producto(s) a pagar:
                           </p>

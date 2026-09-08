@@ -14,6 +14,7 @@ import {
 } from "@workspace/api-client-react";
 import {
   diasVencidos,
+  fechaHoyColombia,
   formatearMora,
   formatCurrency,
   formatTelefono,
@@ -96,6 +97,9 @@ const emptyForm = {
   telefonoCliente: "",
   placaVehiculo: "",
   valorAbonado: "0",
+  abonoInicialFecha: new Date().toISOString().split("T")[0],
+  abonoInicialRef: "",
+  abonoInicialFormaPago: "efectivo",
   descripcion: "",
 };
 
@@ -128,6 +132,8 @@ export default function NosDebePage() {
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [showPay, setShowPay] = useState<number | null>(null);
   const [abono, setAbono] = useState("");
+  const [abonoFecha, setAbonoFecha] = useState(fechaHoyColombia());
+  const [abonoVentaFecha, setAbonoVentaFecha] = useState(fechaHoyColombia());
   const [abonoFormaPago, setAbonoFormaPago] = useState("efectivo");
   const [lineasSeleccionadas, setLineasSeleccionadas] = useState<number[]>([]);
   const [busqueda, setBusqueda] = useState("");
@@ -303,6 +309,9 @@ export default function NosDebePage() {
       telefonoCliente: c.telefonoCliente || "",
       placaVehiculo: c.placaVehiculo || "",
       valorAbonado: String(c.valorAbonado || 0),
+      abonoInicialFecha: "",
+      abonoInicialRef: "",
+      abonoInicialFormaPago: "efectivo",
       descripcion: c.descripcion || "",
     });
     const moLine = c.lineas.find((l: any) => l.productoNombre === MO_NOMBRE);
@@ -358,6 +367,8 @@ export default function NosDebePage() {
     const errors: string[] = [];
     if (!form.nombreCliente.trim()) errors.push("El nombre es obligatorio");
     if (!form.fechaFactura) errors.push("La fecha es obligatoria");
+    if ((parseFloat(form.valorAbonado) || 0) > 0 && !form.abonoInicialFecha)
+      errors.push("La fecha del abono inicial es obligatoria");
     if (baseTotal <= 0) errors.push("Agrega al menos un producto con precio");
     if (
       manoObra.activo &&
@@ -458,6 +469,25 @@ export default function NosDebePage() {
       const { total: _t, prevAbonado: _p, ...rest } = l;
       return { ...rest, valorAbonado: applied };
     });
+    if (!editingId && initialAbono > 0) {
+      const detalle = payloadLineas
+        .filter((l: any) => l.valorAbonado > 0)
+        .map((l: any) => `${l.valorAbonado >= l.cantidad * l.precioVenta ? "PAGO COMPLETO" : "ABONO PARCIAL"}: ${l.productoNombre} - ${formatCurrency(l.valorAbonado)}`)
+        .join("\n");
+      const confirmado = window.confirm(
+        `Ventas Diarias para el abono inicial (${formatCurrency(initialAbono)}):\n\n${detalle}\n\n¿Confirmas registrar estos productos en Ventas Diarias?`,
+      );
+      if (!confirmado) return;
+      const fechaVenta = window.prompt(
+        "¿En qué fecha se descargan estos productos en Ventas Diarias?\nDeja la fecha de hoy o escribe otra fecha (AAAA-MM-DD).",
+        fechaHoyColombia(),
+      );
+      if (!fechaVenta || !/^\d{4}-\d{2}-\d{2}$/.test(fechaVenta)) {
+        alert("La fecha de Ventas Diarias no es válida");
+        return;
+      }
+      (form as any).abonoInicialVentaFecha = fechaVenta;
+    }
 
     const data = {
       tipo: TIPO,
@@ -470,6 +500,14 @@ export default function NosDebePage() {
       valorAbonado: editingId
         ? parseFloat(form.valorAbonado) || 0
         : initialAbono,
+      ...(!editingId && initialAbono > 0
+        ? {
+            abonoInicialFecha: form.abonoInicialFecha,
+            abonoInicialVentaFecha: (form as any).abonoInicialVentaFecha,
+            abonoInicialRef: form.abonoInicialRef.trim() || undefined,
+            abonoInicialFormaPago: form.abonoInicialFormaPago,
+          }
+        : {}),
       lineas: payloadLineas,
       // El servidor crea/actualiza/revierte la distribución de trabajadores de forma atómica
       manoObra:
@@ -601,6 +639,8 @@ export default function NosDebePage() {
   const resetPay = () => {
     setShowPay(null);
     setAbono("");
+    setAbonoFecha(fechaHoyColombia());
+    setAbonoVentaFecha(fechaHoyColombia());
     setLineasSeleccionadas([]);
     setEditingAbonoId(null);
     setAbonoFormaPago("efectivo");
@@ -624,6 +664,8 @@ export default function NosDebePage() {
     }
     setPendingAbonoCredit(c);
     setRefTexto("");
+    setAbonoFecha(fechaHoyColombia());
+    setAbonoVentaFecha(fechaHoyColombia());
     setShowRefModal(true);
   };
 
@@ -650,6 +692,19 @@ export default function NosDebePage() {
         return { lineaId: l.id, valor: v };
       })
       .filter((la: any) => la.valor > 0);
+    const sumaLineas = lineasAbono.reduce((suma: number, linea: any) => suma + linea.valor, 0);
+    if (Math.abs(sumaLineas - abonoNum) > 0.01) {
+      alert("La suma de los productos seleccionados no coincide con el valor del abono");
+      return;
+    }
+    const detalle = lineasAbono
+      .map((linea: any) => {
+        const producto = selected.find((item: any) => item.id === linea.lineaId);
+        const total = producto ? parseFloat(producto.cantidad) * parseFloat(producto.precioVenta) : 0;
+        return `${linea.valor >= total - 0.01 ? "PAGO COMPLETO" : "ABONO PARCIAL"}: ${producto?.productoNombre || "Producto"} - ${formatCurrency(linea.valor)}`;
+      })
+      .join("\n");
+    if (!window.confirm(`Ventas Diarias para el abono (${formatCurrency(abonoNum)}):\n\n${detalle}\n\n¿Confirmas registrar estos productos?`)) return;
 
     const onSuccess = () => {
       queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
@@ -659,7 +714,7 @@ export default function NosDebePage() {
       resetPay();
     };
 
-    const data: any = { valor: abonoNum, lineas: lineasAbono };
+    const data: any = { valor: abonoNum, lineas: lineasAbono, fechaAbono: abonoFecha, fechaVentaDiaria: abonoVentaFecha };
     if (refTexto.trim()) data.customRef = refTexto.trim();
     if (abonoFormaPago) data.formaPago = abonoFormaPago;
 
@@ -1364,6 +1419,34 @@ export default function NosDebePage() {
                   }
                   className="w-40 bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
                 />
+                {!editingId && (parseFloat(form.valorAbonado) || 0) > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 max-w-2xl">
+                    <input
+                      type="date"
+                      value={form.abonoInicialFecha}
+                      onChange={(e) => setForm({ ...form, abonoInicialFecha: e.target.value })}
+                      className="bg-background border border-border px-3 py-2 rounded-xl text-sm"
+                      aria-label="Fecha del abono inicial"
+                    />
+                    <input
+                      type="text"
+                      placeholder="No. Remisión / REF"
+                      value={form.abonoInicialRef}
+                      onChange={(e) => setForm({ ...form, abonoInicialRef: e.target.value.slice(0, 35) })}
+                      className="bg-background border border-border px-3 py-2 rounded-xl text-sm"
+                    />
+                    <select
+                      value={form.abonoInicialFormaPago}
+                      onChange={(e) => setForm({ ...form, abonoInicialFormaPago: e.target.value })}
+                      className="bg-background border border-border px-3 py-2 rounded-xl text-sm"
+                    >
+                      <option value="efectivo">Efectivo</option>
+                      <option value="cuenta_ernesto">Cuenta Ernesto</option>
+                      <option value="cuenta_olga">Cuenta Olga</option>
+                      <option value="cuenta_juan">Cuenta Juan</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               {/* IVA */}
@@ -1990,6 +2073,24 @@ export default function NosDebePage() {
               }}
               className="w-full bg-background border border-border px-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none"
             />
+            <label className="block text-xs font-medium text-muted-foreground">
+              Fecha del abono
+              <input
+                type="date"
+                value={abonoFecha}
+                onChange={(e) => setAbonoFecha(e.target.value)}
+                className="w-full mt-1 bg-background border border-border px-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none"
+              />
+            </label>
+            <label className="block text-xs font-medium text-muted-foreground">
+              Fecha para Ventas Diarias
+              <input
+                type="date"
+                value={abonoVentaFecha}
+                onChange={(e) => setAbonoVentaFecha(e.target.value)}
+                className="w-full mt-1 bg-background border border-border px-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none"
+              />
+            </label>
             <p className="text-[10px] text-muted-foreground text-right">
               {refTexto.length}/35
             </p>

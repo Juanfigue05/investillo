@@ -379,7 +379,6 @@ export default function Compras() {
       : null;
     const pcActual = prod ? prod.precioCompra : 0;
     const pvSinIvaActual = prod ? prod.precioVentaSinIva : 0;
-    const pvConIvaActual = prod ? prod.precioVentaConIva : 0;
 
     const cambioPrecioCompra =
       pcNuevo !== null && Math.abs(pcNuevo - pcActual) > 0.01;
@@ -392,13 +391,13 @@ export default function Compras() {
         compra,
         form: { ...llegadaForm },
         precioCompraAnterior: pcActual,
-        precioVentaAnterior: pvConIvaActual,
+        precioVentaAnterior: pvSinIvaActual,
         precioCompraNuevo: pcNuevo ?? pcActual,
         precioVentaNuevo: pvNuevo
           ? llegadaForm.tieneIva
-            ? Math.ceil((pvNuevo * 1.19) / 1000) * 1000
+            ? pvNuevo
             : pvNuevo
-          : pvConIvaActual,
+          : pvSinIvaActual,
       });
     } else {
       // No price change — just record (always writes to historial)
@@ -711,7 +710,7 @@ export default function Compras() {
               </div>
               <div className="flex justify-between font-medium">
                 <span className="text-muted-foreground">
-                  P. Venta nuevo (c/IVA):
+                  P. Venta nuevo (sin IVA):
                 </span>
                 <span
                   className={
@@ -1389,11 +1388,11 @@ export default function Compras() {
                                 <div
                                   className={`overflow-x-auto mt-2 bg-card border border-border rounded-2xl ${mesAbierto ? "" : "hidden"} ${claveMes === mesImprimir ? "print:block" : "print:hidden"}`}
                                 >
-                                  <table className="w-full text-sm text-left">
+                                  <table className="compras-print-table w-full text-sm text-left">
                                     <thead>
                                       <tr className="bg-muted text-muted-foreground border-b border-border">
                                         <th className="px-4 py-3 font-medium whitespace-nowrap">
-                                          Fecha Llegada
+                                          Fecha
                                         </th>
                                         <th className="px-4 py-3 font-medium whitespace-nowrap">
                                           Producto

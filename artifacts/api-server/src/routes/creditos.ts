@@ -265,6 +265,10 @@ router.post("/", async (req, res) => {
     descripcion,
     valorCredito,
     valorAbonado,
+    abonoInicialFecha,
+    abonoInicialVentaFecha,
+    abonoInicialRef,
+    abonoInicialFormaPago,
     lineas = [],
     manoObra,
   } = req.body as {
@@ -277,9 +281,35 @@ router.post("/", async (req, res) => {
     descripcion?: string;
     valorCredito: number;
     valorAbonado?: number;
+    abonoInicialFecha?: string;
+    abonoInicialVentaFecha?: string;
+    abonoInicialRef?: string;
+    abonoInicialFormaPago?: string;
     lineas: CreditoLineaInput[];
     manoObra?: CreditoManoObraInput | null;
   };
+
+  const abonoInicial = parseFloat(String(valorAbonado || 0));
+  const detalleInicial = (lineas || [])
+    .filter((linea) => Number(linea.valorAbonado || 0) > 0)
+    .map((linea) => ({ linea, valor: parseFloat(String(linea.valorAbonado || 0)) }));
+  const sumaInicial = detalleInicial.reduce((suma, item) => suma + item.valor, 0);
+  if (!Number.isFinite(abonoInicial) || abonoInicial < 0 || abonoInicial > parseFloat(String(valorCredito)) + 1) {
+    res.status(400).json({ error: "El abono inicial no puede superar el valor del crédito" });
+    return;
+  }
+  if (abonoInicial > 0 && (!abonoInicialFecha || !/^\d{4}-\d{2}-\d{2}$/.test(abonoInicialFecha))) {
+    res.status(400).json({ error: "La fecha del abono inicial es obligatoria" });
+    return;
+  }
+  if (abonoInicial > 0 && abonoInicialVentaFecha && !/^\d{4}-\d{2}-\d{2}$/.test(abonoInicialVentaFecha)) {
+    res.status(400).json({ error: "La fecha de Ventas Diarias no es válida" });
+    return;
+  }
+  if (Math.abs(sumaInicial - abonoInicial) > 0.01) {
+    res.status(400).json({ error: "La suma de los productos del abono inicial debe coincidir con su valor" });
+    return;
+  }
 
   let credito;
   try {
@@ -295,12 +325,14 @@ router.post("/", async (req, res) => {
         telefonoCliente: telefonoCliente || null,
         descripcion: descripcion || null,
         valorCredito: String(parseFloat(String(valorCredito))),
-        valorAbonado: String(parseFloat(String(valorAbonado || 0))),
+        valorAbonado: String(abonoInicial),
       })
       .returning();
 
+    if (manoObra !== undefined) await syncManoObraCredito(tx, created, manoObra);
+
     if (Array.isArray(lineas) && lineas.length > 0) {
-      await tx.insert(creditoLineasTable).values(
+      const lineasCreadas = await tx.insert(creditoLineasTable).values(
         lineas.map((linea) => ({
           creditoId: created.id,
           productoId: linea.productoId || null,
@@ -312,15 +344,52 @@ router.post("/", async (req, res) => {
           precioCompra: String(parseFloat(String(linea.precioCompra ?? 0))),
           valorAbonado: String(parseFloat(String(linea.valorAbonado || 0))),
         })),
-      );
+      ).returning();
       // Descontar stock por cada línea con producto vinculado
       for (const linea of lineas) {
         if (linea.productoId) {
           await ajustarStock(tx, linea.productoId, parseFloat(String(linea.cantidad)));
         }
       }
+
+      if (abonoInicial > 0) {
+        const detalleInicialReal = detalleInicial.map(({ linea, valor }) => ({
+          lineaId: lineasCreadas[lineas.indexOf(linea)]?.id,
+          valor,
+        })).filter((detalle): detalle is { lineaId: number; valor: number } => detalle.lineaId != null);
+        const [nuevoAbono] = await tx
+          .insert(abonosCreditosTable)
+          .values({
+            creditoId: created.id,
+            fecha: abonoInicialFecha!,
+            valorTotal: String(abonoInicial),
+            lineaDetalle: JSON.stringify({
+              ref: abonoInicialRef?.trim() || undefined,
+              formaPago: abonoInicialFormaPago || undefined,
+              ventaFecha: abonoInicialVentaFecha || abonoInicialFecha,
+              lineas: detalleInicialReal,
+            }),
+          })
+          .returning();
+        for (const { linea, valor } of detalleInicial) {
+          const indice = lineas.indexOf(linea);
+          const lineaCreada = lineasCreadas[indice];
+          if (!lineaCreada) continue;
+          const total = toNum(lineaCreada.cantidad) * toNum(lineaCreada.precioVenta);
+          await crearFilaVentaPago(
+            tx,
+            created,
+            lineaCreada,
+            valor,
+            Math.abs(valor - total) < 1,
+            nuevoAbono.id,
+            abonoInicialVentaFecha || abonoInicialFecha!,
+            abonoInicialRef?.trim() || undefined,
+            abonoInicialFormaPago,
+          );
+        }
+      }
     }
-    if (manoObra !== undefined) await syncManoObraCredito(tx, created, manoObra);
     return created;
     });
   } catch (err) {
@@ -460,6 +529,10 @@ router.put("/:id", async (req, res) => {
         const delta = (newStock.get(pid) ?? 0) - (oldStock.get(pid) ?? 0);
         await ajustarStock(tx, pid, delta);
       }
+
+      // La distribución de abonos puede cambiar al editar las líneas o el total.
+      // Reconstruir las filas evita que Ventas Diarias conserve el estado anterior.
+      await rebuildVentasCredito(tx, updated);
     }
 
     // Sincronizar mano de obra solo si el campo viene en el body (undefined = sin cambios)
@@ -486,7 +559,7 @@ router.post("/:id/abono", async (req, res) => {
     if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   }
   const creditoId = parseInt(req.params.id);
-  const { valor, lineas, customRef, formaPago } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string; formaPago?: string };
+  const { valor, lineas, customRef, formaPago, fechaAbono, fechaVentaDiaria } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string; formaPago?: string; fechaAbono?: string; fechaVentaDiaria?: string };
   const abonoTotal = parseFloat(String(valor));
 
   if (!Number.isFinite(abonoTotal) || abonoTotal <= 0 || !Array.isArray(lineas) || lineas.length === 0) {
@@ -527,7 +600,12 @@ router.post("/:id/abono", async (req, res) => {
     return;
   }
 
-  const hoy = fechaHoyColombia();
+  const hoy = fechaAbono || fechaHoyColombia();
+  const fechaVenta = fechaVentaDiaria || fechaHoyColombia();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(hoy) || !/^\d{4}-\d{2}-\d{2}$/.test(fechaVenta)) {
+    res.status(400).json({ error: "La fecha del abono es obligatoria y no es válida" });
+    return;
+  }
   const updated = await db.transaction(async (tx) => {
     // Aplicar el abono a las líneas del crédito
     for (const { linea, valor: av } of applied) {
@@ -549,6 +627,7 @@ router.post("/:id/abono", async (req, res) => {
     const lineaDetalle = JSON.stringify({
       ref: customRef || undefined,
       formaPago: formaPago || undefined,
+      ventaFecha: fechaVenta,
       lineas: applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })),
     });
     const [newAbono] = await tx
@@ -562,7 +641,7 @@ router.post("/:id/abono", async (req, res) => {
       const antes = toNum(linea.valorAbonado); // valor antes de este abono
       const restante = Math.max(0, total - antes);
       const pagaCompleto = Math.abs(av - restante) < 1;
-      await crearFilaVentaPago(tx, updatedCredito, linea, av, pagaCompleto, newAbono.id, hoy, customRef, formaPago);
+      await crearFilaVentaPago(tx, updatedCredito, linea, av, pagaCompleto, newAbono.id, fechaVenta, customRef, formaPago);
     }
 
     return updatedCredito;
@@ -656,7 +735,7 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
   }
   const creditoId = parseInt(req.params.id);
   const abonoId = parseInt(req.params.abonoId);
-  const { valor, lineas, customRef, formaPago } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string; formaPago?: string };
+  const { valor, lineas, customRef, formaPago, fechaAbono, fechaVentaDiaria } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string; formaPago?: string; fechaAbono?: string; fechaVentaDiaria?: string };
   const abonoTotal = parseFloat(String(valor));
 
   if (!Number.isFinite(abonoTotal) || abonoTotal <= 0 || !Array.isArray(lineas) || lineas.length === 0) {
@@ -716,10 +795,13 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
       .returning();
 
     // Actualizar el registro del abono con el nuevo valor y detalle
-    const hoy = new Date().toISOString().split("T")[0];
+    const hoy = fechaAbono || fechaHoyColombia();
+    const fechaVenta = fechaVentaDiaria || fechaHoyColombia();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(hoy) || !/^\d{4}-\d{2}-\d{2}$/.test(fechaVenta)) throw new Error("La fecha del abono es obligatoria y no es válida");
     const lineaDetalle = JSON.stringify({
       ref: customRef || undefined,
       formaPago: formaPago || undefined,
+      ventaFecha: fechaVenta,
       lineas: applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })),
     });
     await tx
@@ -949,7 +1031,8 @@ async function rebuildVentasCredito(tx: Tx, credito: typeof creditosTable.$infer
       const antes = running.get(lineaId) ?? 0;
       const restante = Math.max(0, total - antes);
       const pagaCompleto = Math.abs(valor - restante) < 1;
-      await crearFilaVentaPago(tx, credito, linea, valor, pagaCompleto, abono.id, abono.fecha, abonoCustomRef, abonoFormaPago);
+      const fechaVenta = Array.isArray(_raw) ? abono.fecha : (_raw.ventaFecha || abono.fecha);
+      await crearFilaVentaPago(tx, credito, linea, valor, pagaCompleto, abono.id, fechaVenta, abonoCustomRef, abonoFormaPago);
       running.set(lineaId, antes + valor);
     }
   }

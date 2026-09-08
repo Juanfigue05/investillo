@@ -1288,6 +1288,16 @@ components:
           type: number
         valorAbonado:
           type: number
+        abonoInicialFecha:
+          type: string
+          format: date
+        abonoInicialVentaFecha:
+          type: string
+          format: date
+        abonoInicialRef:
+          type: string
+        abonoInicialFormaPago:
+          type: string
         lineas:
           type: array
           items:
@@ -1465,6 +1475,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CreditoAbonoLineaInput"
+        fechaAbono:
+          type: string
+          format: date
+        fechaVentaDiaria:
+          type: string
+          format: date
+        customRef:
+          type: string
+        formaPago:
+          type: string
       required:
         - valor
         - lineas

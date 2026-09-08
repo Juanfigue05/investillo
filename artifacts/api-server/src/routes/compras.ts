@@ -11,7 +11,10 @@ function toNum(v: unknown): number {
   return typeof v === "string" ? parseFloat(v) : Number(v);
 }
 
-function mapCompra(c: typeof comprasTable.$inferSelect) {
+function mapCompra(
+  c: typeof comprasTable.$inferSelect,
+  precioVentaSinIva?: unknown,
+) {
   return {
     id: c.id,
     productoId: c.productoId,
@@ -25,7 +28,12 @@ function mapCompra(c: typeof comprasTable.$inferSelect) {
     fechaLlegada: c.fechaLlegada || null,
     proveedor: c.proveedor || null,
     precioCompraRegistrado: c.precioCompraRegistrado ? toNum(c.precioCompraRegistrado) : null,
-    precioVentaRegistrado: c.precioVentaRegistrado ? toNum(c.precioVentaRegistrado) : null,
+    precioVentaRegistrado:
+      precioVentaSinIva != null
+        ? toNum(precioVentaSinIva)
+        : c.precioVentaRegistrado
+          ? toNum(c.precioVentaRegistrado)
+          : null,
     creadoEn: c.creadoEn,
     actualizadoEn: c.actualizadoEn,
   };
@@ -37,8 +45,15 @@ function calcPrecioConIva(precioSinIva: number): number {
 }
 
 router.get("/", async (req, res) => {
-  const compras = await db.select().from(comprasTable).orderBy(comprasTable.estado, comprasTable.creadoEn);
-  res.json(compras.map(mapCompra));
+  const compras = await db
+    .select({
+      compra: comprasTable,
+      precioVentaSinIva: productosTable.precioVentaSinIva,
+    })
+    .from(comprasTable)
+    .leftJoin(productosTable, eq(comprasTable.productoId, productosTable.id))
+    .orderBy(comprasTable.estado, comprasTable.creadoEn);
+  res.json(compras.map(({ compra, precioVentaSinIva }) => mapCompra(compra, precioVentaSinIva)));
 });
 
 router.post("/", async (req, res) => {
@@ -92,6 +107,7 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
 
   let precioCompraFinal: number | null = null;
   let precioVentaFinal: number | null = null;
+  let precioVentaSinIvaRegistrado: number | null = null;
   let preciosModificados = false;
 
   if (estado === "llegado" && cantidadRecibida) {
@@ -115,6 +131,7 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
 
       if (nuevoPrecioVentaSinIva !== undefined && nuevoPrecioVentaSinIva !== "") {
         const pvSinIva = parseFloat(String(nuevoPrecioVentaSinIva));
+        precioVentaSinIvaRegistrado = pvSinIva;
         precioVentaFinal = calcPrecioConIva(pvSinIva);
         if (Math.abs(precioVentaFinal - toNum(producto.precioVentaConIva)) > 0.01) preciosModificados = true;
         if (actualizarPrecioInventario !== false) {
@@ -124,6 +141,7 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
         }
       } else {
         precioVentaFinal = toNum(producto.precioVentaConIva);
+        precioVentaSinIvaRegistrado = toNum(producto.precioVentaSinIva);
       }
 
       await db.update(productosTable).set(updateProd).where(eq(productosTable.id, existing.productoId));
@@ -149,7 +167,10 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
   if (estado === "llegado") updateData.fechaLlegada = fechaLlegada || fechaHoyColombia();
   if (proveedor !== undefined) updateData.proveedor = proveedor || null;
   if (precioCompraFinal !== null) updateData.precioCompraRegistrado = String(precioCompraFinal);
-  if (precioVentaFinal !== null) updateData.precioVentaRegistrado = String(precioVentaFinal);
+  if (precioVentaFinal !== null) {
+    // Compras muestra y conserva el precio de venta sin IVA.
+    updateData.precioVentaRegistrado = String(precioVentaSinIvaRegistrado ?? precioVentaFinal);
+  }
 
   const [compra] = await db.update(comprasTable).set(updateData).where(eq(comprasTable.id, id)).returning();
   return { compra, preciosModificados };

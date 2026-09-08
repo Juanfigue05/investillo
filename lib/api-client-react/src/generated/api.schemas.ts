@@ -203,6 +203,10 @@ export interface CreditoInput {
   descripcion?: string | null;
   valorCredito: number;
   valorAbonado: number;
+  abonoInicialFecha?: string;
+  abonoInicialVentaFecha?: string;
+  abonoInicialRef?: string;
+  abonoInicialFormaPago?: string;
   lineas: CreditoLineaInput[];
   manoObra?: CreditoManoObraInput;
 }
@@ -229,6 +233,10 @@ export interface CreditoAbonoLineaInput {
 export interface CreditoAbonoInput {
   valor: number;
   lineas: CreditoAbonoLineaInput[];
+  fechaAbono?: string;
+  fechaVentaDiaria?: string;
+  customRef?: string;
+  formaPago?: string;
 }
 
 export interface HistorialPrecio {
