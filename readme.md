@@ -116,13 +116,22 @@ El backend requiere `DATABASE_URL` incluso para importar módulos en pruebas. Si
 - **Buscador de productos mejorado:** al buscar un producto en Ventas, Créditos o Nos Debe, se puede buscar por nombre, código o marca, y se ve el stock y el precio antes de seleccionar.
 - **Instalable como PWA:** desde el Dashboard o desde la barra de direcciones del navegador (Chrome/Edge).
 
+### 3.4 Cómo funciona el modo sin conexión y la sincronización
+
+- La computadora de la oficina trabaja contra su PostgreSQL local. Por eso, una caída de internet no debe detener las operaciones normales ni borrar las ventas que ya estaban registradas.
+- Si una operación del navegador no logra comunicarse con el API, queda guardada en IndexedDB como `pendiente`. Cuando vuelve la conexión, se intenta sincronizar inmediatamente y también cada 30 segundos mientras la aplicación está abierta.
+- La tarea programada de Windows ejecuta `pnpm.cmd run sync:all` cada 5 minutos. Funciona aunque la aplicación web esté cerrada: primero sube las operaciones locales pendientes y con error, y después descarga cambios remotos.
+- Cada operación tiene un `operationId` único. El API conserva ese identificador y, si la misma operación se reintenta, devuelve el resultado anterior en lugar de crear otra venta. Las ventas nuevas se agregan; no reemplazan las ventas anteriores.
+- Las operaciones se procesan en orden. Un error de conexión se reintenta automáticamente; un error real del servidor queda marcado como `error` con su motivo para revisarlo antes de volver a intentar.
+- Antes de usar una computadora sin internet, la base local debe tener una carga inicial de los datos históricos. No se debe restaurar una copia completa de Supabase encima de una base local que ya tenga operaciones nuevas.
+
 ### Tareas automáticas recomendadas (Programador de Tareas de Windows)
 
 | Tarea                               | Frecuencia        | Comando (en "Acción" → "Iniciar un programa")                                                                     |
 | ----------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Respaldo PostgreSQL local            | Diaria            | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run backup:local >> logs\backup-local.txt 2>&1`                    |
 | Verificación PostgreSQL local        | Diaria            | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run verificar:local >> logs\consistencia-local.txt 2>&1`           |
-| Sincronización local ↔ Render/Supabase| Cada 5 minutos    | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run sync:all >> logs\sincronizacion.txt 2>&1` |
+| Sincronización local ↔ Render/Supabase| Cada 5 minutos    | `cmd.exe /c cd /d "C:\ruta\investillo" && if not exist logs mkdir logs && pnpm.cmd run sync:all >> logs\sincronizacion.txt 2>&1` |
 | Limpieza de eventos sincronizados    | Mensual           | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run limpiar-operaciones:local >> logs\limpieza-local.txt 2>&1`    |
 | Inicio automático del sistema local | Al iniciar sesión | Ver abajo — versión más confiable que un simple acceso directo                                                    |
 
@@ -155,12 +164,14 @@ Las tareas de respaldo, verificación, sincronización y limpieza se crean de la
    - **Programa o script:** escribe únicamente `cmd.exe`
    - **Agregar argumentos (opcional):** aquí sí va el resto del comando completo, por ejemplo:
 
- /c cd /d "C:\ruta\investillo" && pnpm run backup:local >> logs\backup-local.txt 2>&1
+ /c cd /d "C:\ruta\investillo" && if not exist logs mkdir logs && pnpm.cmd run backup:local >> logs\backup-local.txt 2>&1
 
      (cambia `C:\ruta\investillo` por la carpeta real donde tengas el proyecto, y usa el comando correspondiente de la tabla según la tarea que estés creando)
 8. Clic en **Siguiente**, revisa el resumen, y clic en **Finalizar**.
 9. **Paso extra importante:** busca la tarea recién creada en la lista del Programador de Tareas, haz doble clic para abrir sus **Propiedades**, y en la pestaña **General** marca la casilla **"Ejecutar tanto si el usuario inició sesión como si no"** — así la tarea corre igual aunque nadie haya iniciado sesión en Windows en ese momento (por ejemplo, de madrugada).
-10. Repite estos pasos para verificación, sincronización y limpieza, cambiando el nombre, la frecuencia y el comando de "Agregar argumentos" según la tabla. Para sincronización, abre las propiedades de la tarea, pestaña **Desencadenadores**, edita el desencadenador y marca **"Repetir la tarea cada 5 minutos durante 1 día"**.
+10. Repite estos pasos para verificación, sincronización y limpieza, cambiando el nombre, la frecuencia y el comando de "Agregar argumentos" según la tabla. Para sincronización, abre las propiedades de la tarea, pestaña **Desencadenadores**, edita el desencadenador y marca **"Repetir la tarea cada 5 minutos durante 1 día"**. Usa `pnpm.cmd` porque el Programador de tareas ejecuta comandos de Windows directamente.
+
+La tarea `sync:all` hace este recorrido: comprueba que el API remoto esté disponible, sube primero las operaciones locales con estado `pendiente` o `error` y después descarga cambios remotos. Si no hay operaciones pendientes, no sube nada y solo continúa con la descarga. Para probarla sin esperar, ejecuta la tarea con clic derecho → **Ejecutar** y revisa `logs\sincronizacion.txt`.
 
 **Cómo confirmar que sí están funcionando:** haz clic derecho sobre cualquiera de las tareas creadas → **"Ejecutar"** — esto la corre de inmediato, sin esperar a la fecha programada, para que puedas revisar los archivos de log (`logs\backup-local.txt`, `logs\consistencia-local.txt`, `logs\sincronizacion.txt`, etc.).
 
@@ -433,7 +444,7 @@ Esto compila el sistema y lo deja funcionando como **un solo programa**, disponi
 
 ### Preparar esta computadora para trabajar varios días sin internet
 
-La instalación local usa PostgreSQL en este computador. Esto evita que las operaciones normales dependan de Supabase durante un corte, pero **todavía no significa que la sincronización con Supabase esté terminada**: esa sincronización se incorporará después de migrar todas las escrituras al registro de operaciones.
+La instalación local usa PostgreSQL en este computador. Esto evita que las operaciones normales dependan de Supabase durante un corte. Las operaciones cubiertas por el registro de eventos se conservan localmente y se suben cuando vuelve la conexión.
 
 #### Qué significa cada variable
 
@@ -460,13 +471,11 @@ La instalación local usa PostgreSQL en este computador. Esto evita que las oper
   ```cmd
   pnpm run start:local
   ```
-6. Cuando la conexión vuelva, prueba manualmente la subida con:
+6. Cuando la conexión vuelva, prueba manualmente la sincronización completa con:
   ```cmd
-  pnpm run sync:local
+  pnpm run sync:all
   ```
-  Para automatizarla, crea una tarea de Windows que ejecute cada 5 minutos `cmd.exe` con estos argumentos:
-  `/c cd /d "C:\ruta\investillo" && pnpm run sync:local`.
-  La tarea debe usar la misma carpeta del proyecto para encontrar `.env.local`.
+  Para automatizarla, crea la tarea de Windows descrita en la sección 3.4 y ejecútala cada 5 minutos. La tarea debe usar la misma carpeta del proyecto para encontrar `.env.local`.
   Antes o después puedes revisar la cola con `pnpm run sync:status`. El resultado esperado cuando no hay trabajo pendiente es `Pendientes: 0`, `Con error: 0` y `Conflictos: 0`. Antes de subir una edición, `sync:local` consulta el registro remoto; si detecta una actualización remota posterior, marca `conflicto`, no sobrescribe y detiene `sync:all` antes del pull. Ese caso requiere revisión manual.
 
   7. Programa también un respaldo local diario con `cmd.exe` y estos argumentos:
@@ -503,9 +512,9 @@ Después de esta carga, no vuelvas a restaurar Supabase sobre la base local si y
 
 El acceso directo `investillo.bat` ya exige `.env.local` y usa `start:local`; no arranca accidentalmente contra la base remota. Conserva `.env.api` para las tareas que deban conectarse a Supabase, como verificar o respaldar la base remota.
 
-El trabajo de sincronización se hará en este orden: registro durable de operaciones, migración de todas las escrituras, subida idempotente a Supabase, descarga de cambios y resolución de conflictos. Hasta completar esas etapas, no se debe considerar terminada la operación offline de varios días.
+El trabajo de sincronización se ejecuta en este orden: registro durable de operaciones, subida idempotente a Supabase, descarga de cambios y resolución de conflictos. Las operaciones con conflicto quedan retenidas y no se sobrescriben automáticamente.
 
-**Estado actual de esta implementación:** PostgreSQL local, creación automática de la base, estructura local, respaldos locales y registro inicial de eventos ya están funcionando. La migración de escrituras y la correspondencia entre IDs locales y remotos todavía se están completando por módulos. Por eso no programes `sync:local` de forma permanente ni borres la base remota pensando que ya existe una réplica completa.
+**Estado actual de esta implementación:** PostgreSQL local, creación automática de la base, estructura local, respaldos locales, registro de eventos y sincronización por módulos están implementados. La sincronización debe probarse contra el API remoto y la tarea debe conservar sus logs; no borres la base remota ni restaures una copia completa sobre una base local que ya tenga trabajo propio.
 
 #### Recuperar la base local
 
@@ -805,7 +814,7 @@ Para que sepas qué esperar y qué no, por ahora:
 - Solo está probado en **Windows**, usando la terminal **CMD** (no PowerShell ni Git Bash).
 - Las herramientas `pg_dump`/`pg_restore` que instalas localmente deben ser versión 17 o más nueva (la misma que usa Supabase).
 - **No existe integración con contabilidad formal (PUC/NIIF) ni facturación electrónica DIAN** — se decidió, por ahora, que el sistema se enfoque solo en control interno.
-- La base PostgreSQL local y el arranque local ya están implementados para operar varios días sin internet. La sincronización completa todavía se está ampliando por módulos y debe probarse contra el API remoto antes de declararla lista para producción.
+- La base PostgreSQL local y el arranque local permiten operar varios días sin internet. La sincronización cubre las operaciones registradas en el outbox; antes de producción conviene probar cada módulo contra el API remoto y revisar los logs de la tarea programada.
 - El sistema hoy solo tiene **Render** desplegado en la nube — Railway o Koyeb como segunda plataforma de respaldo quedaron analizados pero sin implementar (no es urgente: el portátil local conecta directo a Supabase, sin depender de Render para nada).
 - El plan gratis de Aiven se pausa si pasan 7 días sin usarlo — si el respaldo automático deja de correr por más de una semana, toca reactivarlo a mano.
 - La importación masiva de clientes detecta duplicados por nombre y por teléfono (compara solo los dígitos, sin importar el formato) — si un número ya está en uso, esa fila queda separada para revisión manual, no se omite en silencio. Correo no se valida contra duplicados.
