@@ -4,14 +4,23 @@
   "license": "MIT",
   "scripts": {
     "start:prod": "pnpm run build && dotenv -e .env.api -- pnpm --filter @workspace/api-server run start",
+    "start:local": "pnpm run build && dotenv -e .env.local -- pnpm --filter @workspace/api-server run start",
     "dev": "concurrently -n API,WEB -c blue,green \"dotenv -e .env.api -- pnpm --filter @workspace/api-server run dev\" \"dotenv -e .env.web -- wait-on http://localhost:8080/api/healthz && dotenv -e .env.web -- pnpm --filter @workspace/gestion run dev\"",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "db:push": "dotenv -e .env.api -- pnpm --filter db run push",
+    "db:push:local": "dotenv -e .env.local -- pnpm --filter db run push",
     "backup": "dotenv -e .env.backup -- pnpm --filter @workspace/scripts run backup",
+    "backup:local": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run backup:local",
+    "sync:local": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run sync:local",
+    "sync:status": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run sync:status",
+    "sync:pull": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run sync:pull",
+    "setup:local": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run setup:local",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "verificar": "dotenv -e .env.api -- pnpm --filter @workspace/scripts run verificar",
-    "limpiar-operaciones": "dotenv -e .env.api -- pnpm --filter @workspace/scripts run limpiar-operaciones"
+    "verificar:local": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run verificar",
+    "limpiar-operaciones": "dotenv -e .env.api -- pnpm --filter @workspace/scripts run limpiar-operaciones",
+    "limpiar-operaciones:local": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run limpiar-operaciones"
   },
   "private": true,
   "devDependencies": {

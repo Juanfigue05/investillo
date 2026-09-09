@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { cierreDiarioTable, trabajadoresTable } from "@workspace/db/schema";
+import { cierreDiarioTable, eventosSincronizacionTable, trabajadoresTable } from "@workspace/db/schema";
 import { eq, desc, sql } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
 
@@ -56,7 +56,7 @@ router.post("/", async (req, res) => {
     const { fecha, datos, totalPagar, editar } = req.body as { fecha: string; datos: unknown; totalPagar: number; editar?: boolean };
     if (!fecha || !datos) { res.status(400).json({ error: "fecha y datos son requeridos" }); return; }
 
-    const operationId = req.header("x-operation-id");
+    const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
     if (operationId) {
       const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
       if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
@@ -89,17 +89,18 @@ router.post("/", async (req, res) => {
           .set({ datos: datos as any, totalPagar: totalPagar ?? 0 })
           .where(eq(cierreDiarioTable.fecha, fecha))
           .returning();
+        if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "cierre_diario", entidadId: String(updated.id), tipo: "guardar", metodo: "POST", endpoint: "/cierre-diario", payload: req.body, origen: "local" });
+        await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "cierre_diario", recursoId: updated.id }).onConflictDoNothing();
         return updated;
       }
       const [created] = await tx
         .insert(cierreDiarioTable)
         .values({ fecha, datos: datos as any, totalPagar: totalPagar ?? 0 })
         .returning();
+      if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "cierre_diario", entidadId: String(created.id), tipo: "guardar", metodo: "POST", endpoint: "/cierre-diario", payload: req.body, origen: "local" });
+      await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "cierre_diario", recursoId: created.id }).onConflictDoNothing();
       return created;
     });
-    if (operationId && resultado) {
-      await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "cierre_diario", recursoId: resultado.id }).onConflictDoNothing();
-    }
     res.status(resultado ? 201 : 500).json(resultado);
   } catch (err) {
     if (String(err).includes("CIERRE_YA_EXISTE")) {
@@ -113,6 +114,9 @@ router.post("/", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
 
     await db.transaction(async (tx) => {
       const [existing] = await tx.select().from(cierreDiarioTable).where(eq(cierreDiarioTable.id, id));
@@ -126,6 +130,8 @@ router.delete("/:id", async (req, res) => {
         }
       }
       await tx.delete(cierreDiarioTable).where(eq(cierreDiarioTable.id, id));
+      if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "cierre_diario", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/cierre-diario/${id}`, payload: {}, origen: "local" });
+      await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "cierre_diario", recursoId: id }).onConflictDoNothing();
     });
 
     res.json({ ok: true });

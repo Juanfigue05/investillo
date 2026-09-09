@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { gruposTrabajoDefaultTable, trabajadoresTable } from "@workspace/db/schema";
+import { eventosSincronizacionTable, gruposTrabajoDefaultTable, operacionesSincronizadasTable, trabajadoresTable } from "@workspace/db/schema";
 import { eq, inArray } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -35,6 +35,9 @@ router.get("/", async (_req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const { trabajadorIds } = req.body as { trabajadorIds: number[] };
   const idsNormalizados = normalizarIds(trabajadorIds);
   if (idsNormalizados.length < 2) {
@@ -47,13 +50,25 @@ router.post("/", async (req, res) => {
     res.status(200).json({ ...existente, trabajadorIds: idsNormalizados });
     return;
   }
-  const [grupo] = await db.insert(gruposTrabajoDefaultTable).values({ trabajadorIds: idsNormalizados }).returning();
+  const grupo = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(gruposTrabajoDefaultTable).values({ trabajadorIds: idsNormalizados }).returning();
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "grupo_trabajo", entidadId: String(created.id), tipo: "crear", metodo: "POST", endpoint: "/grupos-trabajo", payload: req.body, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "grupo_trabajo", recursoId: created.id }).onConflictDoNothing();
+    return created;
+  });
   res.status(201).json(grupo);
 });
 
 router.patch("/:id/desactivar", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const id = parseInt(req.params.id);
-  await db.update(gruposTrabajoDefaultTable).set({ activo: false }).where(eq(gruposTrabajoDefaultTable.id, id));
+  await db.transaction(async (tx) => {
+    await tx.update(gruposTrabajoDefaultTable).set({ activo: false }).where(eq(gruposTrabajoDefaultTable.id, id));
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "grupo_trabajo", entidadId: String(id), tipo: "desactivar", metodo: "PATCH", endpoint: `/grupos-trabajo/${id}/desactivar`, payload: req.body ?? {}, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "grupo_trabajo", recursoId: id }).onConflictDoNothing();
+  });
   res.json({ ok: true });
 });
 

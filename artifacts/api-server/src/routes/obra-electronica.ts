@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { obraElectronicaTable, trabajadoresTable } from "@workspace/db/schema";
+import { eventosSincronizacionTable, obraElectronicaTable, operacionesSincronizadasTable, trabajadoresTable } from "@workspace/db/schema";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
 
 const router = Router();
@@ -44,6 +44,9 @@ router.get("/", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const { trabajadorId, fecha, numeroFactura, vehiculo } = req.body;
   const id = Number(trabajadorId);
   if (!Number.isInteger(id) || !fecha) { res.status(400).json({ error: "Empleado y fecha son obligatorios" }); return; }
@@ -61,11 +64,16 @@ router.post("/", async (req, res) => {
     vehiculo: String(vehiculo || "").trim(),
     valor: String(valor),
   }).returning();
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "obra_electronica", entidadId: String(registro.id), tipo: "crear", metodo: "POST", endpoint: "/obra-electronica", payload: req.body, origen: "local" });
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "obra_electronica", recursoId: registro.id }).onConflictDoNothing();
   res.status(201).json(mapRegistro(registro));
 });
 
 router.put("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = Number(req.params.id);
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const valor = parseValor(req.body.valor);
   if (!Number.isInteger(id) || !req.body.fecha || valor <= 0) { res.status(400).json({ error: "Fecha y valor válido son obligatorios" }); return; }
   const [registro] = await db.update(obraElectronicaTable).set({
@@ -75,13 +83,20 @@ router.put("/:id", async (req, res) => {
     valor: String(valor),
   }).where(eq(obraElectronicaTable.id, id)).returning();
   if (!registro) { res.status(404).json({ error: "Registro no encontrado" }); return; }
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "obra_electronica", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/obra-electronica/${id}`, payload: req.body, origen: "local" });
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "obra_electronica", recursoId: id }).onConflictDoNothing();
   res.json(mapRegistro(registro));
 });
 
 router.delete("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = Number(req.params.id);
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const [registro] = await db.delete(obraElectronicaTable).where(eq(obraElectronicaTable.id, id)).returning({ id: obraElectronicaTable.id });
   if (!registro) { res.status(404).json({ error: "Registro no encontrado" }); return; }
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "obra_electronica", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/obra-electronica/${id}`, payload: {}, origen: "local" });
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "obra_electronica", recursoId: id }).onConflictDoNothing();
   res.json({ ok: true });
 });
 

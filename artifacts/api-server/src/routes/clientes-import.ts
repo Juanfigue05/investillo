@@ -1,7 +1,9 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
-import { pool } from "@workspace/db";
+import { eventosSincronizacionTable, operacionesSincronizadasTable } from "@workspace/db/schema";
+import { pool, db } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
@@ -166,6 +168,9 @@ router.get("/template", (_req, res) => {
 });
 
 router.post("/", upload.single("archivo"), async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   if (!req.file) { res.status(400).json({ error: "No se recibió ningún archivo" }); return; }
   try {
     const { rows, omitidos } = parseExcel(req.file.buffer);
@@ -176,6 +181,8 @@ router.post("/", upload.single("archivo"), async (req, res) => {
     const { validos, conflictos } = await separarConflictosDeTelefono(nuevos);
 
     await insertRows(validos);
+    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "clientes_import", entidadId: operationId, tipo: "importar", metodo: "POST", endpoint: "/clientes-import/sincronizar", payload: { items: validos }, origen: "local" });
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "clientes_import", recursoId: null }).onConflictDoNothing();
 
     res.json({
       ok: true,
@@ -191,8 +198,23 @@ router.post("/", upload.single("archivo"), async (req, res) => {
   }
 });
 
+router.post("/sincronizar", async (req, res) => {
+  const operationId = req.header("x-operation-id");
+  if (!operationId) { res.status(400).json({ error: "x-operation-id es obligatorio" }); return; }
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.json({ ok: true, yaProcesado: true }); return; }
+  const items = req.body?.items as ParsedCliente[];
+  if (!Array.isArray(items)) { res.status(400).json({ error: "items requerido" }); return; }
+  await insertRows(items);
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "clientes_import", recursoId: null }).onConflictDoNothing();
+  res.json({ ok: true, procesados: items.length });
+});
+
 // ─── POST /resolver-telefonos — aplica lo que el usuario decidió para cada conflicto ──
 router.post("/resolver-telefonos", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   try {
     const { items } = req.body as { items: ParsedCliente[] }; // ya vienen editados/decididos desde el frontend
     if (!Array.isArray(items)) { res.status(400).json({ error: "items requerido" }); return; }
@@ -201,6 +223,8 @@ router.post("/resolver-telefonos", async (req, res) => {
     // Vuelve a revisar por si el usuario dejó, sin querer, otro número ya repetido
     const { validos, conflictos } = await separarConflictosDeTelefono(items);
     await insertRows(validos);
+    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "clientes_import", entidadId: operationId, tipo: "resolver", metodo: "POST", endpoint: "/clientes-import/sincronizar", payload: { items: validos }, origen: "local" });
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "clientes_import", recursoId: null }).onConflictDoNothing();
 
     res.json({
       ok: true,

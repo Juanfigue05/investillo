@@ -21,6 +21,7 @@ import reportesRouter from "./reportes";
 import tensionadasRouter from "./tensionadas";
 import obraElectronicaRouter from "./obra-electronica";
 import calculadoraCierreRouter from "./calculadora-cierre";
+import syncRouter from "./sync";
 
 const router: IRouter = Router();
 
@@ -46,5 +47,6 @@ router.use("/tensionadas", tensionadasRouter);
 router.use("/reportes", reportesRouter);
 router.use("/obra-electronica", obraElectronicaRouter);
 router.use("/calculadora-cierre", calculadoraCierreRouter);
+router.use("/sync", syncRouter);
 
 export default router;

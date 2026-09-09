@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
-import { cierreDiarioTable, trabajadoresTable, ventasDiariasTable } from "@workspace/db/schema";
+import { cierreDiarioTable, eventosSincronizacionTable, operacionesSincronizadasTable, trabajadoresTable, ventasDiariasTable } from "@workspace/db/schema";
 import { eq, gte, sql } from "drizzle-orm";
 import { fechaColombia } from "../lib/fecha";
 
@@ -161,6 +161,9 @@ router.get("/nomina", async (req, res) => {
 });
 
 router.patch("/nomina/dia", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const {
     fechaOriginal,
     fecha,
@@ -218,6 +221,8 @@ router.patch("/nomina/dia", async (req, res) => {
         .returning({ id: cierreDiarioTable.id, fecha: cierreDiarioTable.fecha });
       return fila;
     });
+    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "cierre_diario", entidadId: String(actualizado.id), tipo: "editar_nomina", metodo: "PATCH", endpoint: "/reportes/nomina/dia", payload: req.body, origen: "local" });
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "cierre_diario", recursoId: actualizado.id }).onConflictDoNothing();
     res.json(actualizado);
   } catch (error) {
     res.status(409).json({ error: `No se pudo actualizar el cierre: ${String(error)}` });

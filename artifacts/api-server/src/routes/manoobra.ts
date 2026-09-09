@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { manoObraTable, distribucionesTable, trabajadoresTable } from "@workspace/db/schema";
+import { distribucionesTable, eventosSincronizacionTable, manoObraTable, operacionesSincronizadasTable, trabajadoresTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -44,6 +44,9 @@ router.get("/", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const { fecha, descripcion, valorTotal, distribuciones } = req.body;
 
   const [mo] = await db.insert(manoObraTable).values({
@@ -75,11 +78,16 @@ router.post("/", async (req, res) => {
   }
 
   const result = await getManoObraConDistribuciones(mo.id);
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "mano_obra", entidadId: String(mo.id), tipo: "crear", metodo: "POST", endpoint: "/manoobra", payload: req.body, origen: "local" });
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "mano_obra", recursoId: mo.id }).onConflictDoNothing();
   res.status(201).json(result);
 });
 
 router.put("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = parseInt(req.params.id);
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const [existente] = await db.select().from(manoObraTable).where(eq(manoObraTable.id, id));
   if (existente?.creditoId) {
     res.status(409).json({ error: "Esta mano de obra pertenece a un crédito/Nos Debe; edítala desde ese registro" });
@@ -108,11 +116,16 @@ router.put("/:id", async (req, res) => {
   }
 
   const result = await getManoObraConDistribuciones(id);
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "mano_obra", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/manoobra/${id}`, payload: req.body, origen: "local" });
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "mano_obra", recursoId: id }).onConflictDoNothing();
   res.json(result);
 });
 
 router.delete("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = parseInt(req.params.id);
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const [existente] = await db.select().from(manoObraTable).where(eq(manoObraTable.id, id));
   if (existente?.creditoId) {
     res.status(409).json({ error: "Esta mano de obra pertenece a un crédito/Nos Debe; elimínala desde ese registro" });
@@ -120,6 +133,8 @@ router.delete("/:id", async (req, res) => {
   }
   await db.delete(distribucionesTable).where(eq(distribucionesTable.manoObraId, id));
   await db.delete(manoObraTable).where(eq(manoObraTable.id, id));
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "mano_obra", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/manoobra/${id}`, payload: {}, origen: "local" });
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "mano_obra", recursoId: id }).onConflictDoNothing();
   res.json({ mensaje: "Mano de obra eliminada" });
 });
 

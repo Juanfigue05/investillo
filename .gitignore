@@ -32,6 +32,10 @@ node_modules
 /.sass-cache
 /connect.lock
 /coverage
+/scripts/backups/local/
+/scripts/backups/*.dump
+/backups/*.dump
+/logs/
 /libpeerconnection.log
 npm-debug.log
 yarn-error.log

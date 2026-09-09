@@ -6,11 +6,17 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "backup": "tsx ./src/backup.ts",
+    "backup:local": "tsx ./src/backup-local.ts",
+    "sync:local": "tsx ./src/sincronizar-local.ts",
+    "sync:status": "tsx ./src/estado-sincronizacion.ts",
+    "sync:pull": "tsx ./src/sincronizar-remoto.ts",
+    "setup:local": "tsx ./src/preparar-local.ts",
     "verificar": "tsx ./src/verificar-consistencia.ts",
     "limpiar-operaciones": "tsx ./src/limpiar-operaciones-viejas.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@types/pg": "^8.15.5",
     "@types/node": "catalog:",
     "tsx": "catalog:"
   },

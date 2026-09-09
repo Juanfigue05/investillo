@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { historialDiasTable, ventasDiariasTable } from "@workspace/db/schema";
+import { eventosSincronizacionTable, historialDiasTable, operacionesSincronizadasTable, ventasDiariasTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -67,6 +67,9 @@ router.get("/", async (_req, res) => {
 
 // POST /historial — save a day (fecha must be unique)
 router.post("/", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const { fecha, notas } = req.body as { fecha: string; notas?: string };
   if (!fecha) {
     res.status(400).json({ error: "La fecha es obligatoria" });
@@ -77,6 +80,8 @@ router.post("/", async (req, res) => {
       .insert(historialDiasTable)
       .values({ fecha, notas: notas || null })
       .returning();
+    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "historial", entidadId: String(dia.id), tipo: "crear", metodo: "POST", endpoint: "/historial", payload: req.body, origen: "local" });
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "historial", recursoId: dia.id }).onConflictDoNothing();
     res.status(201).json(await mapHistorial(dia));
   } catch {
     // Unique constraint violation = already saved
@@ -94,7 +99,10 @@ router.post("/", async (req, res) => {
 
 // PUT /historial/:id — update notas only, fecha is immutable
 router.put("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = parseInt(req.params.id);
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const { notas } = req.body as { notas?: string | null };
   const [dia] = await db
     .update(historialDiasTable)
@@ -105,13 +113,20 @@ router.put("/:id", async (req, res) => {
     res.status(404).json({ error: "Día no encontrado" });
     return;
   }
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "historial", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/historial/${id}`, payload: req.body, origen: "local" });
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "historial", recursoId: id }).onConflictDoNothing();
   res.json(await mapHistorial(dia));
 });
 
 // DELETE /historial/:id — remove from historial only, ventas stay
 router.delete("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = parseInt(req.params.id);
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   await db.delete(historialDiasTable).where(eq(historialDiasTable.id, id));
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "historial", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/historial/${id}`, payload: {}, origen: "local" });
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "historial", recursoId: id }).onConflictDoNothing();
   res.json({ mensaje: "Eliminado del historial" });
 });
 

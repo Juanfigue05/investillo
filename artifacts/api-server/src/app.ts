@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { capturarCambiosRemotos } from "./middlewares/capturar-cambios-remotos";
 
 const app: Express = express();
 
@@ -29,6 +30,7 @@ app.use(cors());
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+app.use(capturarCambiosRemotos);
 app.use("/api", router);
 
 import path from "node:path";

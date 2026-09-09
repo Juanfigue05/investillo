@@ -9,9 +9,10 @@ import {
   productosTable,
   trabajadoresTable,
   ventasDiariasTable,
+  eventosSincronizacionTable,
+  operacionesSincronizadasTable,
 } from "@workspace/db/schema";
 import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
-import { operacionesSincronizadasTable } from "@workspace/db/schema";
 import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
 
 const router: IRouter = Router();
@@ -250,7 +251,7 @@ router.get("/", async (req, res) => {
 
 // POST /creditos
 router.post("/", async (req, res) => {
-  const operationId = req.header("x-operation-id");
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
     if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
@@ -390,21 +391,22 @@ router.post("/", async (req, res) => {
         }
       }
     }
+    if (!req.header("x-sync-apply")) {
+      await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "credito", entidadId: String(created.id), tipo: "crear", metodo: "POST", endpoint: "/creditos", payload: req.body, origen: "local" });
+    }
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: created.id }).onConflictDoNothing();
     return created;
     });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Error al crear el crédito" });
     return;
   }
-  if (operationId) {
-    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: credito.id }).onConflictDoNothing();
-  }
   res.status(201).json(await mapCredito(credito));
 });
 
 // PUT /creditos/:id
 router.put("/:id", async (req, res) => {
-  const operationId = req.header("x-operation-id");
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
     if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
@@ -538,6 +540,10 @@ router.put("/:id", async (req, res) => {
     // Sincronizar mano de obra solo si el campo viene en el body (undefined = sin cambios)
     if (manoObra !== undefined) await syncManoObraCredito(tx, updated, manoObra);
 
+    if (!req.header("x-sync-apply")) {
+      await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "credito", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/creditos/${id}`, payload: req.body, origen: "local" });
+    }
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: id }).onConflictDoNothing();
     return updated;
     });
   } catch (err) {
@@ -545,15 +551,12 @@ router.put("/:id", async (req, res) => {
     return;
   }
 
-  if (operationId) {
-    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: credito.id }).onConflictDoNothing();
-  }
   res.json(await mapCredito(credito));
 });
 
 // POST /creditos/:id/abono — registra un nuevo abono y crea filas en ventas_diarias
 router.post("/:id/abono", async (req, res) => {
-  const operationId = req.header("x-operation-id");
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
     if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
@@ -644,12 +647,11 @@ router.post("/:id/abono", async (req, res) => {
       await crearFilaVentaPago(tx, updatedCredito, linea, av, pagaCompleto, newAbono.id, fechaVenta, customRef, formaPago);
     }
 
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "credito", entidadId: String(creditoId), tipo: "abono_crear", metodo: "POST", endpoint: `/creditos/${creditoId}/abono`, payload: req.body, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: creditoId }).onConflictDoNothing();
+
     return updatedCredito;
   });
-  
-  if (operationId) {
-    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: credito.id }).onConflictDoNothing();
-  }
   res.json(await mapCredito(updated));
 });
 
@@ -694,8 +696,11 @@ async function revertirAbono(
 
 // DELETE /creditos/:id/abono/:abonoId — elimina un pago y revierte ventas
 router.delete("/:id/abono/:abonoId", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const creditoId = parseInt(req.params.id);
   const abonoId = parseInt(req.params.abonoId);
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
 
   const [abono] = await db
     .select()
@@ -714,6 +719,8 @@ router.delete("/:id/abono/:abonoId", async (req, res) => {
 
       // 3. Borrar el registro del abono en sí
       await tx.delete(abonosCreditosTable).where(eq(abonosCreditosTable.id, abonoId));
+      if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "credito", entidadId: String(creditoId), tipo: "abono_eliminar", metodo: "DELETE", endpoint: `/creditos/${creditoId}/abono/${abonoId}`, payload: {}, origen: "local" });
+      await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: creditoId }).onConflictDoNothing();
 
       const [creditoActualizado] = await tx.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
       return creditoActualizado;
@@ -728,7 +735,7 @@ router.delete("/:id/abono/:abonoId", async (req, res) => {
 
 // PUT /creditos/:id/abono/:abonoId — edita un pago (revierte el anterior y aplica el nuevo)
 router.put("/:id/abono/:abonoId", async (req, res) => {
-  const operationId = req.header("x-operation-id");
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
     if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
@@ -812,9 +819,8 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
     // Reconstruir TODAS las filas de Ventas de los pagos de este crédito en orden
     // cronológico (el estado completo/parcial de otros pagos puede haber cambiado)
     await rebuildVentasCredito(tx, updatedCredito);
-    if (operationId) {
-      await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: credito.id }).onConflictDoNothing();
-    }
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "credito", entidadId: String(creditoId), tipo: "abono_actualizar", metodo: "PUT", endpoint: `/creditos/${creditoId}/abono/${abonoId}`, payload: req.body, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: creditoId }).onConflictDoNothing();
     return updatedCredito;
   });
 
@@ -824,7 +830,10 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
 
 // DELETE /creditos/:id
 router.delete("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = parseInt(req.params.id);
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   await db.transaction(async (tx) => {
     // Revertir y eliminar la mano de obra vinculada (resta totalGanado de los trabajadores)
     const [existing] = await tx.select().from(creditosTable).where(eq(creditosTable.id, id));
@@ -847,6 +856,8 @@ router.delete("/:id", async (req, res) => {
     await tx.delete(creditoLineasTable).where(eq(creditoLineasTable.creditoId, id));
     await tx.delete(abonosCreditosTable).where(eq(abonosCreditosTable.creditoId, id));
     await tx.delete(creditosTable).where(eq(creditosTable.id, id));
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "credito", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/creditos/${id}`, payload: {}, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: id }).onConflictDoNothing();
   });
   res.json({ mensaje: "Credito eliminado" });
 });

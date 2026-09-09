@@ -1,5 +1,3 @@
-// pg no incluye declaraciones de tipos en esta instalación.
-// @ts-expect-error: el módulo se usa correctamente en tiempo de ejecución.
 import pg from "pg";
 const { Pool } = pg;
 
@@ -10,7 +8,8 @@ const DIAS_A_CONSERVAR = 60; // de sobra — nadie reintenta algo offline despu�
 async function main() {
   const pool = new Pool({ connectionString: DATABASE_URL });
   const res = await pool.query(`DELETE FROM operaciones_sincronizadas WHERE creado_en < now() - interval '${DIAS_A_CONSERVAR} days'`);
-  console.log(`🧹 Se limpiaron ${res.rowCount} registro(s) antiguos (más de ${DIAS_A_CONSERVAR} días) de la tabla anti-duplicados.`);
+  const eventos = await pool.query(`DELETE FROM eventos_sincronizacion WHERE estado = 'sincronizado' AND procesado_en < now() - interval '${DIAS_A_CONSERVAR} days'`);
+  console.log(`Limpieza: ${res.rowCount} operaciones anti-duplicados y ${eventos.rowCount} eventos sincronizados antiguos.`);
   await pool.end();
 }
 

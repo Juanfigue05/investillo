@@ -4,7 +4,6 @@
 
 Funciona incluso **sin conexión a internet** (los datos se guardan en el computador y se sincronizan solos cuando vuelve la señal), y se puede **instalar como una app** en Windows, con su propio ícono, como si fuera un programa normal.
 
----
 
 ## 🗺️ Tabla de contenidos
 
@@ -21,7 +20,6 @@ Funciona incluso **sin conexión a internet** (los datos se guardan en el comput
 11. [Consejos para que todo funcione bien](#11--consejos-para-que-todo-funcione-bien)
 12. [Referencia de costos](#12--referencia-de-costos)
 
----
 
 ## 1. 🧭 ¿Qué hace cada página del sistema?
 
@@ -122,31 +120,33 @@ El backend requiere `DATABASE_URL` incluso para importar módulos en pruebas. Si
 
 | Tarea                               | Frecuencia        | Comando (en "Acción" → "Iniciar un programa")                                                                     |
 | ----------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Respaldo + verificación             | Semanal           | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run backup >> backups\log.txt 2>&1` y después `pnpm run verificar` |
-| Revisión de consistencia            | Diaria            | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run verificar >> logs\consistencia.txt 2>&1`                       |
-| Limpieza de operaciones viejas      | Mensual           | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run limpiar-operaciones >> logs\limpieza.txt 2>&1`                 |
+| Respaldo PostgreSQL local            | Diaria            | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run backup:local >> logs\backup-local.txt 2>&1`                    |
+| Verificación PostgreSQL local        | Diaria            | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run verificar:local >> logs\consistencia-local.txt 2>&1`           |
+| Sincronización local ↔ Render/Supabase| Cada 5 minutos    | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run sync:local >> logs\sincronizacion.txt 2>&1 && pnpm run sync:pull >> logs\sincronizacion.txt 2>&1` |
+| Limpieza de eventos sincronizados    | Mensual           | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run limpiar-operaciones:local >> logs\limpieza-local.txt 2>&1`    |
 | Inicio automático del sistema local | Al iniciar sesión | Ver abajo — versión más confiable que un simple acceso directo                                                    |
 
 **Inicio automático más confiable (en vez de solo la carpeta de Inicio):**
 
 1. Abre **Programador de tareas** → **Crear tarea básica** → nombre `Iniciar Investillo`.
 2. Desencadenador: **Al iniciar sesión**.
-3. Acción → Programa: `cmd.exe` → Argumentos: `/c cd /d "C:\ruta\investillo" && pnpm run start:prod >> logs\sistema.txt 2>&1`
+3. Acción → Programa: `cmd.exe` → Argumentos: `/c cd /d "C:\ruta\investillo" && call investillo.bat >> logs\sistema.txt 2>&1`
 4. En **Propiedades** de la tarea (después de crearla) → pestaña **General** → marca **"Ejecutar tanto si el usuario inició sesión como si no"** — así arranca incluso si nadie ha entrado a Windows todavía.
 
 Esto es más confiable que un acceso directo en la carpeta de Inicio porque **queda registrado en un log** si algo falla al arrancar, en vez de fallar en silencio.
 
 ### Paso a paso para crear cada tarea en el Programador de Tareas de Windows
 
-Las 3 tareas de arriba (Respaldo, Verificación, Limpieza) se crean todas de la misma forma — solo cambia el nombre, la frecuencia y el comando. Aquí está el proceso completo, usando el **Respaldo semanal** como ejemplo:
+Las tareas de respaldo, verificación, sincronización y limpieza se crean de la misma forma — solo cambia el nombre, la frecuencia y el comando. Aquí está el proceso completo, usando el **Respaldo diario local** como ejemplo:
 
 1. Presiona `Win + R`, escribe `taskschd.msc` y da Enter (o busca "Programador de tareas" en el menú Inicio).
 2. En el panel derecho, clic en **"Crear tarea básica..."**.
 3. **Nombre:** escribe algo claro, por ejemplo `Investillo - Respaldo Semanal`. Clic en **Siguiente**.
 4. **Desencadenador** (cuándo se ejecuta): elige la frecuencia según la tabla de arriba:
-   - Respaldo → **Semanalmente**
-   - Verificación de consistencia → **Diariamente**
-   - Limpieza de operaciones → **Mensualmente**
+  - Respaldo local → **Diariamente**
+  - Verificación local → **Diariamente**
+  - Sincronización → **Diariamente**, configurando después la repetición cada 5 minutos
+  - Limpieza de operaciones → **Mensualmente**
 
    Clic en **Siguiente**.
 5. Según lo que elegiste, Windows te pregunta el día y la hora exacta (ej. "todos los lunes a las 7:00 a.m."). Complétalo y clic en **Siguiente**.
@@ -155,14 +155,14 @@ Las 3 tareas de arriba (Respaldo, Verificación, Limpieza) se crean todas de la 
    - **Programa o script:** escribe únicamente `cmd.exe`
    - **Agregar argumentos (opcional):** aquí sí va el resto del comando completo, por ejemplo:
 
- /c cd /d "C:\ruta\investillo" && pnpm run backup >> backups\log.txt 2>&1
+ /c cd /d "C:\ruta\investillo" && pnpm run backup:local >> logs\backup-local.txt 2>&1
 
      (cambia `C:\ruta\investillo` por la carpeta real donde tengas el proyecto, y usa el comando correspondiente de la tabla según la tarea que estés creando)
 8. Clic en **Siguiente**, revisa el resumen, y clic en **Finalizar**.
 9. **Paso extra importante:** busca la tarea recién creada en la lista del Programador de Tareas, haz doble clic para abrir sus **Propiedades**, y en la pestaña **General** marca la casilla **"Ejecutar tanto si el usuario inició sesión como si no"** — así la tarea corre igual aunque nadie haya iniciado sesión en Windows en ese momento (por ejemplo, de madrugada).
-10. Repite estos mismos 9 pasos para las otras 2 tareas, cambiando solo el nombre, la frecuencia (paso 4-5) y el comando de "Agregar argumentos" (paso 7), según la tabla de arriba.
+10. Repite estos pasos para verificación, sincronización y limpieza, cambiando el nombre, la frecuencia y el comando de "Agregar argumentos" según la tabla. Para sincronización, abre las propiedades de la tarea, pestaña **Desencadenadores**, edita el desencadenador y marca **"Repetir la tarea cada 5 minutos durante 1 día"**.
 
-**Cómo confirmar que sí están funcionando:** haz clic derecho sobre cualquiera de las tareas creadas → **"Ejecutar"** — esto la corre de inmediato, sin esperar a la fecha programada, para que puedas revisar el archivo de log (`backups\log.txt`, `logs\consistencia.txt`, etc.) y confirmar que sí se generó correctamente.
+**Cómo confirmar que sí están funcionando:** haz clic derecho sobre cualquiera de las tareas creadas → **"Ejecutar"** — esto la corre de inmediato, sin esperar a la fecha programada, para que puedas revisar los archivos de log (`logs\backup-local.txt`, `logs\consistencia-local.txt`, `logs\sincronizacion.txt`, etc.).
 
 ---
 
@@ -279,11 +279,20 @@ Todos se escriben en el **Símbolo del sistema (CMD)**, estando dentro de la car
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | `pnpm install`                                   | Descarga/actualiza todas las piezas necesarias del proyecto                              |
 | `pnpm run dev`                                   | Corre el sistema en modo "estoy programando" (se actualiza solo cuando cambias código)   |
-| `pnpm run start:prod`                            | Corre el sistema en modo "uso normal del negocio" (más rápido y estable — ver sección 7) |
+| `pnpm run start:prod`                            | Corre el sistema contra `.env.api` y la base remota; úsalo para la instancia remota o una prueba conectada |
+| `pnpm run start:local`                           | Corre el sistema contra `.env.local` y PostgreSQL local; es el comando de la oficina |
+| `pnpm run setup:local`                           | Crea `investillo_local` si todavía no existe                                     |
+| `pnpm run db:push:local`                         | Crea/actualiza las tablas de PostgreSQL local                                     |
 | `pnpm run db:push`                               | Actualiza la estructura de la base de datos según lo definido en el código               |
 | `pnpm run backup`                                | Crea una copia local y, si están configurados, la replica en Aiven y Cloudflare R2       |
+| `pnpm run backup:local`                          | Crea un respaldo `.dump` de PostgreSQL local                                            |
 | `pnpm run verificar`                             | Revisa consistencia de datos (stock negativo, créditos sobre-abonados, precios invertidos, etc.) |
+| `pnpm run verificar:local`                       | Ejecuta la misma revisión contra PostgreSQL local                                      |
+| `pnpm run sync:local`                            | Intenta subir eventos locales pendientes al API remoto configurado en `SYNC_REMOTE_API_URL` |
+| `pnpm run sync:pull`                             | Descarga cambios registrados en Render y los aplica al API local                    |
+| `pnpm run sync:status`                           | Muestra pendientes, errores y eventos sincronizados retenidos en la cola local           |
 | `pnpm run limpiar-operaciones`                   | Limpia la tabla anti-duplicados de operaciones ya sincronizadas hace más de 60 días       |
+| `pnpm run limpiar-operaciones:local`             | Limpia eventos y operaciones antiguas de PostgreSQL local                               |
 | `pnpm run build`                                 | Prepara el código para producción (lo "compila")                                         |
 | `pnpm run typecheck`                             | Comprueba TypeScript en las librerías, API, frontend y scripts                           |
 | `pnpm --filter @workspace/api-spec codegen`      | Regenera los clientes React y esquemas Zod desde OpenAPI                                 |
@@ -411,15 +420,103 @@ El botón **"Importar Excel"** (el original, más simple) sigue disponible apart
 
 ---
 
-## 7. 🏢 Usarlo día a día en la oficina (Modo producción)
+## 7. 🏢 Usarlo día a día en la oficina (Modo producción local)
 
-Cuando ya no estás programando, sino simplemente **usando** el sistema en el negocio, no uses `pnpm run dev` — usa esto, que es más liviano y estable:
+Cuando ya no estás programando, sino simplemente **usando** el sistema en el negocio, no uses `pnpm run dev` ni `pnpm run start:prod`. En esta computadora usa PostgreSQL local:
 
 ```cmd
-pnpm run start:prod
+pnpm run start:local
 ```
 
-Esto compila el sistema y lo deja funcionando como **un solo programa**, disponible en `http://localhost:8080` (o el puerto que hayas puesto en `.env.api`).
+Esto compila el sistema y lo deja funcionando como **un solo programa**, disponible en `http://localhost:8080` (o el puerto definido en `.env.local`). `pnpm run start:prod` queda reservado para un entorno que deba usar `.env.api` y la base remota.
+
+### Preparar esta computadora para trabajar varios días sin internet
+
+La instalación local usa PostgreSQL en este computador. Esto evita que las operaciones normales dependan de Supabase durante un corte, pero **todavía no significa que la sincronización con Supabase esté terminada**: esa sincronización se incorporará después de migrar todas las escrituras al registro de operaciones.
+
+#### Qué significa cada variable
+
+- `DATABASE_URL` es una conexión de PostgreSQL. En `.env.local` apunta a la base instalada en este computador, por ejemplo `localhost:5432/investillo_local`.
+- `SYNC_REMOTE_API_URL` **no** es una conexión de PostgreSQL y **no** es una URL de Supabase. Es la dirección HTTP del sistema/API publicado en Render, normalmente con `/api` al final, por ejemplo `https://investillo.onrender.com/api`.
+- La conexión de Supabase permanece en `.env.api` como `DATABASE_URL` para el servidor remoto y en `.env.backup` como `SOURCE_DATABASE_URL` para los respaldos.
+- Nunca pongas la contraseña de Supabase en `SYNC_REMOTE_API_URL`.
+
+1. Confirma que el servicio **postgresql-x64-17** esté iniciado en Windows.
+2. Copia `docs\local.env.example` como `.env.local` y cambia:
+   - `CAMBIE_ESTA_CONTRASENA` por la contraseña del usuario local `postgres`.
+   - `TU-SERVICIO.onrender.com` por el dominio real de Render.
+   No compartas `.env.local` ni lo subas a Git.
+3. Crea automáticamente la base local desde CMD:
+  ```cmd
+  pnpm run setup:local
+  ```
+   El comando se conecta a la base administrativa `postgres`, crea `investillo_local` si no existe y no borra una base existente. Si prefieres hacerlo manualmente, usa `createdb.exe` como se explica más abajo.
+4. Crea las tablas en la base local:
+  ```cmd
+  pnpm run db:push:local
+  ```
+5. Arranca Investillo localmente:
+  ```cmd
+  pnpm run start:local
+  ```
+6. Cuando la conexión vuelva, prueba manualmente la subida con:
+  ```cmd
+  pnpm run sync:local
+  ```
+  Para automatizarla, crea una tarea de Windows que ejecute cada 5 minutos `cmd.exe` con estos argumentos:
+  `/c cd /d "C:\ruta\investillo" && pnpm run sync:local`.
+  La tarea debe usar la misma carpeta del proyecto para encontrar `.env.local`.
+  Antes o después puedes revisar la cola con `pnpm run sync:status`. El resultado esperado cuando no hay trabajo pendiente es `Pendientes: 0` y `Con error: 0`. Si Render está caído, `sync:local` termina antes de tocar la cola y deja las operaciones pendientes para otro intento.
+
+  7. Programa también un respaldo local diario con `cmd.exe` y estos argumentos:
+    `/c cd /d "C:\ruta\investillo" && pnpm run backup:local`.
+    El respaldo queda en `scripts\backups\local` y conserva por defecto 30 días. No guardes la única copia en el mismo disco: copia periódicamente esa carpeta a un USB o disco externo.
+
+El paso 3 crea la **base vacía**. El paso 4 crea las **tablas**. Son cosas distintas. Para que la computadora tenga los datos históricos antes de desconectarla, primero debes importar una copia de la base remota o ejecutar una carga inicial controlada; no empieces a trabajar offline con la base local vacía.
+
+#### Cargar los datos iniciales desde Supabase
+
+Hazlo una sola vez, antes de usar la oficina sin internet y después de tener un respaldo. Este procedimiento copia la base remota completa a la base local; no lo ejecutes mientras haya operaciones locales que quieras conservar.
+
+1. Confirma que `investillo_local` esté creada y que el servicio PostgreSQL esté iniciado.
+2. Copia temporalmente la cadena de conexión de Supabase desde `.env.api` en una variable de CMD. No la guardes en el README ni en Git:
+  ```cmd
+  set "REMOTE_DATABASE_URL=PEGA_AQUI_LA_DATABASE_URL_DE_SUPABASE"
+  ```
+3. Crea un respaldo remoto:
+  ```cmd
+  "C:\Program Files\PostgreSQL\17\bin\pg_dump.exe" --format=custom --no-owner --no-acl --file="backups\supabase-inicial.dump" "%REMOTE_DATABASE_URL%"
+  ```
+4. Restaura ese respaldo en la base local:
+  ```cmd
+  "C:\Program Files\PostgreSQL\17\bin\pg_restore.exe" -U postgres --dbname=investillo_local --clean --if-exists --no-owner --no-acl "backups\supabase-inicial.dump"
+  ```
+5. Ejecuta la verificación contra la base local (el comando raíz `pnpm run verificar` usa `.env.api`, por eso aquí se usa la variante explícita):
+  ```cmd
+  dotenv -e .env.local -- pnpm --filter @workspace/scripts run verificar
+  ```
+  Revisa también manualmente productos, clientes, ventas y créditos.
+6. Ejecuta `pnpm run backup:local` para conservar una copia de la base local inicial.
+
+Después de esta carga, no vuelvas a restaurar Supabase sobre la base local si ya existen operaciones offline. Para actualizar una base local que ya tiene trabajo propio se usará la sincronización, no una restauración completa.
+
+El acceso directo `investillo.bat` ya exige `.env.local` y usa `start:local`; no arranca accidentalmente contra la base remota. Conserva `.env.api` para las tareas que deban conectarse a Supabase, como verificar o respaldar la base remota.
+
+El trabajo de sincronización se hará en este orden: registro durable de operaciones, migración de todas las escrituras, subida idempotente a Supabase, descarga de cambios y resolución de conflictos. Hasta completar esas etapas, no se debe considerar terminada la operación offline de varios días.
+
+**Estado actual de esta implementación:** PostgreSQL local, creación automática de la base, estructura local, respaldos locales y registro inicial de eventos ya están funcionando. La migración de escrituras y la correspondencia entre IDs locales y remotos todavía se están completando por módulos. Por eso no programes `sync:local` de forma permanente ni borres la base remota pensando que ya existe una réplica completa.
+
+#### Recuperar la base local
+
+Si PostgreSQL local se daña, detén Investillo y conserva la carpeta de respaldos. Lista los archivos `.dump`, elige uno anterior al problema y ejecuta desde CMD:
+
+```cmd
+"C:\Program Files\PostgreSQL\17\bin\dropdb.exe" -U postgres --if-exists investillo_local
+"C:\Program Files\PostgreSQL\17\bin\createdb.exe" -U postgres investillo_local
+"C:\Program Files\PostgreSQL\17\bin\pg_restore.exe" -U postgres --dbname=investillo_local --clean --if-exists "scripts\backups\local\ELEGIR_RESPALDO.dump"
+```
+
+Después ejecuta `pnpm run verificar` apuntando temporalmente a la base local o usa la misma revisión de consistencia antes de volver a operar. No restaures sobre Supabase con estos comandos.
 
 ### Crear un acceso directo para no escribir el comando cada vez
 
@@ -428,7 +525,7 @@ Esto compila el sistema y lo deja funcionando como **un solo programa**, disponi
    ```bat
    @echo off
    cd /d "C:\Users\TuUsuario\Documents\investillo"
-   pnpm run start:prod
+  pnpm run start:local
    ```
 3. Guarda. Desde ahora, con doble clic en ese archivo arranca todo el sistema.
 
@@ -444,9 +541,10 @@ Con el sistema corriendo, ábrelo en Google Chrome o Microsoft Edge — en la ba
 ### Pasar el sistema a otro computador (por ejemplo, el de la oficina)
 
 1. Repite los Pasos 1 a 5 de la sección 4 en ese computador.
-2. En vez de crear los archivos `.env` desde cero, **copia los 3 que ya tienes** (`.env.api`, `.env.web`, `.env.backup`) desde tu computador actual, usando una USB. Así te aseguras de que se conecte a la misma base de datos, sin errores de tipeo.
-3. Corre `pnpm install` y luego `pnpm run start:prod`.
-4. **No hace falta correr `pnpm run db:push` de nuevo** — las tablas ya existen, ese comando solo se usa si cambia la estructura de la base de datos.
+2. Para una computadora de oficina offline, crea su propio `.env.local` con su propio PostgreSQL local. No copies contraseñas sin necesidad y no sobrescribas `.env.local` con `.env.api`.
+3. Ejecuta `pnpm install`, `pnpm run setup:local`, `pnpm run db:push:local` y luego `pnpm run start:local`.
+4. Carga en esa base local una copia inicial verificada de los datos antes de desconectar el equipo.
+5. **No uses `pnpm run db:push` para la base local**: ese comando usa `.env.api` y puede apuntar a Supabase. Para la oficina usa siempre `pnpm run db:push:local`.
 
 ---
 
@@ -476,7 +574,18 @@ Ambas usan **la misma base de datos de Supabase de siempre** — nunca se crea u
    |---|---|
    | `DATABASE_URL` | el mismo de tu `.env.api` |
    | `NODE_ENV` | `production` |
+  | `SYNC_CAPTURE_REMOTE` | `true` |
 5. Clic en **"Create Web Service"** y espera a que termine — te da una dirección como `https://investillo.onrender.com`.
+
+La dirección que Render entrega, seguida de `/api`, es la que se debe poner en `SYNC_REMOTE_API_URL` del computador local. Ejemplo: si Render entrega `https://investillo.onrender.com`, configura `SYNC_REMOTE_API_URL=https://investillo.onrender.com/api`. No pongas allí `DATABASE_URL`, la URL del pooler de Supabase, ni una URL de Cloudflare o Aiven.
+
+Después de desplegar, prueba desde el navegador:
+
+```text
+https://TU-SERVICIO.onrender.com/api/healthz
+```
+
+Debe responder con un estado correcto. Si no responde, no programes todavía `sync:local`.
 
 ### 8.3 Desplegar en Railway
 
@@ -582,7 +691,7 @@ Estos son los pasos para cuando algo deja de responder y necesitas arreglarlo a 
 #### El sistema local (portátil de la oficina) no arrancó solo
 
 1. Revisa el archivo de log que configuramos en el Programador de Tareas (`logs\sistema.txt`) — ahí debería decir por qué falló, si falló.
-2. Abre el **Símbolo del sistema (CMD)**, ve a la carpeta del proyecto, y corre `pnpm run start:prod` a mano — si arranca bien así, el problema fue puntual (por ejemplo, el portátil tardó en tener internet al prender, y la tarea automática corrió antes de tiempo).
+2. Abre el **Símbolo del sistema (CMD)**, ve a la carpeta del proyecto, y corre `pnpm run start:local` a mano — si arranca bien así, el problema fue puntual (por ejemplo, el equipo tardó en iniciar PostgreSQL o la tarea automática corrió antes de tiempo).
 3. Si sigue sin arrancar, revisa que tu archivo `.env.api` siga existiendo y con los datos correctos — es la causa más común de que el sistema no inicie.
 
 #### Aiven se pausó (respaldo, plan gratis, 7 días sin uso)
@@ -695,11 +804,11 @@ Para que sepas qué esperar y qué no, por ahora:
 - Solo está probado en **Windows**, usando la terminal **CMD** (no PowerShell ni Git Bash).
 - Las herramientas `pg_dump`/`pg_restore` que instalas localmente deben ser versión 17 o más nueva (la misma que usa Supabase).
 - **No existe integración con contabilidad formal (PUC/NIIF) ni facturación electrónica DIAN** — se decidió, por ahora, que el sistema se enfoque solo en control interno.
-- La **app de escritorio** (para seguir funcionando varios días sin ninguna conexión a internet) todavía está en diseño, no construida — hoy el modo sin conexión cubre cortes de horas, no de varios días seguidos.
+- La base PostgreSQL local y el arranque local ya están implementados para operar varios días sin internet. La sincronización completa todavía se está ampliando por módulos y debe probarse contra el API remoto antes de declararla lista para producción.
 - El sistema hoy solo tiene **Render** desplegado en la nube — Railway o Koyeb como segunda plataforma de respaldo quedaron analizados pero sin implementar (no es urgente: el portátil local conecta directo a Supabase, sin depender de Render para nada).
 - El plan gratis de Aiven se pausa si pasan 7 días sin usarlo — si el respaldo automático deja de correr por más de una semana, toca reactivarlo a mano.
 - La importación masiva de clientes detecta duplicados por nombre y por teléfono (compara solo los dígitos, sin importar el formato) — si un número ya está en uso, esa fila queda separada para revisión manual, no se omite en silencio. Correo no se valida contra duplicados.
-- El modo sin conexión no cubre todas las funciones: la cola actual contempla ventas, mano de obra asociada a ventas, créditos, compras, cierres, productos y clientes. Importaciones, reportes, notas, trabajadores y varias funciones auxiliares requieren conexión.
+- El outbox transaccional ya cubre clientes, vehículos, productos, ventas y reordenamiento, mano de obra, créditos y abonos, compras individuales y por lote, notas, remachadas, trabajadores y pagos de seguro, cierres, grupos, conteo de monedas, calculadora, historiales, edición de nómina, obra electrónica, tensionadas e importaciones procesadas de clientes e inventario. Las importaciones se convierten a filas JSON para sincronizarse sin transportar archivos binarios. La descarga de cambios remotos usa `/api/sync/pull` y el comando `pnpm run sync:pull`; aún requiere pruebas de extremo a extremo.
 - Si una operación recibe un error del servidor, queda marcada como error con el mensaje y número de intentos. El panel **Copia local** permite reactivarla y reintentarla; no debe asumirse que fue aplicada hasta comprobarlo.
 - No hay pruebas automáticas de integración que levanten PostgreSQL por sí solas; las pruebas del API necesitan una `DATABASE_URL` válida.
 - El contrato OpenAPI y las rutas implementadas no son idénticos: las funciones que usan `fetch` manual deben probarse además de ejecutar el codegen.

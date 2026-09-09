@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { comprasTable, historialPreciosTable, productosTable } from "@workspace/db/schema";
+import { comprasTable, eventosSincronizacionTable, historialPreciosTable, productosTable } from "@workspace/db/schema";
 import { eq,sql,and, gte } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
 import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
@@ -57,7 +57,7 @@ router.get("/", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const operationId = req.header("x-operation-id");
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
     if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
@@ -70,19 +70,22 @@ router.post("/", async (req, res) => {
     return;
   }
 
-  const [compra] = await db.insert(comprasTable).values({
-    productoId: producto.id,
-    productoNombre: producto.nombre,
-    productoCodigo: producto.codigo,
-    productoMarca: producto.marca,
-    stockActual: String(toNum(producto.stockActual)),
-    stockMinimo: String(toNum(producto.stockMinimo)),
-    estado: estado || "pendiente",
-  }).returning();
-
-  if (operationId) {
-    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra", recursoId: compra.id }).onConflictDoNothing();
-  }
+  const compra = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(comprasTable).values({
+      productoId: producto.id,
+      productoNombre: producto.nombre,
+      productoCodigo: producto.codigo,
+      productoMarca: producto.marca,
+      stockActual: String(toNum(producto.stockActual)),
+      stockMinimo: String(toNum(producto.stockMinimo)),
+      estado: estado || "pendiente",
+    }).returning();
+    if (!req.header("x-sync-apply")) {
+      await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "compra", entidadId: String(created.id), tipo: "crear", metodo: "POST", endpoint: "/compras", payload: req.body, origen: "local" });
+    }
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra", recursoId: created.id }).onConflictDoNothing();
+    return created;
+  });
   res.status(201).json(mapCompra(compra));
 });
 
@@ -177,7 +180,7 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
 }
 
 router.put("/:id", async (req, res) => {
-  const operationId = req.header("x-operation-id");
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
     if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
@@ -186,9 +189,10 @@ router.put("/:id", async (req, res) => {
 
   try {
     const { compra, preciosModificados } = await procesarLlegadaCompra(id, req.body);
-    if (operationId) {
-      await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra", recursoId: compra.id }).onConflictDoNothing();
+    if (!req.header("x-sync-apply")) {
+      await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "compra", entidadId: String(compra.id), tipo: "llegada", metodo: "PUT", endpoint: `/compras/${id}`, payload: req.body, origen: "local" });
     }
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra", recursoId: compra.id }).onConflictDoNothing();
     res.json({ ...mapCompra(compra), preciosModificados });
   } catch (err) {
     res.status(404).json({ error: String(err) });
@@ -196,6 +200,9 @@ router.put("/:id", async (req, res) => {
 });
 
 router.post("/lote-llegada", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const { proveedor, fechaLlegada, items } = req.body as { proveedor: string; fechaLlegada?: string; items: Array<{ id: number; cantidadRecibida: number; nuevoPrecioCompra: number; nuevoPrecioVentaSinIva: number; tieneIva: boolean; actualizarPrecioInventario: boolean }> };
 
   if (!Array.isArray(items) || items.length === 0) {
@@ -218,11 +225,17 @@ router.post("/lote-llegada", async (req, res) => {
     resultados.push({ ...mapCompra(compra), preciosModificados });
   }
 
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "compra_lote", entidadId: operationId, tipo: "lote_llegada", metodo: "POST", endpoint: "/compras/lote-llegada", payload: req.body, origen: "local" });
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra_lote", recursoId: null }).onConflictDoNothing();
+
   res.json({ ok: true, procesados: resultados.length, resultados });
 });
 
 router.delete("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = parseInt(req.params.id);
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
 
   try {
     await db.transaction(async (tx) => {
@@ -233,6 +246,8 @@ router.delete("/:id", async (req, res) => {
           .where(eq(productosTable.id, existing.productoId));
       }
       await tx.delete(comprasTable).where(eq(comprasTable.id, id));
+      if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "compra", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/compras/${id}`, payload: {}, origen: "local" });
+      await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra", recursoId: id }).onConflictDoNothing();
     });
     res.json({ mensaje: "Compra eliminada y stock revertido" });
   } catch (err) {
@@ -241,7 +256,10 @@ router.delete("/:id", async (req, res) => {
 });
 
 router.patch("/:id/corregir", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = parseInt(req.params.id);
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const { cantidadRecibida, precioCompraRegistrado, precioVentaRegistrado } = req.body;
 
   try {
@@ -271,6 +289,9 @@ router.patch("/:id/corregir", async (req, res) => {
 
       return actualizada;
     });
+
+    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "compra", entidadId: String(id), tipo: "corregir", metodo: "PATCH", endpoint: `/compras/${id}/corregir`, payload: req.body, origen: "local" });
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra", recursoId: id }).onConflictDoNothing();
 
     res.json(mapCompra(resultado));
   } catch (err) {

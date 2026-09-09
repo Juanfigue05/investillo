@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { productosTable } from "@workspace/db/schema";
+import { eventosSincronizacionTable, productosTable } from "@workspace/db/schema";
 import { eq, lte, sql } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
 
@@ -72,7 +72,7 @@ router.get("/:id", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const operationId = req.header("x-operation-id");
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db
       .select()
@@ -103,9 +103,8 @@ router.post("/", async (req, res) => {
   const pvSinIva = parseFloat(precioVentaSinIva);
   const pvConIva = calcPrecioConIva(pvSinIva);
 
-  const [producto] = await db
-    .insert(productosTable)
-    .values({
+  const producto = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(productosTable).values({
       nombre,
       codigo,
       marca: marca || null,
@@ -118,20 +117,18 @@ router.post("/", async (req, res) => {
       tieneIva: Boolean(tieneIva),
       stockActual: String(parseFloat(stockActual)),
       stockMinimo: String(parseFloat(stockMinimo)),
-    })
-    .returning();
-
-  if (operationId) {
-    await db
-      .insert(operacionesSincronizadasTable)
-      .values({ operationId, tipo: "producto", recursoId: producto.id })
-      .onConflictDoNothing();
-  }
+    }).returning();
+    if (!req.header("x-sync-apply")) {
+      await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "producto", entidadId: String(created.id), tipo: "crear", metodo: "POST", endpoint: "/inventario", payload: req.body, origen: "local" });
+    }
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "producto", recursoId: created.id }).onConflictDoNothing();
+    return created;
+  });
   res.status(201).json(mapProducto(producto));
 });
 
 router.put("/:id", async (req, res) => {
-  const operationId = req.header("x-operation-id");
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db
       .select()
@@ -167,9 +164,8 @@ router.put("/:id", async (req, res) => {
   const local = parseFloat(stockLocal) || 0;
   const bodega = parseFloat(stockBodega) || 0;
 
-  const [producto] = await db
-    .update(productosTable)
-    .set({
+  const producto = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(productosTable).set({
       nombre,
       codigo,
       marca: marca || null,
@@ -186,24 +182,25 @@ router.put("/:id", async (req, res) => {
       stockMinimo: String(parseFloat(stockMinimo)),
       activo: activo !== undefined ? Boolean(activo) : undefined,
       actualizadoEn: new Date(),
-    })
-    .where(eq(productosTable.id, id))
-    .returning();
+    }).where(eq(productosTable.id, id)).returning();
+    if (updated && !req.header("x-sync-apply")) {
+      await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "producto", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/inventario/${id}`, payload: req.body, origen: "local" });
+    }
+    if (updated) await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "producto", recursoId: id }).onConflictDoNothing();
+    return updated;
+  });
 
   if (!producto) {
     res.status(404).json({ error: "Producto no encontrado" });
     return;
   }
-  if (operationId) {
-    await db
-      .insert(operacionesSincronizadasTable)
-      .values({ operationId, tipo: "producto", recursoId: producto.id })
-      .onConflictDoNothing();
-  }
   res.json(mapProducto(producto));
 });
 
 router.put("/:id/stock", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const id = parseInt(req.params.id);
   const { cantidad, precioCompra, precioVentaSinIva, tieneIva } = req.body;
 
@@ -235,30 +232,41 @@ router.put("/:id/stock", async (req, res) => {
     if (tieneIva !== undefined) updateData.tieneIva = Boolean(tieneIva);
   }
 
-  const [producto] = await db
-    .update(productosTable)
-    .set(updateData)
-    .where(eq(productosTable.id, id))
-    .returning();
+  const producto = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(productosTable).set(updateData).where(eq(productosTable.id, id)).returning();
+    if (updated && !req.header("x-sync-apply")) {
+      await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "producto", entidadId: String(id), tipo: "actualizar_stock", metodo: "PUT", endpoint: `/inventario/${id}/stock`, payload: req.body, origen: "local" });
+    }
+    if (updated) await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "producto", recursoId: id }).onConflictDoNothing();
+    return updated;
+  });
   res.json(mapProducto(producto));
 });
 
 router.delete("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const id = parseInt(req.params.id);
-  await db
-    .update(productosTable)
-    .set({ activo: false })
-    .where(eq(productosTable.id, id));
+  await db.transaction(async (tx) => {
+    await tx.update(productosTable).set({ activo: false }).where(eq(productosTable.id, id));
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "producto", entidadId: String(id), tipo: "desactivar", metodo: "DELETE", endpoint: `/inventario/${id}`, payload: req.body ?? {}, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "producto", recursoId: id }).onConflictDoNothing();
+  });
   res.json({ mensaje: "Producto marcado como inactivo" });
 });
 
 router.put("/:id/reactivar", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const id = parseInt(req.params.id);
-  const [producto] = await db
-    .update(productosTable)
-    .set({ activo: true, actualizadoEn: new Date() })
-    .where(eq(productosTable.id, id))
-    .returning();
+  const producto = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(productosTable).set({ activo: true, actualizadoEn: new Date() }).where(eq(productosTable.id, id)).returning();
+    if (updated && !req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "producto", entidadId: String(id), tipo: "reactivar", metodo: "PUT", endpoint: `/inventario/${id}/reactivar`, payload: req.body ?? {}, origen: "local" });
+    if (updated) await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "producto", recursoId: id }).onConflictDoNothing();
+    return updated;
+  });
   if (!producto) {
     res.status(404).json({ error: "Producto no encontrado" });
     return;

@@ -17,3 +17,6 @@ export * from "./conteo_monedas";
 export * from "./tensionadas";
 export * from "./obra_electronica";
 export * from "./calculadora_cierre";
+export * from "./eventos_sincronizacion";
+export * from "./referencias_sincronizacion";
+export * from "./curso_sincronizacion";

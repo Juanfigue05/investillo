@@ -1,6 +1,3 @@
-// pg no incluye declaraciones de tipos en esta instalación; se mantiene el
-// import tipado de forma implícita hasta que @types/pg esté disponible.
-// @ts-expect-error El paquete pg no expone tipos para esta configuración.
 import pg from "pg";
 const { Pool } = pg;
 

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { trabajadoresTable, pagosSeguroTable } from "@workspace/db/schema";
+import { eventosSincronizacionTable, operacionesSincronizadasTable, trabajadoresTable, pagosSeguroTable } from "@workspace/db/schema";
 import { eq, sum } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -49,9 +49,13 @@ router.get("/", async (_req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const { nombre, descuentoSeguro, descuentoOtros, activo, incluyeNomina, aplicaDescuento30, obraElectronica, numeroSeguro, telefono, correo, eps, aplicaSeguro } = req.body;
 
-  const [trabajador] = await db.insert(trabajadoresTable).values({
+  const trabajador = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(trabajadoresTable).values({
     nombre,
     descuentoSeguro: String(parseFloat(descuentoSeguro || 0)),
     descuentoOtros: String(parseFloat(descuentoOtros || 0)),
@@ -64,12 +68,19 @@ router.post("/", async (req, res) => {
     correo: correo || null,
     eps: eps || null,
     aplicaSeguro: Boolean(aplicaSeguro),
-  }).returning();
+    }).returning();
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "trabajador", entidadId: String(created.id), tipo: "crear", metodo: "POST", endpoint: "/trabajadores", payload: req.body, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "trabajador", recursoId: created.id }).onConflictDoNothing();
+    return created;
+  });
 
   res.status(201).json(await mapTrabajador(trabajador));
 });
 
 router.put("/:id", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const id = parseInt(req.params.id);
   const { nombre, descuentoSeguro, descuentoOtros, activo, incluyeNomina, aplicaDescuento30, obraElectronica, numeroSeguro, telefono, correo, eps, aplicaSeguro, fechaProximoPagoSeguro } = req.body;
 
@@ -94,6 +105,8 @@ router.put("/:id", async (req, res) => {
     .returning();
 
   if (!trabajador) { res.status(404).json({ error: "Trabajador no encontrado" }); return; }
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "trabajador", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/trabajadores/${id}`, payload: req.body, origen: "local" });
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "trabajador", recursoId: id }).onConflictDoNothing();
   res.json(await mapTrabajador(trabajador));
 });
 
@@ -110,6 +123,9 @@ router.get("/:id/pagos-seguro", async (req, res) => {
 });
 
 router.post("/:id/pagos-seguro", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const trabajadorId = parseInt(req.params.id);
   const { fecha, monto } = req.body;
 
@@ -123,12 +139,20 @@ router.post("/:id/pagos-seguro", async (req, res) => {
     .values({ trabajadorId, fecha, monto: String(toNum(monto)) })
     .returning();
 
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "pago_seguro", entidadId: String(pago.id), tipo: "crear", metodo: "POST", endpoint: `/trabajadores/${trabajadorId}/pagos-seguro`, payload: req.body, origen: "local" });
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "pago_seguro", recursoId: pago.id }).onConflictDoNothing();
+
   res.status(201).json({ id: pago.id, fecha: pago.fecha, monto: toNum(pago.monto) });
 });
 
 router.delete("/:id/pagos-seguro/:pagoId", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const pagoId = parseInt(req.params.pagoId);
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   await db.delete(pagosSeguroTable).where(eq(pagosSeguroTable.id, pagoId));
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "pago_seguro", entidadId: String(pagoId), tipo: "eliminar", metodo: "DELETE", endpoint: `/trabajadores/${req.params.id}/pagos-seguro/${pagoId}`, payload: {}, origen: "local" });
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "pago_seguro", recursoId: pagoId }).onConflictDoNothing();
   res.json({ ok: true });
 });
 

@@ -1,7 +1,9 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
-import { pool } from "@workspace/db";
+import { db, pool } from "@workspace/db";
+import { eventosSincronizacionTable, operacionesSincronizadasTable } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
 const upload = multer({
@@ -296,6 +298,9 @@ router.get("/export", async (_req, res) => {
 // ───────────────────────────────────────────────────────────────────────────
 
 router.post("/", upload.single("archivo"), async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   if (!req.file) {
     res.status(400).json({ error: "No se recibió ningún archivo" });
     return;
@@ -346,6 +351,8 @@ router.post("/", upload.single("archivo"), async (req, res) => {
     );
 
     const { conflictosCantidad } = await upsertRows(filasExistentes);
+    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "importar", metodo: "POST", endpoint: "/inventario-import/sincronizar", payload: { items: filasExistentes }, origen: "local" });
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "inventario_import", recursoId: null }).onConflictDoNothing();
 
     res.json({
       ok: true,
@@ -367,8 +374,23 @@ router.post("/", upload.single("archivo"), async (req, res) => {
   }
 });
 
+router.post("/sincronizar", async (req, res) => {
+  const operationId = req.header("x-operation-id");
+  if (!operationId) { res.status(400).json({ error: "x-operation-id es obligatorio" }); return; }
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.json({ ok: true, yaProcesado: true }); return; }
+  const items = req.body?.items as ParsedRow[];
+  if (!Array.isArray(items)) { res.status(400).json({ error: "items requerido" }); return; }
+  await upsertRows(items);
+  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "inventario_import", recursoId: null }).onConflictDoNothing();
+  res.json({ ok: true, procesados: items.length });
+});
+
 // POST /confirmar-nuevos — crea únicamente los productos aprobados por el usuario.
 router.post("/confirmar-nuevos", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   try {
     const { items } = req.body as { items: ParsedRow[] };
     if (!Array.isArray(items) || !items.length) {
@@ -376,6 +398,8 @@ router.post("/confirmar-nuevos", async (req, res) => {
       return;
     }
     await upsertRows(items);
+    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "confirmar_nuevos", metodo: "POST", endpoint: "/inventario-import/sincronizar", payload: { items }, origen: "local" });
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "inventario_import", recursoId: null }).onConflictDoNothing();
     res.json({ ok: true, procesados: items.length });
   } catch (err: any) {
     res
@@ -392,6 +416,9 @@ router.post("/confirmar-nuevos", async (req, res) => {
 // ───────────────────────────────────────────────────────────────────────────
 
 router.post("/resolver", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   try {
     const { items } = req.body as { items: ParsedRow[] };
     if (!Array.isArray(items) || !items.length) {
@@ -399,6 +426,8 @@ router.post("/resolver", async (req, res) => {
       return;
     }
     await upsertRows(items);
+    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "resolver", metodo: "POST", endpoint: "/inventario-import/sincronizar", payload: { items }, origen: "local" });
+    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "inventario_import", recursoId: null }).onConflictDoNothing();
     res.json({ ok: true, procesados: items.length });
   } catch (err: any) {
     console.error("Error resolviendo conflictos:", err?.message ?? err);
@@ -412,6 +441,9 @@ router.post("/resolver", async (req, res) => {
 
 // ─── POST /resolver-cantidades — aplica "sumar" o "reemplazar" a los conflictos de stock ──
 router.post("/resolver-cantidades", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   try {
     const { modo, items } = req.body as {
       modo: "sumar" | "reemplazar";
@@ -437,6 +469,8 @@ router.post("/resolver-cantidades", async (req, res) => {
           );
         }
       }
+      if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "resolver_cantidades", metodo: "POST", endpoint: "/inventario-import/resolver-cantidades", payload: req.body, origen: "local" });
+      await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "inventario_import", recursoId: null }).onConflictDoNothing();
       res.json({ ok: true, procesados: items.length });
     } finally {
       client.release();
@@ -670,6 +704,9 @@ router.post("/previsualizar", upload.single("archivo"), async (req, res) => {
 
 // ─── POST /aplicar-completo — aplica SOLO las filas que el usuario confirmó ──
 router.post("/aplicar-completo", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   try {
     const { filas } = req.body as { filas: FilaCompleta[] };
     if (!Array.isArray(filas) || !filas.length) { res.status(400).json({ error: "filas requerido" }); return; }
@@ -759,6 +796,8 @@ router.post("/aplicar-completo", async (req, res) => {
         );
       }
 
+      if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "aplicar_completo", metodo: "POST", endpoint: "/inventario-import/aplicar-completo", payload: req.body, origen: "local" });
+      await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "inventario_import", recursoId: null }).onConflictDoNothing();
       res.json({ ok: true, actualizados: existentesFilas.length, creados: nuevas.length });
     } finally {
       client.release();
