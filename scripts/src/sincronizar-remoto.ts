@@ -6,6 +6,13 @@ if (!databaseUrl || !remoteApiUrl) throw new Error("DATABASE_URL y SYNC_REMOTE_A
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
 try {
+  const pendientes = await pool.query<{ cantidad: string }>(
+    `SELECT count(*)::text AS cantidad FROM eventos_sincronizacion
+      WHERE estado IN ('pendiente', 'error') AND origen = 'local'`,
+  );
+  if (Number(pendientes.rows[0]?.cantidad ?? 0) > 0) {
+    throw new Error("No se descargan cambios remotos mientras existan operaciones locales pendientes o con error");
+  }
   const cursor = await pool.query<{ valor: Date }>("SELECT valor FROM cursos_sincronizacion WHERE nombre = 'remoto'");
   const desde = cursor.rows[0]?.valor.toISOString() ?? "1970-01-01T00:00:00.000Z";
   const response = await fetch(`${remoteApiUrl}/sync/pull?desde=${encodeURIComponent(desde)}`, { signal: AbortSignal.timeout(30_000) });

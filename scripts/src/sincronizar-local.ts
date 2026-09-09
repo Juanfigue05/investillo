@@ -35,8 +35,9 @@ try {
     endpoint: string;
     metodo: string;
     payload: unknown;
+    creado_en: Date;
   }>(
-    `SELECT operation_id, entidad, entidad_id, endpoint, metodo, payload
+    `SELECT operation_id, entidad, entidad_id, endpoint, metodo, payload, creado_en
        FROM eventos_sincronizacion
       WHERE estado IN ('pendiente', 'error')
       ORDER BY creado_en ASC
@@ -45,6 +46,8 @@ try {
   );
 
   let sincronizadas = 0;
+  let fallidas = 0;
+  let conflictos = 0;
   for (const evento of rows) {
     try {
       const payload = evento.payload;
@@ -57,6 +60,30 @@ try {
       const endpoint = idRemoto
         ? evento.endpoint.replaceAll(`/${evento.entidad_id}`, `/${idRemoto}`)
         : evento.endpoint;
+
+      // No sobrescribe una edición remota posterior sin revisión manual.
+      if (evento.metodo !== "POST") {
+        const remoto = await fetch(`${remoteApiUrl}${endpoint}`, {
+          method: "GET",
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (remoto.ok) {
+          const registro = await remoto.json().catch(() => null) as { actualizadoEn?: string; actualizado_en?: string } | null;
+          const actualizado = registro?.actualizadoEn ?? registro?.actualizado_en;
+          if (actualizado && new Date(actualizado).getTime() > new Date(evento.creado_en).getTime()) {
+            await pool.query(
+              `UPDATE eventos_sincronizacion
+                  SET estado = 'conflicto', intentos = intentos + 1,
+                      ultimo_error = $2
+                WHERE operation_id = $1`,
+              [evento.operation_id, `El recurso remoto cambió después de crear esta operación local: ${actualizado}`],
+            );
+            conflictos++;
+            continue;
+          }
+        }
+      }
+
       const response = await fetch(`${remoteApiUrl}${endpoint}`, {
         method: evento.metodo,
         headers: {
@@ -77,6 +104,7 @@ try {
             WHERE operation_id = $1`,
           [evento.operation_id, `HTTP ${response.status}: ${detalle}`],
         );
+        fallidas++;
         continue;
       }
 
@@ -108,10 +136,17 @@ try {
           WHERE operation_id = $1`,
         [evento.operation_id, error instanceof Error ? error.message : String(error)],
       );
+      fallidas++;
     }
   }
 
   console.log(`Sincronización local: ${sincronizadas}/${rows.length} operaciones procesadas.`);
+  if (conflictos > 0) console.error(`${conflictos} conflicto(s) quedaron retenidos sin sobrescribir datos remotos.`);
+  if (fallidas > 0) {
+    console.error(`${fallidas} operación(es) quedaron con error y no se descargan cambios remotos.`);
+    process.exitCode = 1;
+  }
+  if (conflictos > 0) process.exitCode = 1;
 } finally {
   await pool.end();
 }

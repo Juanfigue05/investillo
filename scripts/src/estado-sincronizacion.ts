@@ -14,6 +14,7 @@ try {
   const estados = Object.fromEntries(rows.map((row) => [row.estado, Number(row.cantidad)]));
   console.log(`Pendientes: ${estados.pendiente ?? 0}`);
   console.log(`Con error: ${estados.error ?? 0}`);
+  console.log(`Conflictos: ${estados.conflicto ?? 0}`);
   console.log(`Sincronizadas retenidas: ${estados.sincronizado ?? 0}`);
 } finally {
   await pool.end();

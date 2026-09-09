@@ -15,6 +15,7 @@
     "sync:local": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run sync:local",
     "sync:status": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run sync:status",
     "sync:pull": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run sync:pull",
+    "sync:all": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run sync:all",
     "setup:local": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run setup:local",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "verificar": "dotenv -e .env.api -- pnpm --filter @workspace/scripts run verificar",

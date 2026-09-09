@@ -122,7 +122,7 @@ El backend requiere `DATABASE_URL` incluso para importar módulos en pruebas. Si
 | ----------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Respaldo PostgreSQL local            | Diaria            | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run backup:local >> logs\backup-local.txt 2>&1`                    |
 | Verificación PostgreSQL local        | Diaria            | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run verificar:local >> logs\consistencia-local.txt 2>&1`           |
-| Sincronización local ↔ Render/Supabase| Cada 5 minutos    | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run sync:local >> logs\sincronizacion.txt 2>&1 && pnpm run sync:pull >> logs\sincronizacion.txt 2>&1` |
+| Sincronización local ↔ Render/Supabase| Cada 5 minutos    | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run sync:all >> logs\sincronizacion.txt 2>&1` |
 | Limpieza de eventos sincronizados    | Mensual           | `cmd.exe /c cd /d "C:\ruta\investillo" && pnpm run limpiar-operaciones:local >> logs\limpieza-local.txt 2>&1`    |
 | Inicio automático del sistema local | Al iniciar sesión | Ver abajo — versión más confiable que un simple acceso directo                                                    |
 
@@ -290,6 +290,7 @@ Todos se escriben en el **Símbolo del sistema (CMD)**, estando dentro de la car
 | `pnpm run verificar:local`                       | Ejecuta la misma revisión contra PostgreSQL local                                      |
 | `pnpm run sync:local`                            | Intenta subir eventos locales pendientes al API remoto configurado en `SYNC_REMOTE_API_URL` |
 | `pnpm run sync:pull`                             | Descarga cambios registrados en Render y los aplica al API local                    |
+| `pnpm run sync:all`                              | Sube primero operaciones locales y luego descarga cambios remotos, en ese orden     |
 | `pnpm run sync:status`                           | Muestra pendientes, errores y eventos sincronizados retenidos en la cola local           |
 | `pnpm run limpiar-operaciones`                   | Limpia la tabla anti-duplicados de operaciones ya sincronizadas hace más de 60 días       |
 | `pnpm run limpiar-operaciones:local`             | Limpia eventos y operaciones antiguas de PostgreSQL local                               |
@@ -466,7 +467,7 @@ La instalación local usa PostgreSQL en este computador. Esto evita que las oper
   Para automatizarla, crea una tarea de Windows que ejecute cada 5 minutos `cmd.exe` con estos argumentos:
   `/c cd /d "C:\ruta\investillo" && pnpm run sync:local`.
   La tarea debe usar la misma carpeta del proyecto para encontrar `.env.local`.
-  Antes o después puedes revisar la cola con `pnpm run sync:status`. El resultado esperado cuando no hay trabajo pendiente es `Pendientes: 0` y `Con error: 0`. Si Render está caído, `sync:local` termina antes de tocar la cola y deja las operaciones pendientes para otro intento.
+  Antes o después puedes revisar la cola con `pnpm run sync:status`. El resultado esperado cuando no hay trabajo pendiente es `Pendientes: 0`, `Con error: 0` y `Conflictos: 0`. Antes de subir una edición, `sync:local` consulta el registro remoto; si detecta una actualización remota posterior, marca `conflicto`, no sobrescribe y detiene `sync:all` antes del pull. Ese caso requiere revisión manual.
 
   7. Programa también un respaldo local diario con `cmd.exe` y estos argumentos:
     `/c cd /d "C:\ruta\investillo" && pnpm run backup:local`.
