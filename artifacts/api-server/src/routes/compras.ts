@@ -203,11 +203,20 @@ router.post("/lote-llegada", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
   if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
-  const { proveedor, fechaLlegada, items } = req.body as { proveedor: string; fechaLlegada?: string; items: Array<{ id: number; cantidadRecibida: number; nuevoPrecioCompra: number; nuevoPrecioVentaSinIva: number; tieneIva: boolean; actualizarPrecioInventario: boolean }> };
+  const { proveedor, fechaLlegada, items } = req.body as { proveedor: string; fechaLlegada?: string; items: Array<{ id: number; cantidadRecibida: number; cantidadLocal?: number; cantidadBodega?: number; nuevoPrecioCompra: number; nuevoPrecioVentaSinIva: number; tieneIva: boolean; actualizarPrecioInventario: boolean }> };
 
   if (!Array.isArray(items) || items.length === 0) {
     res.status(400).json({ error: "Selecciona al menos un producto" });
     return;
+  }
+
+  for (const item of items) {
+    const recibida = toNum(item.cantidadRecibida);
+    const distribuida = toNum(item.cantidadLocal) + toNum(item.cantidadBodega);
+    if (Math.abs(recibida - distribuida) > 0.001) {
+      res.status(400).json({ error: `La cantidad de Local + Bodega debe coincidir con la recibida en el producto ${item.id}.` });
+      return;
+    }
   }
   
   const resultados = [];
@@ -215,6 +224,8 @@ router.post("/lote-llegada", async (req, res) => {
     const { compra, preciosModificados } = await procesarLlegadaCompra(item.id, {
       estado: "llegado",
       cantidadRecibida: item.cantidadRecibida,
+      cantidadLocal: item.cantidadLocal,
+      cantidadBodega: item.cantidadBodega,
       nuevoPrecioCompra: item.nuevoPrecioCompra,
       nuevoPrecioVentaSinIva: item.nuevoPrecioVentaSinIva,
       tieneIva: item.tieneIva,

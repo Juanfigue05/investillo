@@ -192,10 +192,10 @@ export function CalculadoraCierre({
       onClick={onClose}
     >
       <div
-        className="bg-[#0b1324] border border-slate-700/80 rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.55)] w-full max-w-[1600px] max-h-[94vh] overflow-hidden flex flex-col"
+        className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-[1600px] max-h-[94vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="bg-[#111c31] border-b border-slate-700/80 px-6 py-3.5 flex items-center justify-between shrink-0 z-10">
+        <div className="bg-card border-b border-border px-6 py-3.5 flex items-center justify-between shrink-0 z-10">
           <h2 className="text-lg font-display font-bold text-foreground flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 border border-primary/30">
               <CalcIcon className="w-4 h-4 text-primary" />
@@ -228,11 +228,11 @@ export function CalculadoraCierre({
           </div>
         </div>
 
-        <div className="p-5 lg:p-6 space-y-5 overflow-hidden bg-[#0b1324]">
+        <div className="p-5 lg:p-6 space-y-5 overflow-hidden bg-background">
           {/* ── Fila principal: Suma | Resta+ManoObra+Esperado | Monedas | Billetes ── */}
           <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_1.1fr_0.85fr_0.85fr] gap-4">
             {/* Suma */}
-            <div className="rounded-xl border border-emerald-500/35 border-l-4 bg-[#0f2130] p-3 shadow-inner shadow-black/10">
+            <div className="rounded-xl border border-emerald-500/35 border-l-4 bg-emerald-500/5 p-3 shadow-inner shadow-black/10">
               <h3 className="text-sm font-bold text-emerald-400 mb-2 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
                   <PlusCircle className="w-4 h-4" /> Suma ({suma.length}{" "}
@@ -255,7 +255,7 @@ export function CalculadoraCierre({
                           ),
                         )
                       }
-                      className="flex-1 bg-[#080f1c] border border-slate-700 px-2.5 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"
+                      className="flex-1 bg-background border border-border px-2.5 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"
                     />
                     <input
                       type="number"
@@ -268,7 +268,7 @@ export function CalculadoraCierre({
                           ),
                         )
                       }
-                      className="w-28 bg-[#080f1c] border border-emerald-500/50 px-2.5 py-1.5 rounded-lg text-xs text-right focus:ring-1 focus:ring-emerald-500 outline-none"
+                      className="w-28 bg-background border border-emerald-500/50 px-2.5 py-1.5 rounded-lg text-xs text-right focus:ring-1 focus:ring-emerald-500 outline-none"
                     />
                   </div>
                 ))}
@@ -279,7 +279,7 @@ export function CalculadoraCierre({
             </div>
 
             {/* Resta + Mano de obra + Total esperado */}
-            <div className="rounded-xl border border-destructive/35 border-l-4 bg-[#241825] p-3 flex flex-col shadow-inner shadow-black/10">
+            <div className="rounded-xl border border-destructive/35 border-l-4 bg-destructive/5 p-3 flex flex-col shadow-inner shadow-black/10">
               <h3 className="text-sm font-bold text-destructive mb-2 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
                   <MinusCircle className="w-4 h-4" /> Resta ({resta.length}{" "}
@@ -302,7 +302,7 @@ export function CalculadoraCierre({
                           ),
                         )
                       }
-                      className="flex-1 bg-[#080f1c] border border-slate-700 px-2.5 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"
+                      className="flex-1 bg-background border border-border px-2.5 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"
                     />
                     <input
                       type="number"
@@ -315,7 +315,7 @@ export function CalculadoraCierre({
                           ),
                         )
                       }
-                      className="w-28 bg-[#080f1c] border border-destructive/50 px-2.5 py-1.5 rounded-lg text-xs text-right focus:ring-1 focus:ring-destructive outline-none"
+                      className="w-28 bg-background border border-destructive/50 px-2.5 py-1.5 rounded-lg text-xs text-right focus:ring-1 focus:ring-destructive outline-none"
                     />
                   </div>
                 ))}
@@ -324,7 +324,7 @@ export function CalculadoraCierre({
                 Total resta: {formatCurrency(totalResta)}
               </p>
 
-              <div className="mt-3 bg-[#292518] border border-yellow-500/40 rounded-xl p-3">
+              <div className="mt-3 bg-yellow-500/10 border border-yellow-500/40 rounded-xl p-3">
                 <label className="block text-xs font-bold text-yellow-400 mb-1">
                   Mano de obra (valor manual)
                 </label>
@@ -333,11 +333,11 @@ export function CalculadoraCierre({
                   placeholder="0"
                   value={manoObra}
                   onChange={(e) => setManoObra(e.target.value)}
-                  className="w-full bg-[#080f1c] border border-yellow-500/50 px-2.5 py-1.5 rounded-lg text-sm text-right focus:ring-1 focus:ring-yellow-500 outline-none"
+                  className="w-full bg-background border border-yellow-500/50 px-2.5 py-1.5 rounded-lg text-sm text-right focus:ring-1 focus:ring-yellow-500 outline-none"
                 />
               </div>
 
-              <div className="mt-3 bg-[#14294a] border border-primary/40 rounded-xl p-3">
+              <div className="mt-3 bg-primary/10 border border-primary/40 rounded-xl p-3">
                 <p className="text-xs text-muted-foreground">
                   Total esperado (suma − resta − mano de obra)
                 </p>
@@ -348,7 +348,7 @@ export function CalculadoraCierre({
             </div>
 
             {/* Monedas */}
-            <div className="rounded-xl border border-slate-700 bg-[#111c31] p-3 shadow-inner shadow-black/10">
+            <div className="rounded-xl border border-border bg-card p-3 shadow-inner shadow-black/10">
               <h3 className="text-sm font-bold text-foreground mb-2 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
                   <Coins className="w-4 h-4 text-primary" /> Monedas
@@ -376,7 +376,7 @@ export function CalculadoraCierre({
                           onChange={(e) =>
                             setMonedas((p) => ({ ...p, [d]: e.target.value }))
                           }
-                          className="w-16 bg-[#080f1c] border border-slate-700 px-1.5 py-1 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"
+                          className="w-16 bg-background border border-border px-1.5 py-1 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"
                         />
                       </td>
                       <td className="text-muted-foreground whitespace-nowrap pr-1.5">
@@ -395,7 +395,7 @@ export function CalculadoraCierre({
             </div>
 
             {/* Billetes */}
-            <div className="rounded-xl border border-slate-700 bg-[#111c31] p-3 shadow-inner shadow-black/10">
+            <div className="rounded-xl border border-border bg-card p-3 shadow-inner shadow-black/10">
               <h3 className="text-sm font-bold text-foreground mb-2 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
                   <Banknote className="w-4 h-4 text-primary" /> Billetes
@@ -423,7 +423,7 @@ export function CalculadoraCierre({
                           onChange={(e) =>
                             setBilletes((p) => ({ ...p, [d]: e.target.value }))
                           }
-                          className="w-16 bg-[#080f1c] border border-slate-700 px-1.5 py-1 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"
+                          className="w-16 bg-background border border-border px-1.5 py-1 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"
                         />
                       </td>
                       <td className="text-muted-foreground whitespace-nowrap pr-1.5">
@@ -492,7 +492,7 @@ export function CalculadoraCierre({
 
           <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] gap-4">
             {/* ── Remachadas ── */}
-            <div className="rounded-xl border border-slate-700 bg-[#111c31] p-3 shadow-inner shadow-black/10">
+            <div className="rounded-xl border border-border bg-card p-3 shadow-inner shadow-black/10">
               <h3 className="text-sm font-bold text-foreground mb-2">
                 Consulta — Remachadas
               </h3>
@@ -561,7 +561,7 @@ export function CalculadoraCierre({
             </div>
 
             {/* ── Total Monedas (Bolsa/Caja) — persistente ── */}
-            <div className="rounded-xl border border-slate-700 bg-[#111c31] p-3 shadow-inner shadow-black/10">
+            <div className="rounded-xl border border-border bg-card p-3 shadow-inner shadow-black/10">
               <h3 className="text-sm font-bold text-foreground mb-2">
                 Total Monedas
               </h3>

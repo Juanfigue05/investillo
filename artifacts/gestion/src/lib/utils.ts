@@ -63,7 +63,7 @@ export function formatCurrency(value: number | undefined | null) {
 
 export function parseNumberCO(value: string): number {
   // Replaces dot (thousands) with nothing, and comma (decimals) with dot
-  const clean = value.replace(/\./g, "").replace(/,/g, ".");
+  const clean = value.replace(/'/g, "").replace(/\./g, "").replace(/,/g, ".");
   return parseFloat(clean) || 0;
 }
 

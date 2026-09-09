@@ -7,7 +7,7 @@ import {
   useEliminarCompra,
   useGetInventario,
 } from "@workspace/api-client-react";
-import { fechaHoyColombia, formatCurrency } from "@/lib/utils";
+import { fechaHoyColombia, formatCurrency, parseNumberCO } from "@/lib/utils";
 import {
   PackageCheck,
   Truck,
@@ -57,6 +57,17 @@ interface PrecioConfirmModal {
 }
 
 const API = "/api";
+
+function formatearDineroCampo(value: string) {
+  const numero = parseNumberCO(value);
+  if (!value.trim() || !Number.isFinite(numero)) return value;
+  const formateado = new Intl.NumberFormat("es-CO", {
+    maximumFractionDigits: 2,
+  }).format(numero);
+  return Math.abs(numero) >= 1_000_000
+    ? formateado.replace(".", "'")
+    : formateado;
+}
 
 function agruparPorAnioMes(llegadas: any[]) {
   const porAnio = new Map<string, Map<string, any[]>>();
@@ -270,6 +281,8 @@ export default function Compras() {
       number,
       {
         cantidadRecibida: string;
+        cantidadLocal: string;
+        cantidadBodega: string;
         nuevoPrecioCompra: string;
         nuevoPrecioVentaSinIva: string;
       }
@@ -287,8 +300,12 @@ export default function Compras() {
     const prod = productos?.find((p) => p.id === compra.productoId);
     setLlegadaForm({
       cantidad: "",
-      nuevoPrecioCompra: prod ? String(prod.precioCompra) : "",
-      nuevoPrecioVentaSinIva: prod ? String(prod.precioVentaSinIva) : "",
+      nuevoPrecioCompra: prod
+        ? formatearDineroCampo(String(prod.precioCompra))
+        : "",
+      nuevoPrecioVentaSinIva: prod
+        ? formatearDineroCampo(String(prod.precioVentaSinIva))
+        : "",
       tieneIva: prod ? prod.tieneIva : false,
       proveedor: "",
       fechaLlegada: fechaHoyColombia(),
@@ -313,10 +330,10 @@ export default function Compras() {
         ? parseFloat(form.cantidadBodega)
         : undefined,
       nuevoPrecioCompra: form.nuevoPrecioCompra
-        ? parseFloat(form.nuevoPrecioCompra)
+        ? parseNumberCO(form.nuevoPrecioCompra)
         : undefined,
       nuevoPrecioVentaSinIva: form.nuevoPrecioVentaSinIva
-        ? parseFloat(form.nuevoPrecioVentaSinIva)
+        ? parseNumberCO(form.nuevoPrecioVentaSinIva)
         : undefined,
       tieneIva: form.tieneIva,
       proveedor: form.proveedor || undefined,
@@ -372,10 +389,10 @@ export default function Compras() {
     // Check if prices were modified
     const prod = productos?.find((p) => p.id === compra.productoId);
     const pcNuevo = llegadaForm.nuevoPrecioCompra
-      ? parseFloat(llegadaForm.nuevoPrecioCompra)
+      ? parseNumberCO(llegadaForm.nuevoPrecioCompra)
       : null;
     const pvNuevo = llegadaForm.nuevoPrecioVentaSinIva
-      ? parseFloat(llegadaForm.nuevoPrecioVentaSinIva)
+      ? parseNumberCO(llegadaForm.nuevoPrecioVentaSinIva)
       : null;
     const pcActual = prod ? prod.precioCompra : 0;
     const pvSinIvaActual = prod ? prod.precioVentaSinIva : 0;
@@ -507,10 +524,10 @@ export default function Compras() {
           onClick={() => setLoteOpen(false)}
         >
           <div
-            className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-5xl max-h-[94vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-6 space-y-4">
+            <div className="p-6 lg:p-8 space-y-5">
               <h2 className="text-lg font-bold text-foreground">
                 Registrar llegada en lote
               </h2>
@@ -536,26 +553,31 @@ export default function Compras() {
                   className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
                 />
               </div>
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                 {seleccionadas.map((id) => {
                   const compra = pendientes.find((c: any) => c.id === id);
                   const datos = loteDatos[id] || {
                     cantidadRecibida: "",
+                    cantidadLocal: "",
+                    cantidadBodega: "",
                     nuevoPrecioCompra: "",
                     nuevoPrecioVentaSinIva: "",
                   };
                   return (
-                    <div
-                      key={id}
-                      className="bg-background border border-border rounded-xl p-3"
-                    >
-                      <p className="text-sm font-medium text-foreground mb-2">
-                        {compra?.productoNombre}
-                      </p>
-                      <div className="grid grid-cols-3 gap-2">
+                    <div key={id} className="bg-background border border-border rounded-xl p-4">
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{compra?.productoNombre}</p>
+                          <p className="text-xs text-muted-foreground">Cantidad y distribución del inventario</p>
+                        </div>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">{compra?.productoCodigo || "Sin código"}</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <label className="text-xs text-muted-foreground">Cantidad recibida
                         <input
                           type="number"
-                          placeholder="Cantidad"
+                          min="0"
+                          step="0.25"
                           value={datos.cantidadRecibida}
                           onChange={(e) =>
                             setLoteDatos((prev) => ({
@@ -566,11 +588,48 @@ export default function Compras() {
                               },
                             }))
                           }
-                          className="bg-card border border-border px-2 py-1.5 rounded-lg text-xs"
+                          className="mt-1 w-full bg-card border border-border px-2 py-2 rounded-lg text-sm text-foreground"
                         />
+                        </label>
+                        <label className="text-xs text-muted-foreground">A Local
                         <input
                           type="number"
-                          placeholder="Precio compra"
+                          min="0"
+                          step="0.25"
+                          value={datos.cantidadLocal}
+                          onChange={(e) =>
+                            setLoteDatos((prev) => ({
+                              ...prev,
+                              [id]: { ...prev[id], cantidadLocal: e.target.value },
+                            }))
+                          }
+                          className="mt-1 w-full bg-card border border-border px-2 py-2 rounded-lg text-sm text-foreground"
+                        />
+                        </label>
+                        <label className="text-xs text-muted-foreground">A Bodega
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          value={datos.cantidadBodega}
+                          onChange={(e) =>
+                            setLoteDatos((prev) => ({
+                              ...prev,
+                              [id]: { ...prev[id], cantidadBodega: e.target.value },
+                            }))
+                          }
+                          className="mt-1 w-full bg-card border border-border px-2 py-2 rounded-lg text-sm text-foreground"
+                        />
+                        </label>
+                      </div>
+                      <p className={`text-xs mt-2 ${parseNumberCO(datos.cantidadLocal) + parseNumberCO(datos.cantidadBodega) === parseNumberCO(datos.cantidadRecibida) ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                        Local + Bodega: {parseNumberCO(datos.cantidadLocal) + parseNumberCO(datos.cantidadBodega)} / {datos.cantidadRecibida || "0"}
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                        <label className="text-xs text-muted-foreground">Precio de compra
+                        <input
+                          type="text"
+                          inputMode="decimal"
                           value={datos.nuevoPrecioCompra}
                           onChange={(e) =>
                             setLoteDatos((prev) => ({
@@ -581,11 +640,19 @@ export default function Compras() {
                               },
                             }))
                           }
-                          className="bg-card border border-border px-2 py-1.5 rounded-lg text-xs"
+                          onBlur={(e) =>
+                            setLoteDatos((prev) => ({
+                              ...prev,
+                              [id]: { ...prev[id], nuevoPrecioCompra: formatearDineroCampo(e.target.value) },
+                            }))
+                          }
+                          className="mt-1 w-full bg-card border border-border px-2 py-2 rounded-lg text-sm text-right text-foreground"
                         />
+                        </label>
+                        <label className="text-xs text-muted-foreground">Precio de venta (sin IVA)
                         <input
-                          type="number"
-                          placeholder="Precio venta (sin IVA)"
+                          type="text"
+                          inputMode="decimal"
                           value={datos.nuevoPrecioVentaSinIva}
                           onChange={(e) =>
                             setLoteDatos((prev) => ({
@@ -596,8 +663,15 @@ export default function Compras() {
                               },
                             }))
                           }
-                          className="bg-card border border-border px-2 py-1.5 rounded-lg text-xs"
+                          onBlur={(e) =>
+                            setLoteDatos((prev) => ({
+                              ...prev,
+                              [id]: { ...prev[id], nuevoPrecioVentaSinIva: formatearDineroCampo(e.target.value) },
+                            }))
+                          }
+                          className="mt-1 w-full bg-card border border-border px-2 py-2 rounded-lg text-sm text-right text-foreground"
                         />
+                        </label>
                       </div>
                     </div>
                   );
@@ -618,7 +692,11 @@ export default function Compras() {
                           fechaLlegada: loteFecha,
                           items: seleccionadas.map((id) => ({
                             id,
-                            ...loteDatos[id],
+                            cantidadRecibida: parseNumberCO(loteDatos[id]?.cantidadRecibida || "0"),
+                            cantidadLocal: parseNumberCO(loteDatos[id]?.cantidadLocal || "0"),
+                            cantidadBodega: parseNumberCO(loteDatos[id]?.cantidadBodega || "0"),
+                            nuevoPrecioCompra: parseNumberCO(loteDatos[id]?.nuevoPrecioCompra || "0"),
+                            nuevoPrecioVentaSinIva: parseNumberCO(loteDatos[id]?.nuevoPrecioVentaSinIva || "0"),
                           })),
                         }),
                       });
@@ -816,11 +894,13 @@ export default function Compras() {
                           );
                           return {
                             cantidadRecibida: "1",
+                            cantidadLocal: "1",
+                            cantidadBodega: "0",
                             nuevoPrecioCompra: producto
-                              ? String(producto.precioCompra)
+                              ? formatearDineroCampo(String(producto.precioCompra))
                               : "",
                             nuevoPrecioVentaSinIva: producto
-                              ? String(producto.precioVentaSinIva)
+                              ? formatearDineroCampo(String(producto.precioVentaSinIva))
                               : "",
                           };
                         })(),
@@ -1120,12 +1200,19 @@ export default function Compras() {
                                 P. Compra nuevo
                               </label>
                               <input
-                                type="number"
+                                type="text"
+                                inputMode="decimal"
                                 value={llegadaForm.nuevoPrecioCompra}
                                 onChange={(e) =>
                                   setLlegadaForm({
                                     ...llegadaForm,
                                     nuevoPrecioCompra: e.target.value,
+                                  })
+                                }
+                                onBlur={(e) =>
+                                  setLlegadaForm({
+                                    ...llegadaForm,
+                                    nuevoPrecioCompra: formatearDineroCampo(e.target.value),
                                   })
                                 }
                                 className="w-full bg-card border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
@@ -1148,12 +1235,19 @@ export default function Compras() {
                                 P. Venta s/IVA nuevo
                               </label>
                               <input
-                                type="number"
+                                type="text"
+                                inputMode="decimal"
                                 value={llegadaForm.nuevoPrecioVentaSinIva}
                                 onChange={(e) =>
                                   setLlegadaForm({
                                     ...llegadaForm,
                                     nuevoPrecioVentaSinIva: e.target.value,
+                                  })
+                                }
+                                onBlur={(e) =>
+                                  setLlegadaForm({
+                                    ...llegadaForm,
+                                    nuevoPrecioVentaSinIva: formatearDineroCampo(e.target.value),
                                   })
                                 }
                                 className="w-full bg-card border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
