@@ -37,7 +37,6 @@ function agregarFilaOptimista(
 }
 
 interface LlegadaForm {
-  cantidad: string;
   cantidadLocal: string;
   cantidadBodega: string;
   nuevoPrecioCompra: string;
@@ -255,7 +254,6 @@ export default function Compras() {
 
   const [llegadaOpen, setLlegadaOpen] = useState<number | null>(null);
   const [llegadaForm, setLlegadaForm] = useState<LlegadaForm>({
-    cantidad: "",
     nuevoPrecioCompra: "",
     nuevoPrecioVentaSinIva: "",
     tieneIva: false,
@@ -299,7 +297,6 @@ export default function Compras() {
     setLlegadaOpen(compra.id);
     const prod = productos?.find((p) => p.id === compra.productoId);
     setLlegadaForm({
-      cantidad: "",
       nuevoPrecioCompra: prod
         ? formatearDineroCampo(String(prod.precioCompra))
         : "",
@@ -319,15 +316,17 @@ export default function Compras() {
     form: LlegadaForm,
     actualizarPrecioInventario: boolean,
   ) => {
+    const cantidadRecibida =
+      parseNumberCO(form.cantidadLocal) + parseNumberCO(form.cantidadBodega);
     const payloadLlegada = {
       fechaLlegada: form.fechaLlegada,
       estado: "llegado" as const,
-      cantidadRecibida: parseFloat(form.cantidad),
+      cantidadRecibida,
       cantidadLocal: form.cantidadLocal
-        ? parseFloat(form.cantidadLocal)
+        ? parseNumberCO(form.cantidadLocal)
         : undefined,
       cantidadBodega: form.cantidadBodega
-        ? parseFloat(form.cantidadBodega)
+        ? parseNumberCO(form.cantidadBodega)
         : undefined,
       nuevoPrecioCompra: form.nuevoPrecioCompra
         ? parseNumberCO(form.nuevoPrecioCompra)
@@ -381,8 +380,11 @@ export default function Compras() {
   };
 
   const handleLlegada = (compra: any) => {
-    if (!llegadaForm.cantidad || parseFloat(llegadaForm.cantidad) <= 0) {
-      alert("Ingresa la cantidad recibida");
+    const cantidadTotal =
+      parseNumberCO(llegadaForm.cantidadLocal) +
+      parseNumberCO(llegadaForm.cantidadBodega);
+    if (cantidadTotal <= 0) {
+      alert("Ingresa una cantidad en Local o Bodega");
       return;
     }
 
@@ -563,6 +565,9 @@ export default function Compras() {
                     nuevoPrecioCompra: "",
                     nuevoPrecioVentaSinIva: "",
                   };
+                  const cantidadTotal =
+                    parseNumberCO(datos.cantidadLocal) +
+                    parseNumberCO(datos.cantidadBodega);
                   return (
                     <div key={id} className="bg-background border border-border rounded-xl p-4">
                       <div className="flex items-start justify-between gap-3 mb-3">
@@ -573,24 +578,12 @@ export default function Compras() {
                         <span className="text-xs text-muted-foreground whitespace-nowrap">{compra?.productoCodigo || "Sin código"}</span>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        <label className="text-xs text-muted-foreground">Cantidad recibida
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.25"
-                          value={datos.cantidadRecibida}
-                          onChange={(e) =>
-                            setLoteDatos((prev) => ({
-                              ...prev,
-                              [id]: {
-                                ...prev[id],
-                                cantidadRecibida: e.target.value,
-                              },
-                            }))
-                          }
-                          className="mt-1 w-full bg-card border border-border px-2 py-2 rounded-lg text-sm text-foreground"
-                        />
-                        </label>
+                        <div className="text-xs text-muted-foreground">
+                          Cantidad recibida
+                          <div className="mt-1 w-full bg-muted/60 border border-border px-2 py-2 rounded-lg text-sm font-semibold text-foreground">
+                            {cantidadTotal}
+                          </div>
+                        </div>
                         <label className="text-xs text-muted-foreground">A Local
                         <input
                           type="number"
@@ -622,8 +615,8 @@ export default function Compras() {
                         />
                         </label>
                       </div>
-                      <p className={`text-xs mt-2 ${parseNumberCO(datos.cantidadLocal) + parseNumberCO(datos.cantidadBodega) === parseNumberCO(datos.cantidadRecibida) ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
-                        Local + Bodega: {parseNumberCO(datos.cantidadLocal) + parseNumberCO(datos.cantidadBodega)} / {datos.cantidadRecibida || "0"}
+                      <p className="text-xs mt-2 text-emerald-600 dark:text-emerald-400">
+                        Total recibido: {cantidadTotal}
                       </p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                         <label className="text-xs text-muted-foreground">Precio de compra
@@ -692,9 +685,11 @@ export default function Compras() {
                           fechaLlegada: loteFecha,
                           items: seleccionadas.map((id) => ({
                             id,
-                            cantidadRecibida: parseNumberCO(loteDatos[id]?.cantidadRecibida || "0"),
                             cantidadLocal: parseNumberCO(loteDatos[id]?.cantidadLocal || "0"),
                             cantidadBodega: parseNumberCO(loteDatos[id]?.cantidadBodega || "0"),
+                            cantidadRecibida:
+                              parseNumberCO(loteDatos[id]?.cantidadLocal || "0") +
+                              parseNumberCO(loteDatos[id]?.cantidadBodega || "0"),
                             nuevoPrecioCompra: parseNumberCO(loteDatos[id]?.nuevoPrecioCompra || "0"),
                             nuevoPrecioVentaSinIva: parseNumberCO(loteDatos[id]?.nuevoPrecioVentaSinIva || "0"),
                           })),
@@ -1131,23 +1126,12 @@ export default function Compras() {
                           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                             <div>
                               <label className="block text-xs text-muted-foreground mb-1">
-                                Cantidad{" "}
-                                <span className="text-destructive">*</span>
+                                Cantidad recibida
                               </label>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.25"
-                                placeholder="0"
-                                value={llegadaForm.cantidad}
-                                onChange={(e) =>
-                                  setLlegadaForm({
-                                    ...llegadaForm,
-                                    cantidad: e.target.value,
-                                  })
-                                }
-                                className="w-full bg-card border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
-                              />
+                              <div className="w-full bg-muted/60 border border-border px-3 py-2 rounded-lg text-sm font-semibold text-foreground">
+                                {parseNumberCO(llegadaForm.cantidadLocal) +
+                                  parseNumberCO(llegadaForm.cantidadBodega)}
+                              </div>
                               <div className="grid grid-cols-2 gap-2 mt-2">
                                 <div>
                                   <label className="block text-[11px] text-muted-foreground mb-1">
@@ -1182,18 +1166,9 @@ export default function Compras() {
                                   />
                                 </div>
                               </div>
-                              {parseFloat(llegadaForm.cantidadLocal || "0") +
-                                parseFloat(
-                                  llegadaForm.cantidadBodega || "0",
-                                ) !==
-                                parseFloat(llegadaForm.cantidad || "0") &&
-                                (llegadaForm.cantidadLocal ||
-                                  llegadaForm.cantidadBodega) && (
-                                  <p className="text-[11px] text-amber-400 mt-1">
-                                    ⚠ Local + Bodega debe sumar{" "}
-                                    {llegadaForm.cantidad}
-                                  </p>
-                                )}
+                              <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
+                                Total recibido: {parseNumberCO(llegadaForm.cantidadLocal) + parseNumberCO(llegadaForm.cantidadBodega)}
+                              </p>
                             </div>
                             <div>
                               <label className="block text-xs text-muted-foreground mb-1">
