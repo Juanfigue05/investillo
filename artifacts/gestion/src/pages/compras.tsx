@@ -809,11 +809,21 @@ export default function Compras() {
                     Object.fromEntries(
                       seleccionadas.map((id) => [
                         id,
-                        {
-                          cantidadRecibida: "1",
-                          nuevoPrecioCompra: "",
-                          nuevoPrecioVentaSinIva: "",
-                        },
+                        (() => {
+                          const compra = pendientes.find((item: any) => item.id === id);
+                          const producto = productos?.find(
+                            (item: any) => item.id === compra?.productoId,
+                          );
+                          return {
+                            cantidadRecibida: "1",
+                            nuevoPrecioCompra: producto
+                              ? String(producto.precioCompra)
+                              : "",
+                            nuevoPrecioVentaSinIva: producto
+                              ? String(producto.precioVentaSinIva)
+                              : "",
+                          };
+                        })(),
                       ]),
                     ),
                   );
