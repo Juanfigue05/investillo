@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
 import { cierreDiarioTable, eventosSincronizacionTable, operacionesSincronizadasTable, trabajadoresTable, ventasDiariasTable } from "@workspace/db/schema";
-import { eq, gte, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { fechaColombia } from "../lib/fecha";
 
 const router: IRouter = Router();
@@ -17,6 +17,7 @@ router.get("/formas-pago", async (_req, res) => {
   const fechaLimite = new Date();
   fechaLimite.setMonth(fechaLimite.getMonth() - 6);
   const fechaLimiteStr = fechaColombia(fechaLimite);
+  const fechaHoy = fechaColombia(new Date());
 
   const rows = await db
     .select({
@@ -25,7 +26,7 @@ router.get("/formas-pago", async (_req, res) => {
       total: sql<string>`SUM(${ventasDiariasTable.precioVentaTotal})`,
     })
     .from(ventasDiariasTable)
-    .where(gte(ventasDiariasTable.fecha, fechaLimiteStr))
+    .where(sql`${ventasDiariasTable.fecha} >= ${fechaLimiteStr} AND ${ventasDiariasTable.fecha} <= ${fechaHoy}`)
     .groupBy(ventasDiariasTable.fecha, ventasDiariasTable.formaPago);
 
   const porDiaMap = new Map<string, Record<string, number>>();

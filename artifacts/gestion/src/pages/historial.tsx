@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Layout } from "@/components/Layout";
 import {
   useGetHistorial,
@@ -20,6 +20,26 @@ interface EditVentaValues {
   precioVentaUnidad: string;
 }
 
+const NOMBRES_MES = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+type VentaAgrupada = { tipoLinea: string; precioVentaTotal: number; [key: string]: any };
+type DiaAgrupado = { fecha: string; ventas: VentaAgrupada[]; [key: string]: any };
+
+function agruparPorAnioMes(dias: DiaAgrupado[]): { anio: string; meses: [string, DiaAgrupado[]][] }[] {
+  const porAnio = new Map<string, Map<string, DiaAgrupado[]>>();
+  for (const dia of dias) {
+    const [anio, mes] = dia.fecha.split("-");
+    if (!porAnio.has(anio)) porAnio.set(anio, new Map());
+    const meses = porAnio.get(anio)!;
+    if (!meses.has(mes)) meses.set(mes, []);
+    meses.get(mes)!.push(dia);
+  }
+  return [...porAnio.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([anio, meses]) => ({
+    anio,
+    meses: [...meses.entries()].sort((a, b) => b[0].localeCompare(a[0])),
+  }));
+}
+
 export default function Historial() {
   const { data: historial, isLoading } = useGetHistorial();
   const queryClient = useQueryClient();
@@ -30,6 +50,15 @@ export default function Historial() {
   const eliminarVentaMutation = useEliminarVenta();
 
   const [expandedDia, setExpandedDia] = useState<number | null>(null);
+  const [filtroAnio, setFiltroAnio] = useState("");
+  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroDia, setFiltroDia] = useState("");
+  const aniosDisponibles = useMemo(() => [...new Set((historial || []).map((dia) => dia.fecha.slice(0, 4)))].sort((a, b) => b.localeCompare(a)), [historial]);
+  const historialFiltrado = useMemo(() => (historial || []).filter((dia) => {
+    const [anio, mes] = dia.fecha.split("-");
+    return (!filtroAnio || anio === filtroAnio) && (!filtroMes || mes === filtroMes) && (!filtroDia || dia.fecha === filtroDia);
+  }), [historial, filtroAnio, filtroMes, filtroDia]);
+  const grupos = useMemo(() => agruparPorAnioMes(historialFiltrado as any[]), [historialFiltrado]);
 
   // Notas editing
   const [editingNotasDia, setEditingNotasDia] = useState<number | null>(null);
@@ -127,6 +156,12 @@ export default function Historial() {
             <p className="text-muted-foreground mt-1">
               Días guardados desde Ventas Diarias. La fecha es inmutable; las ventas son editables.
             </p>
+            <div className="flex flex-wrap items-end gap-3 mt-4 p-3 bg-card border border-border rounded-xl">
+              <label className="text-xs text-muted-foreground">Año<select value={filtroAnio} onChange={(e) => setFiltroAnio(e.target.value)} className="block mt-1 bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground"><option value="">Todos</option>{aniosDisponibles.map((anio) => <option key={anio} value={anio}>{anio}</option>)}</select></label>
+              <label className="text-xs text-muted-foreground">Mes<select value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)} className="block mt-1 bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground">{NOMBRES_MES.map((mes, index) => index === 0 ? <option key="todos" value="">Todos</option> : <option key={mes} value={String(index).padStart(2, "0")}>{mes}</option>)}</select></label>
+              <label className="text-xs text-muted-foreground">Día específico<input type="date" value={filtroDia} onChange={(e) => setFiltroDia(e.target.value)} className="block mt-1 bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground" /></label>
+              {(filtroAnio || filtroMes || filtroDia) && <button onClick={() => { setFiltroAnio(""); setFiltroMes(""); setFiltroDia(""); }} className="px-3 py-2 text-sm rounded-lg bg-muted text-foreground hover:bg-muted/80">Limpiar filtros</button>}
+            </div>
           </div>
         </div>
 
@@ -140,8 +175,24 @@ export default function Historial() {
             <p className="text-sm text-muted-foreground mt-1">Ve a <strong>Ventas Diarias</strong> y presiona <em>Guardar en Historial</em>.</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {historial.map((dia) => {
+          <div className={`space-y-6 ${historialFiltrado.length === 0 ? "hidden" : ""}`}>
+            {grupos.map((grupo) => {
+              const totalAnio = grupo.meses.flatMap(([, items]) => items).reduce((suma, dia) => suma + dia.ventas.filter((v) => v.tipoLinea === "venta").reduce((s, v) => s + v.precioVentaTotal, 0), 0);
+              return (
+                <section key={grupo.anio} className="space-y-3">
+                  <div className="flex items-center justify-between border-b border-border pb-2">
+                    <h2 className="text-lg font-bold text-foreground">{grupo.anio}</h2>
+                    <span className="text-sm font-semibold text-primary">Total año: {formatCurrency(totalAnio)}</span>
+                  </div>
+                  {grupo.meses.map(([mes, dias]) => {
+                    const totalMes = dias.reduce((suma, dia) => suma + dia.ventas.filter((v) => v.tipoLinea === "venta").reduce((s, v) => s + v.precioVentaTotal, 0), 0);
+                    return (
+                      <div key={`${grupo.anio}-${mes}`} className="space-y-3">
+                        <div className="flex items-center justify-between px-1">
+                          <h3 className="text-sm font-semibold text-muted-foreground">{NOMBRES_MES[Number(mes)]}</h3>
+                          <span className="text-xs font-semibold text-primary">Total mes: {formatCurrency(totalMes)}</span>
+                        </div>
+                        {dias.map((dia) => {
               const fechaLabel = new Date(dia.fecha + "T12:00:00").toLocaleDateString("es-CO", {
                 weekday: "long", year: "numeric", month: "long", day: "numeric",
               });
@@ -261,7 +312,7 @@ export default function Historial() {
                                       <td className="px-4 py-1.5 font-bold text-primary whitespace-nowrap">{formatCurrency(pvU * cant)}</td>
                                       <td className="px-2 py-1.5">
                                         <div className="flex gap-1">
-                                          <button onClick={() => handleSaveVenta(venta)} disabled={actualizarVentaMutation.isPending} className="p-1 bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors"><Check className="w-3.5 h-3.5" /></button>
+                                          <button onClick={() => handleSaveVenta(venta as any)} disabled={actualizarVentaMutation.isPending} className="p-1 bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors"><Check className="w-3.5 h-3.5" /></button>
                                           <button onClick={() => setEditingVentaId(null)} className="p-1 bg-muted text-muted-foreground rounded hover:bg-muted/80 transition-colors"><X className="w-3.5 h-3.5" /></button>
                                         </div>
                                       </td>
@@ -280,7 +331,7 @@ export default function Historial() {
                                     <td className="px-4 py-2.5 font-bold text-primary">{formatCurrency(venta.precioVentaTotal)}</td>
                                     <td className="px-2 py-2.5">
                                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                        <button onClick={() => openEditVenta(venta)} className="p-1 text-muted-foreground hover:text-primary rounded transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+                                        <button onClick={() => openEditVenta(venta as any)} className="p-1 text-muted-foreground hover:text-primary rounded transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
                                         <button onClick={() => handleDeleteVenta(venta.id)} className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                                       </div>
                                     </td>
@@ -304,8 +355,17 @@ export default function Historial() {
                   )}
                 </div>
               );
+                        })}
+                      </div>
+                    );
+                  })}
+                </section>
+              );
             })}
           </div>
+        )}
+        {!isLoading && historial && historial.length > 0 && historialFiltrado.length === 0 && (
+          <div className="py-16 text-center bg-card rounded-2xl border border-border text-muted-foreground">No hay días que coincidan con los filtros seleccionados.</div>
         )}
       </div>
     </Layout>
