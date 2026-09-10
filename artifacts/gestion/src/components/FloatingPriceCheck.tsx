@@ -262,10 +262,10 @@ export function FloatingPriceCheck({ topbar }: { topbar?: boolean }) {
                 <button
           onClick={() => setIsOpen(!isOpen)}
           aria-label="Consultar precios"
-          className="relative flex flex-col items-center justify-center gap-0.5 w-14 py-1.5 rounded-xl hover:bg-muted transition-colors cursor-pointer"
+          className="relative flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors cursor-pointer shrink-0"
         >
-          <Calculator className="w-5 h-5 text-muted-foreground hover:text-foreground transition-colors" />
-          <span className="text-[9px] text-muted-foreground leading-none">Precios</span>
+          <Calculator className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground hover:text-foreground transition-colors" />
+          <span className="text-[10px] lg:text-[11px] text-muted-foreground leading-none">Precios</span>
         </button>
         <AnimatePresence>
           {isOpen && (

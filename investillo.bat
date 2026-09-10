@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 :: Configura el puerto de tu localhost
 set PUERTO=8080
-
+goto :abrir_chrome
 :: Verifica si el API de Investillo ya esta respondiendo
 netstat -ano | findstr :%PUERTO% >nul
 if %errorlevel% equ 0 (

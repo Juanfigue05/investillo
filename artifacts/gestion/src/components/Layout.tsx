@@ -160,7 +160,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 lg:ml-40">
         {/* Header */}
-        <header className="h-16 lg:h-20 px-4 lg:px-8 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-20 flex items-center justify-between gap-4">
+        <header className="h-[59px] lg:h-[84px] px-3 lg:px-6 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-20 flex items-center gap-2 lg:gap-3">
           {/* Mobile hamburger */}
           <button
             className="lg:hidden p-2 rounded-xl hover:bg-muted transition-colors flex-shrink-0"
@@ -169,37 +169,37 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <Menu className="w-5 h-5 text-foreground" />
           </button>
 
-          <h2 className="text-base lg:text-xl font-display font-medium text-foreground truncate hidden sm:block">
+          <h2 className="text-base lg:text-xl font-display font-medium text-foreground truncate hidden sm:block shrink-0">
             Panel de Control
           </h2>
           <span className="text-base font-display font-bold text-primary sm:hidden">Investillo</span>
 
           <RelojColombia />
 
-          <div className="flex items-center gap-3 ml-auto">
+          <div className="flex items-center gap-1 lg:gap-2 ml-auto shrink-0">
             <ConnectionStatus />
             <button
               onClick={() => setShowTensionada(true)}
-              className="flex flex-col items-center justify-center gap-0.5 w-14 py-1.5 rounded-xl hover:bg-muted transition-colors"
+              className="flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors shrink-0"
             >
-              <Zap className="w-5 h-5 text-cyan-400" />
-              <span className="text-[9px] text-muted-foreground leading-none">Tensión</span>
+              <Zap className="w-5 h-5 lg:w-6 lg:h-6 text-cyan-400" />
+              <span className="text-[10px] lg:text-[11px] text-muted-foreground leading-none">Tensión</span>
             </button>
             <button
               onClick={() => { setObraFecha(fechaHoyColombia()); setObraError(""); setShowObraElectronica(true); }}
-              className="flex flex-col items-center justify-center gap-0.5 w-16 py-1.5 rounded-xl hover:bg-muted transition-colors"
+              className="flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors shrink-0"
               aria-label="Registrar obra electrónica"
             >
-              <Hand className="w-5 h-5 text-amber-400" />
-              <span className="text-[9px] text-muted-foreground leading-none">Obra elec.</span>
+              <Hand className="w-5 h-5 lg:w-6 lg:h-6 text-amber-400" />
+              <span className="text-[10px] lg:text-[11px] text-muted-foreground leading-none">Obra elec.</span>
             </button>
             <FloatingPriceCheck topbar />   
             <FloatingNotepad topbar />
             <BackupLocal topbar />
 
-            <button onClick={() => setCalcCierreOpen(true)} className="flex flex-col items-center justify-center gap-0.5 w-14 py-1.5 rounded-xl hover:bg-muted transition-colors" aria-label="Calculadora de cierre">
-              <CalcIcon className="w-5 h-5 text-muted-foreground hover:text-foreground transition-colors" />
-              <span className="text-[9px] text-muted-foreground leading-none">Cierre</span>
+            <button onClick={() => setCalcCierreOpen(true)} className="flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors shrink-0" aria-label="Calculadora de cierre">
+              <CalcIcon className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground hover:text-foreground transition-colors" />
+              <span className="text-[10px] lg:text-[11px] text-muted-foreground leading-none">Cierre</span>
             </button>
             
             <button
@@ -207,10 +207,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
               aria-label="Ver alertas de inventario"
               aria-expanded={alertsOpen}
               onClick={() => setAlertsOpen((open) => !open)}
-              className="relative flex flex-col items-center justify-center gap-0.5 w-14 py-1.5 rounded-xl hover:bg-muted transition-colors cursor-pointer"
+              className="relative flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors cursor-pointer shrink-0"
             >
-              <Bell className="w-5 h-5 text-muted-foreground hover:text-foreground transition-colors" />
-              <span className="text-[9px] text-muted-foreground leading-none">Alertas</span>
+              <Bell className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground hover:text-foreground transition-colors" />
+              <span className="text-[10px] lg:text-[11px] text-muted-foreground leading-none">Alertas</span>
               {alertCount > 0 && (
                 <span className="absolute top-0.5 right-0.5 w-4 h-4 lg:w-5 lg:h-5 bg-destructive text-destructive-foreground text-[9px] lg:text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
                   {alertCount > 999 ? "999+" : alertCount}

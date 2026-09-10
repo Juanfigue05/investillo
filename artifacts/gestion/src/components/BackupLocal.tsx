@@ -121,10 +121,10 @@ export function BackupLocal({ topbar }: { topbar?: boolean }) {
         type="button"
         aria-label="Copia local de respaldo"
         onClick={() => setIsOpen((o) => !o)}
-        className="relative flex flex-col items-center justify-center gap-0.5 w-14 py-1.5 rounded-xl hover:bg-muted transition-colors cursor-pointer"
+        className="relative flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors cursor-pointer shrink-0"
       >
-        <HardDrive className="w-5 h-5 text-muted-foreground hover:text-foreground transition-colors" />
-        <span className="text-[9px] text-muted-foreground leading-none">
+        <HardDrive className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground hover:text-foreground transition-colors" />
+        <span className="text-[10px] lg:text-[11px] text-muted-foreground leading-none">
           Respaldo
         </span>
         {pendientes > 0 && (
