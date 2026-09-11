@@ -4,11 +4,12 @@ import { comprasTable, eventosSincronizacionTable, historialPreciosTable, produc
 import { eq,sql,and, gte } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
 import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
+import { parseNumeroColombia } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
 function toNum(v: unknown): number {
-  return typeof v === "string" ? parseFloat(v) : Number(v);
+  return parseNumeroColombia(v);
 }
 
 function mapCompra(
@@ -116,24 +117,24 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
   if (estado === "llegado" && cantidadRecibida) {
     const [producto] = await db.select().from(productosTable).where(eq(productosTable.id, existing.productoId));
     if (producto) {
-      const cantidadNum = parseFloat(String(cantidadRecibida));
+      const cantidadNum = parseNumeroColombia(cantidadRecibida);
       const updateProd: Record<string, unknown> = {
         stockActual: sql`${productosTable.stockActual} + ${cantidadNum}`,
-        stockLocal: sql`${productosTable.stockLocal} + ${parseFloat(String(cantidadLocal || 0))}`,
-        stockBodega: sql`${productosTable.stockBodega} + ${parseFloat(String(cantidadBodega || 0))}`,
+        stockLocal: sql`${productosTable.stockLocal} + ${parseNumeroColombia(cantidadLocal || 0)}`,
+        stockBodega: sql`${productosTable.stockBodega} + ${parseNumeroColombia(cantidadBodega || 0)}`,
         actualizadoEn: new Date(),
       };
 
       if (nuevoPrecioCompra !== undefined && nuevoPrecioCompra !== "") {
-        precioCompraFinal = parseFloat(String(nuevoPrecioCompra));
-        if (Math.abs(precioCompraFinal - toNum(producto.precioCompra)) > 0.01) preciosModificados = true;
+        precioCompraFinal = parseNumeroColombia(nuevoPrecioCompra);
+        if (Math.abs(precioCompraFinal! - toNum(producto.precioCompra)) > 0.01) preciosModificados = true;
         if (actualizarPrecioInventario !== false) updateProd.precioCompra = String(precioCompraFinal);
       } else {
         precioCompraFinal = toNum(producto.precioCompra);
       }
 
       if (nuevoPrecioVentaSinIva !== undefined && nuevoPrecioVentaSinIva !== "") {
-        const pvSinIva = parseFloat(String(nuevoPrecioVentaSinIva));
+        const pvSinIva = parseNumeroColombia(nuevoPrecioVentaSinIva);
         precioVentaSinIvaRegistrado = pvSinIva;
         precioVentaFinal = calcPrecioConIva(pvSinIva);
         if (Math.abs(precioVentaFinal - toNum(producto.precioVentaConIva)) > 0.01) preciosModificados = true;
@@ -166,7 +167,7 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
   }
 
   const updateData: Partial<typeof comprasTable.$inferInsert> = { estado, actualizadoEn: new Date() };
-  if (cantidadRecibida) updateData.cantidadRecibida = String(parseFloat(String(cantidadRecibida)));
+  if (cantidadRecibida) updateData.cantidadRecibida = String(parseNumeroColombia(cantidadRecibida));
   if (estado === "llegado") updateData.fechaLlegada = fechaLlegada || fechaHoyColombia();
   if (proveedor !== undefined) updateData.proveedor = proveedor || null;
   if (precioCompraFinal !== null) updateData.precioCompraRegistrado = String(precioCompraFinal);

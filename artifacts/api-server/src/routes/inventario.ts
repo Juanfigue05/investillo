@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { eventosSincronizacionTable, productosTable } from "@workspace/db/schema";
 import { eq, lte, sql } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
+import { parseNumeroColombia } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
@@ -12,7 +13,7 @@ function calcPrecioConIva(precioSinIva: number): number {
 }
 
 function toNum(v: unknown): number {
-  return typeof v === "string" ? parseFloat(v) : Number(v);
+  return parseNumeroColombia(v);
 }
 
 function mapProducto(p: typeof productosTable.$inferSelect) {
@@ -100,7 +101,7 @@ router.post("/", async (req, res) => {
     stockMinimo,
   } = req.body;
 
-  const pvSinIva = parseFloat(precioVentaSinIva);
+  const pvSinIva = parseNumeroColombia(precioVentaSinIva);
   const pvConIva = calcPrecioConIva(pvSinIva);
 
   const producto = await db.transaction(async (tx) => {
@@ -111,12 +112,12 @@ router.post("/", async (req, res) => {
       tipo: tipo || null,
       referencia: referencia || null,
       adicional: adicional || null,
-      precioCompra: String(parseFloat(precioCompra)),
+      precioCompra: String(parseNumeroColombia(precioCompra)),
       precioVentaSinIva: String(pvSinIva),
       precioVentaConIva: String(pvConIva),
       tieneIva: Boolean(tieneIva),
-      stockActual: String(parseFloat(stockActual)),
-      stockMinimo: String(parseFloat(stockMinimo)),
+      stockActual: String(parseNumeroColombia(stockActual)),
+      stockMinimo: String(parseNumeroColombia(stockMinimo)),
     }).returning();
     if (!req.header("x-sync-apply")) {
       await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "producto", entidadId: String(created.id), tipo: "crear", metodo: "POST", endpoint: "/inventario", payload: req.body, origen: "local" });
@@ -159,10 +160,10 @@ router.put("/:id", async (req, res) => {
     activo,
   } = req.body;
 
-  const pvSinIva = parseFloat(precioVentaSinIva);
+  const pvSinIva = parseNumeroColombia(precioVentaSinIva);
   const pvConIva = calcPrecioConIva(pvSinIva);
-  const local = parseFloat(stockLocal) || 0;
-  const bodega = parseFloat(stockBodega) || 0;
+  const local = parseNumeroColombia(stockLocal) || 0;
+  const bodega = parseNumeroColombia(stockBodega) || 0;
 
   const producto = await db.transaction(async (tx) => {
     const [updated] = await tx.update(productosTable).set({
@@ -172,14 +173,14 @@ router.put("/:id", async (req, res) => {
       tipo: tipo || null,
       referencia: referencia || null,
       adicional: adicional || null,
-      precioCompra: String(parseFloat(precioCompra)),
+      precioCompra: String(parseNumeroColombia(precioCompra)),
       precioVentaSinIva: String(pvSinIva),
       precioVentaConIva: String(pvConIva),
       tieneIva: Boolean(tieneIva),
       stockLocal: String(local),
       stockBodega: String(bodega),
       stockActual: String(local + bodega),
-      stockMinimo: String(parseFloat(stockMinimo)),
+      stockMinimo: String(parseNumeroColombia(stockMinimo)),
       activo: activo !== undefined ? Boolean(activo) : undefined,
       actualizadoEn: new Date(),
     }).where(eq(productosTable.id, id)).returning();
@@ -213,16 +214,16 @@ router.put("/:id/stock", async (req, res) => {
     return;
   }
 
-  const newStock = toNum(existing.stockActual) + parseFloat(cantidad);
+  const newStock = toNum(existing.stockActual) + parseNumeroColombia(cantidad);
   const updateData: Partial<typeof productosTable.$inferInsert> = {
     stockActual: String(newStock),
     actualizadoEn: new Date(),
   };
 
   if (precioCompra !== undefined)
-    updateData.precioCompra = String(parseFloat(precioCompra));
+    updateData.precioCompra = String(parseNumeroColombia(precioCompra));
   if (precioVentaSinIva !== undefined) {
-    const pvSinIva = parseFloat(precioVentaSinIva);
+    const pvSinIva = parseNumeroColombia(precioVentaSinIva);
     const haIva =
       tieneIva !== undefined ? Boolean(tieneIva) : existing.tieneIva;
     updateData.precioVentaSinIva = String(pvSinIva);

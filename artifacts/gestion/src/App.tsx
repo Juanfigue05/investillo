@@ -23,6 +23,7 @@ import ManoObra from "@/pages/mano-obra";
 import ReportePagos from "@/pages/reporte-pagos";
 import ReporteNomina from "@/pages/reporte-nomina";
 import ObraElectronica from "@/pages/obra-electronica";
+import DescuentosInventario from "@/pages/descuentos-inventario";
 
 import { queryClient } from "@/lib/queryClient";
 
@@ -44,6 +45,7 @@ function Router() {
       <Route path="/reporte-pagos" component={ReportePagos} />
       <Route path="/reporte-nomina" component={ReporteNomina} />
       <Route path="/obra-electronica" component={ObraElectronica} />
+      <Route path="/descuentos-inventario" component={DescuentosInventario} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -69,6 +71,7 @@ function DocumentTitle() {
       "/reporte-pagos": "Reporte pagos",
       "/reporte-nomina": "Nomina",
       "/obra-electronica": "OBRA ELECTRONICA",
+      "/descuentos-inventario": "Descuentos de inventario",
     };
     document.title = titulos[location] || "Investillo";
   }, [location]);

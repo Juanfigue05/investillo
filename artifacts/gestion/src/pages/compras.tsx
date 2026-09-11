@@ -68,6 +68,12 @@ function formatearDineroCampo(value: string) {
     : formateado;
 }
 
+function necesitaConfirmacionNumero(value: string) {
+  const limpio = value.replace(/[\s'$]/g, "");
+  const partes = limpio.split(".");
+  return !limpio.includes(",") && partes.length === 2 && partes[1].length === 3;
+}
+
 function agruparPorAnioMes(llegadas: any[]) {
   const porAnio = new Map<string, Map<string, any[]>>();
   for (const c of llegadas) {
@@ -380,6 +386,18 @@ export default function Compras() {
   };
 
   const handleLlegada = (compra: any) => {
+    const camposNumericos = [
+      llegadaForm.nuevoPrecioCompra,
+      llegadaForm.nuevoPrecioVentaSinIva,
+      llegadaForm.cantidadLocal,
+      llegadaForm.cantidadBodega,
+    ].filter((valor) => necesitaConfirmacionNumero(valor));
+    if (camposNumericos.length > 0) {
+      const interpretaciones = camposNumericos
+        .map((valor) => `${valor} -> ${formatCurrency(parseNumberCO(valor))}`)
+        .join("\n");
+      if (!window.confirm(`Confirma cómo se interpretarán estos valores:\n\n${interpretaciones}`)) return;
+    }
     const cantidadTotal =
       parseNumberCO(llegadaForm.cantidadLocal) +
       parseNumberCO(llegadaForm.cantidadBodega);

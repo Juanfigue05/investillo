@@ -22,6 +22,7 @@ import tensionadasRouter from "./tensionadas";
 import obraElectronicaRouter from "./obra-electronica";
 import calculadoraCierreRouter from "./calculadora-cierre";
 import syncRouter from "./sync";
+import descuentosInventarioRouter from "./descuentos-inventario";
 
 const router: IRouter = Router();
 
@@ -48,5 +49,6 @@ router.use("/reportes", reportesRouter);
 router.use("/obra-electronica", obraElectronicaRouter);
 router.use("/calculadora-cierre", calculadoraCierreRouter);
 router.use("/sync", syncRouter);
+router.use("/descuentos-inventario", descuentosInventarioRouter);
 
 export default router;

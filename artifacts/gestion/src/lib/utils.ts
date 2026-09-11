@@ -62,16 +62,17 @@ export function formatCurrency(value: number | undefined | null) {
 }
 
 export function parseNumberCO(value: string): number {
-  // Replaces dot (thousands) with nothing, and comma (decimals) with dot
-  const clean = value.replace(/'/g, "").replace(/\./g, "").replace(/,/g, ".");
-  return parseFloat(clean) || 0;
+  const texto = String(value ?? "").trim().replace(/[$\s']/g, "");
+  if (!texto) return 0;
+  if (texto.includes(",")) return Number(texto.replace(/\./g, "").replace(",", ".")) || 0;
+  const ultimoPunto = texto.lastIndexOf(".");
+  const decimales = ultimoPunto >= 0 ? texto.length - ultimoPunto - 1 : 0;
+  const normalizado = texto.includes(".") && texto.split(".").length === 2 && decimales === 2 ? texto : texto.replace(/\./g, "");
+  return Number(normalizado) || 0;
 }
 
 export function formatNumberCO(value: number): string {
-  // Formats to string with comma for decimals and dots for thousands
-  return new Intl.NumberFormat("es-CO", {
-    maximumFractionDigits: 2,
-  }).format(value);
+  return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 }).format(value);
 }
 
 // Formats a phone number with spaces for readability: (310) 420 1761
