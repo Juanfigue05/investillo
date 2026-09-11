@@ -13,7 +13,7 @@ function calcPrecioConIva(precioSinIva: number): number {
 }
 
 function toNum(v: unknown): number {
-  return parseNumeroColombia(v);
+  return typeof v === "string" ? Number(v) : Number(v);
 }
 
 function mapProducto(p: typeof productosTable.$inferSelect) {

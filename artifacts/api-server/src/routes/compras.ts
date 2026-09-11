@@ -9,7 +9,7 @@ import { parseNumeroColombia } from "@workspace/api-zod";
 const router: IRouter = Router();
 
 function toNum(v: unknown): number {
-  return parseNumeroColombia(v);
+  return typeof v === "string" ? Number(v) : Number(v);
 }
 
 function mapCompra(

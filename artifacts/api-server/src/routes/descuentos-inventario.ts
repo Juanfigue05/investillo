@@ -7,15 +7,16 @@ import { parseNumeroColombia } from "@workspace/api-zod";
 const router = Router();
 const MOTIVOS = ["Producto dañado", "Arreglo para trabajador", "Pérdida", "Consumo interno", "Producto vencido", "Otro"] as const;
 
-function numero(v: unknown) { return parseNumeroColombia(v); }
+function numeroEntrada(v: unknown) { return parseNumeroColombia(v); }
+function numeroGuardado(v: unknown) { return typeof v === "string" ? Number(v) : Number(v); }
 function mapRegistro(row: typeof descuentosInventarioTable.$inferSelect) {
   return {
     ...row,
-    cantidad: numero(row.cantidad),
-    cantidadLocal: numero(row.cantidadLocal),
-    cantidadBodega: numero(row.cantidadBodega),
-    precioCompra: numero(row.precioCompra),
-    precioVenta: numero(row.precioVenta),
+    cantidad: numeroGuardado(row.cantidad),
+    cantidadLocal: numeroGuardado(row.cantidadLocal),
+    cantidadBodega: numeroGuardado(row.cantidadBodega),
+    precioCompra: numeroGuardado(row.precioCompra),
+    precioVenta: numeroGuardado(row.precioVenta),
   };
 }
 
@@ -47,20 +48,20 @@ router.post("/", async (req, res) => {
 
       for (const item of items) {
         const producto = porId.get(Number(item.productoId));
-        const cantidad = numero(item.cantidad);
+        const cantidad = numeroEntrada(item.cantidad);
         if (!producto) throw new Error("Producto no encontrado");
         if (cantidad < 0.25 || cantidad > 10 || Math.abs(cantidad * 4 - Math.round(cantidad * 4)) > 0.0001) {
           throw new Error(`La cantidad de ${producto.nombre} debe estar entre 0,25 y 10, en pasos de 0,25`);
         }
-        const localDisponible = numero(producto.stockLocal);
-        const bodegaDisponible = numero(producto.stockBodega);
+        const localDisponible = numeroGuardado(producto.stockLocal);
+        const bodegaDisponible = numeroGuardado(producto.stockBodega);
         if (localDisponible + bodegaDisponible + 0.0001 < cantidad) throw new Error(`No hay existencias suficientes de ${producto.nombre}`);
         const cantidadLocal = Math.min(localDisponible, cantidad);
         const cantidadBodega = cantidad - cantidadLocal;
         await tx.update(productosTable).set({
           stockLocal: String(localDisponible - cantidadLocal),
           stockBodega: String(bodegaDisponible - cantidadBodega),
-          stockActual: String(numero(producto.stockActual) - cantidad),
+          stockActual: String(numeroGuardado(producto.stockActual) - cantidad),
           actualizadoEn: new Date(),
         }).where(eq(productosTable.id, producto.id));
         registros.push({
@@ -74,8 +75,8 @@ router.post("/", async (req, res) => {
           cantidad: String(cantidad),
           cantidadLocal: String(cantidadLocal),
           cantidadBodega: String(cantidadBodega),
-          precioCompra: String(numero(producto.precioCompra)),
-          precioVenta: String(numero(producto.precioVentaSinIva)),
+          precioCompra: String(numeroGuardado(producto.precioCompra)),
+          precioVenta: String(numeroGuardado(producto.precioVentaSinIva)),
         });
       }
       const creados = await tx.insert(descuentosInventarioTable).values(registros).returning();
