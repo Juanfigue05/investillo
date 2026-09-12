@@ -11,9 +11,10 @@ const API = "/api";
 let sincronizando = false;
 
 const QUERY_KEYS_POR_TIPO: Record<string, string[]> = {
-  venta: ["/api/ventas"],
+  venta: ["/api/ventas", "/api/inventario"],
+  venta_lote_pago_antiguo: ["/api/ventas"],
   manoobra_venta: ["/api/ventas", "/api/manoobra", "/api/trabajadores"],
-  credito: ["/api/creditos", "/api/trabajadores", "/api/inventario"],
+  credito: ["/api/creditos", "/api/ventas", "/api/trabajadores", "/api/inventario"],
   compra: ["/api/compras", "/api/inventario", "/api/historial-precios"],
   cierre_diario: ["/api/cierre-diario", "/api/trabajadores"],
   producto: ["/api/inventario"],

@@ -20,6 +20,18 @@ function mapRegistro(row: typeof descuentosInventarioTable.$inferSelect) {
   };
 }
 
+function validarCantidad(cantidad: number, nombre: string) {
+  if (cantidad < 0.25 || cantidad > 10 || Math.abs(cantidad * 4 - Math.round(cantidad * 4)) > 0.0001) {
+    throw new Error(`La cantidad de ${nombre} debe estar entre 0,25 y 10, en pasos de 0,25`);
+  }
+}
+
+function distribuir(cantidad: number, local: number, bodega: number) {
+  if (local + bodega + 0.0001 < cantidad) throw new Error("No hay existencias suficientes");
+  const cantidadLocal = Math.min(local, cantidad);
+  return { cantidadLocal, cantidadBodega: cantidad - cantidadLocal };
+}
+
 router.get("/", async (_req, res) => {
   const rows = await db.select().from(descuentosInventarioTable).orderBy(descuentosInventarioTable.creadoEn);
   res.json(rows.map(mapRegistro));
@@ -50,14 +62,10 @@ router.post("/", async (req, res) => {
         const producto = porId.get(Number(item.productoId));
         const cantidad = numeroEntrada(item.cantidad);
         if (!producto) throw new Error("Producto no encontrado");
-        if (cantidad < 0.25 || cantidad > 10 || Math.abs(cantidad * 4 - Math.round(cantidad * 4)) > 0.0001) {
-          throw new Error(`La cantidad de ${producto.nombre} debe estar entre 0,25 y 10, en pasos de 0,25`);
-        }
+        validarCantidad(cantidad, producto.nombre);
         const localDisponible = numeroGuardado(producto.stockLocal);
         const bodegaDisponible = numeroGuardado(producto.stockBodega);
-        if (localDisponible + bodegaDisponible + 0.0001 < cantidad) throw new Error(`No hay existencias suficientes de ${producto.nombre}`);
-        const cantidadLocal = Math.min(localDisponible, cantidad);
-        const cantidadBodega = cantidad - cantidadLocal;
+        const { cantidadLocal, cantidadBodega } = distribuir(cantidad, localDisponible, bodegaDisponible);
         await tx.update(productosTable).set({
           stockLocal: String(localDisponible - cantidadLocal),
           stockBodega: String(bodegaDisponible - cantidadBodega),
@@ -88,6 +96,60 @@ router.post("/", async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
   }
+});
+
+router.put("/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const { cantidad: cantidadRaw, motivo, motivoOtro, observacion } = req.body as { cantidad?: string | number; motivo?: string; motivoOtro?: string; observacion?: string };
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "id inválido" }); return; }
+  if (!MOTIVOS.includes(motivo as typeof MOTIVOS[number])) { res.status(400).json({ error: "Selecciona un motivo válido" }); return; }
+  if (motivo === "Otro" && !motivoOtro?.trim()) { res.status(400).json({ error: "Especifica el motivo" }); return; }
+  try {
+    const actualizado = await db.transaction(async (tx) => {
+      const [registro] = await tx.select().from(descuentosInventarioTable).where(eq(descuentosInventarioTable.id, id));
+      if (!registro) throw new Error("Descuento no encontrado");
+      const [producto] = await tx.select().from(productosTable).where(eq(productosTable.id, registro.productoId));
+      if (!producto) throw new Error("Producto no encontrado");
+      const cantidad = numeroEntrada(cantidadRaw);
+      validarCantidad(cantidad, producto.nombre);
+      const localRestaurado = numeroGuardado(producto.stockLocal) + numeroGuardado(registro.cantidadLocal);
+      const bodegaRestaurado = numeroGuardado(producto.stockBodega) + numeroGuardado(registro.cantidadBodega);
+      const { cantidadLocal, cantidadBodega } = distribuir(cantidad, localRestaurado, bodegaRestaurado);
+      const [resultado] = await tx.update(descuentosInventarioTable).set({
+        cantidad: String(cantidad), cantidadLocal: String(cantidadLocal), cantidadBodega: String(cantidadBodega),
+        motivo: motivo as typeof MOTIVOS[number], motivoOtro: motivo === "Otro" ? motivoOtro!.trim() : null, observacion: observacion?.trim() || null,
+      }).where(eq(descuentosInventarioTable.id, id)).returning();
+      await tx.update(productosTable).set({
+        stockLocal: String(localRestaurado - cantidadLocal), stockBodega: String(bodegaRestaurado - cantidadBodega),
+        stockActual: String(numeroGuardado(producto.stockActual) + numeroGuardado(registro.cantidad) - cantidad), actualizadoEn: new Date(),
+      }).where(eq(productosTable.id, producto.id));
+      if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "descuento_inventario", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/descuentos-inventario/${id}`, payload: req.body, origen: "local" });
+      return resultado;
+    });
+    res.json(mapRegistro(actualizado));
+  } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); }
+});
+
+router.delete("/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "id inválido" }); return; }
+  try {
+    await db.transaction(async (tx) => {
+      const [registro] = await tx.select().from(descuentosInventarioTable).where(eq(descuentosInventarioTable.id, id));
+      if (!registro) throw new Error("Descuento no encontrado");
+      const [producto] = await tx.select().from(productosTable).where(eq(productosTable.id, registro.productoId));
+      if (!producto) throw new Error("Producto no encontrado");
+      await tx.update(productosTable).set({
+        stockLocal: String(numeroGuardado(producto.stockLocal) + numeroGuardado(registro.cantidadLocal)), stockBodega: String(numeroGuardado(producto.stockBodega) + numeroGuardado(registro.cantidadBodega)),
+        stockActual: String(numeroGuardado(producto.stockActual) + numeroGuardado(registro.cantidad)), actualizadoEn: new Date(),
+      }).where(eq(productosTable.id, producto.id));
+      await tx.delete(descuentosInventarioTable).where(eq(descuentosInventarioTable.id, id));
+      if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "descuento_inventario", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/descuentos-inventario/${id}`, payload: {}, origen: "local" });
+    });
+    res.json({ ok: true });
+  } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); }
 });
 
 export default router;

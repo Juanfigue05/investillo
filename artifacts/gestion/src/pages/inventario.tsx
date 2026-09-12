@@ -25,11 +25,13 @@ import {
   FileDown,
   GitMerge,
   ArrowRightLeft,
+  MinusCircle,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { RemachadasPanel } from "@/components/RemachadasPanel";
+import { DescuentoRapidoModal } from "@/components/DescuentoRapidoModal";
 import { esFalloDeRed } from "@/lib/offline-db";
 import {
   SearchableSelect,
@@ -147,6 +149,7 @@ export default function Inventario() {
   const [trasladando, setTrasladando] = useState(false);
   const [direccionTraslado, setDireccionTraslado] = useState<"bodega-local" | "local-bodega">("bodega-local");
   const [vista, setVista] = useState<"productos" | "remachadas">("productos");
+  const [showDescuentoRapido, setShowDescuentoRapido] = useState(false);
 
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -793,6 +796,13 @@ export default function Inventario() {
             >
               <ArrowRightLeft className="w-4 h-4 text-cyan-400" />
               Trasladar Stock
+            </button>
+            <button
+              onClick={() => setShowDescuentoRapido(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/10 border border-amber-500/40 text-amber-300 rounded-xl font-medium hover:bg-amber-500/20 transition-all shadow-md whitespace-nowrap text-sm"
+            >
+              <MinusCircle className="w-4 h-4" />
+              Descuento
             </button>
             <button
               onClick={() => {
@@ -2373,6 +2383,16 @@ export default function Inventario() {
           {vista === "remachadas" && <RemachadasPanel />}
         </div>
       </div>
+      {showDescuentoRapido && (
+        <DescuentoRapidoModal
+          productos={(productos || []) as any[]}
+          onClose={() => setShowDescuentoRapido(false)}
+          onSaved={() => {
+            setShowDescuentoRapido(false);
+            queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+          }}
+        />
+      )}
     </Layout>
   );
 }

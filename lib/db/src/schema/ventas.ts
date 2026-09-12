@@ -1,4 +1,4 @@
-import { pgTable, serial, text, numeric, timestamp, date, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, timestamp, date, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -21,6 +21,8 @@ export const ventasDiariasTable = pgTable("ventas_diarias", {
   orden: integer("orden"),
   /** FK al abono que generó esta fila — para poder revertirla al eliminar/editar el abono */
   creditoAbonoId: integer("credito_abono_id"),
+  origen: text("origen").notNull().default("venta_normal"),
+  afectaInventario: boolean("afecta_inventario").notNull().default(true),
   creadoEn: timestamp("creado_en").defaultNow(),
 });
 

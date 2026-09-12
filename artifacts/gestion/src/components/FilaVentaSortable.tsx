@@ -47,7 +47,11 @@ export function FilaVentaSortable({
     position: "relative",
   };
 
-  const rowCls = venta.tipoLinea === "manoobra" ? "row-manoobra" : venta.tipoLinea === "credito" ? "row-credito" : "row-venta";
+  const esServicioAmarillo = venta.tipoLinea === "manoobra" || (
+    venta.origen === "pago_credito_antiguo" &&
+    ["Mano de Obra", "Soldadura", "Chispeada", "Pulida"].includes(venta.productoNombre)
+  );
+  const rowCls = esServicioAmarillo ? "row-manoobra" : venta.tipoLinea === "credito" ? "row-credito" : "row-venta";
 
   const dragHandle = (
     <td className="p-2 no-print w-10 cursor-grab active:cursor-grabbing touch-none" {...attributes} {...listeners}>
@@ -110,14 +114,14 @@ export function FilaVentaSortable({
   }
 
   const filaNormal = (
-    <tr ref={setNodeRef} style={style} className={`${rowCls} group hover:brightness-110 transition-all ${venta.tipoLinea === "manoobra" ? "print-manoobra-screen-row" : ""}`}>
+    <tr ref={setNodeRef} style={style} className={`${rowCls} group hover:brightness-110 transition-all ${esServicioAmarillo ? "print-manoobra-screen-row" : ""}`}>
       {dragHandle}
       <td className="px-3 py-3 font-mono text-xs">{venta.referencia}</td>
       <td className="px-3 py-3 font-medium">{venta.productoNombre}</td>
       <td className="px-3 py-3 text-muted-foreground text-xs">{venta.productoMarca || "—"}</td>
       <td className="px-3 py-3">
         <span className="screen-only-inline">{String(venta.cantidad).replace(".", ",")}</span>
-        {venta.tipoLinea !== "manoobra" && (
+        {!esServicioAmarillo && (
           <span className="print-only-inline">{String(venta.cantidad).replace(".", ",")}</span>
         )}
       </td>
@@ -143,7 +147,7 @@ export function FilaVentaSortable({
     </tr>
   );
 
-  if (venta.tipoLinea !== "manoobra") return filaNormal;
+  if (!esServicioAmarillo) return filaNormal;
 
   return (
     <>
@@ -152,7 +156,7 @@ export function FilaVentaSortable({
         <td className="no-print" />
         <td className="px-3 py-3 font-mono text-xs">{venta.referencia}</td>
         <td className="px-3 py-3 font-medium" colSpan={2}>
-          Mano de Obra - {venta.productoMarca || "—"}
+          {venta.productoNombre || "Mano de Obra"} - {venta.productoMarca || "—"}
         </td>
         <td className="px-3 py-3" />
         <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioCompraUnidad)}</td>

@@ -32,6 +32,8 @@ export const creditoLineasTable = pgTable("credito_lineas", {
   /** Precio de compra unitario al momento de crear el crédito */
   precioCompra: numeric("precio_compra", { precision: 15, scale: 2 }).notNull().default("0"),
   valorAbonado: numeric("valor_abonado", { precision: 15, scale: 2 }).notNull().default("0"),
+  cantidadLocalDescontada: numeric("cantidad_local_descontada", { precision: 15, scale: 3 }).notNull().default("0"),
+  cantidadBodegaDescontada: numeric("cantidad_bodega_descontada", { precision: 15, scale: 3 }).notNull().default("0"),
 });
 
 /** Historial de pagos/abonos a un crédito (para auditoría) */

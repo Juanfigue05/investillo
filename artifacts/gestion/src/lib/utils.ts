@@ -61,6 +61,12 @@ export function formatCurrency(value: number | undefined | null) {
   return `${negativo ? "-" : ""}$ ${str}`;
 }
 
+export function formatCurrencyDecimal(value: number | undefined | null) {
+  if (value === undefined || value === null) return "$ 0";
+  const formateado = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 }).format(value);
+  return `$ ${formateado}`;
+}
+
 export function parseNumberCO(value: string): number {
   const texto = String(value ?? "").trim().replace(/[$\s']/g, "");
   if (!texto) return 0;

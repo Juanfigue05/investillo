@@ -23,6 +23,7 @@ import { SearchableSelect, type ProductoOpcion } from "@/components/SearchableSe
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { FilaVentaSortable } from "@/components/FilaVentaSortable";
+import { PagoCreditoAntiguoModal } from "@/components/PagoCreditoAntiguoModal";
 
 const SPECIAL_MANOOBRA = "__manoobra__";
 const SPECIAL_SOLDADURA = "__soldadura__";
@@ -156,6 +157,7 @@ export default function VentasDiarias() {
   const diaYaGuardado = historial?.some((d) => d.fecha === fecha);
 
   const [printMenu, setPrintMenu] = useState(false);
+  const [pagoCreditoAntiguoOpen, setPagoCreditoAntiguoOpen] = useState(false);
   const handlePrintWithOrientation = (orientation: "portrait" | "landscape") => {
     const prev = document.getElementById("__print_page_size");
     if (prev) prev.remove();
@@ -509,6 +511,12 @@ export default function VentasDiarias() {
               <BookMarked className="w-4 h-4" />
               {diaYaGuardado ? "Guardado" : "Guardar en Historial"}
             </button>
+            <button
+              onClick={() => setPagoCreditoAntiguoOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all border border-blue-500/40 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 text-sm"
+            >
+              Pago crédito antiguo
+            </button>
             <div className="relative">
               <button
                 onClick={() => setPrintMenu((p) => !p)}
@@ -648,6 +656,7 @@ export default function VentasDiarias() {
           <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500/30 border border-blue-500/50"></div> Crédito / Abono</div>
         </div>
       </div>
+      {pagoCreditoAntiguoOpen && <PagoCreditoAntiguoModal fecha={fecha} productos={(productos || []) as any[]} trabajadores={(trabajadores || []) as any[]} onClose={() => setPagoCreditoAntiguoOpen(false)} onSaved={() => { setPagoCreditoAntiguoOpen(false); queryClient.invalidateQueries({ queryKey: ["/api/ventas"] }); }} />}
     </Layout>
   );
 }

@@ -44,10 +44,48 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  */
 async function ajustarStock(tx: Tx, productoId: number, delta: number) {
   if (delta === 0) return;
+  const [producto] = await tx.select().from(productosTable).where(eq(productosTable.id, productoId));
+  if (!producto) throw new Error("Producto no encontrado");
+  const stockRegistrado = toNum(producto.stockActual);
+  const stockLocal = toNum(producto.stockLocal) || (toNum(producto.stockBodega) === 0 ? stockRegistrado : 0);
+  const stockBodega = toNum(producto.stockBodega);
+  if (delta > 0 && stockLocal + stockBodega + 0.0001 < delta) {
+    throw new Error(`No hay existencias suficientes para ${producto.nombre}`);
+  }
   await tx
     .update(productosTable)
-    .set({ stockActual: sql`GREATEST(0, ${productosTable.stockActual} - ${delta})`, actualizadoEn: new Date() })
+    .set({
+      stockLocal: delta > 0 ? String(stockLocal - Math.min(stockLocal, delta)) : String(stockLocal),
+      stockBodega: delta > 0 ? String(stockBodega - Math.max(0, delta - stockLocal)) : String(stockBodega),
+      stockActual: delta > 0 ? String(toNum(producto.stockActual) - delta) : String(toNum(producto.stockActual) - delta),
+      actualizadoEn: new Date(),
+    })
     .where(eq(productosTable.id, productoId));
+}
+
+async function descontarStockCredito(tx: Tx, productoId: number, cantidad: number) {
+  const [producto] = await tx.select().from(productosTable).where(eq(productosTable.id, productoId));
+  if (!producto) throw new Error("Producto no encontrado");
+  const local = toNum(producto.stockLocal) || (toNum(producto.stockBodega) === 0 ? toNum(producto.stockActual) : 0);
+  const bodega = toNum(producto.stockBodega);
+  if (local + bodega + 0.0001 < cantidad) throw new Error(`No hay existencias suficientes para ${producto.nombre}`);
+  const cantidadLocal = Math.min(local, cantidad);
+  const cantidadBodega = cantidad - cantidadLocal;
+  await tx.update(productosTable).set({
+    stockLocal: String(local - cantidadLocal), stockBodega: String(bodega - cantidadBodega),
+    stockActual: String(toNum(producto.stockActual) - cantidad), actualizadoEn: new Date(),
+  }).where(eq(productosTable.id, productoId));
+  return { cantidadLocal, cantidadBodega };
+}
+
+async function restaurarStockCredito(tx: Tx, productoId: number, cantidadLocal: number, cantidadBodega: number) {
+  if (cantidadLocal === 0 && cantidadBodega === 0) return;
+  await tx.update(productosTable).set({
+    stockLocal: sql`${productosTable.stockLocal} + ${cantidadLocal}`,
+    stockBodega: sql`${productosTable.stockBodega} + ${cantidadBodega}`,
+    stockActual: sql`${productosTable.stockActual} + ${cantidadLocal + cantidadBodega}`,
+    actualizadoEn: new Date(),
+  }).where(eq(productosTable.id, productoId));
 }
 
 async function ajustarTotalGanado(tx: Tx, trabajadorId: number, delta: number) {
@@ -197,6 +235,8 @@ function mapLinea(l: typeof creditoLineasTable.$inferSelect) {
     productoMarca: l.productoMarca,
     precioVenta: toNum(l.precioVenta),
     precioCompra: toNum(l.precioCompra ?? "0"),
+    cantidadLocalDescontada: toNum(l.cantidadLocalDescontada),
+    cantidadBodegaDescontada: toNum(l.cantidadBodegaDescontada),
     valorAbonado,
     valorRestante: Math.max(0, valorTotal - valorAbonado),
   };
@@ -291,11 +331,17 @@ router.post("/", async (req, res) => {
   };
 
   const abonoInicial = parseFloat(String(valorAbonado || 0));
+  const valorCreditoNum = parseFloat(String(valorCredito));
+  const totalLineas = (lineas || []).reduce((total, linea) => total + Number(linea.cantidad) * Number(linea.precioVenta), 0);
   const detalleInicial = (lineas || [])
     .filter((linea) => Number(linea.valorAbonado || 0) > 0)
     .map((linea) => ({ linea, valor: parseFloat(String(linea.valorAbonado || 0)) }));
   const sumaInicial = detalleInicial.reduce((suma, item) => suma + item.valor, 0);
-  if (!Number.isFinite(abonoInicial) || abonoInicial < 0 || abonoInicial > parseFloat(String(valorCredito)) + 1) {
+  if (!Number.isFinite(valorCreditoNum) || valorCreditoNum < 0 || Math.abs(totalLineas - valorCreditoNum) > 0.01) {
+    res.status(400).json({ error: "El total de las líneas debe coincidir con el valor del crédito" });
+    return;
+  }
+  if (!Number.isFinite(abonoInicial) || abonoInicial < 0 || abonoInicial > valorCreditoNum + 0.01) {
     res.status(400).json({ error: "El abono inicial no puede superar el valor del crédito" });
     return;
   }
@@ -347,9 +393,14 @@ router.post("/", async (req, res) => {
         })),
       ).returning();
       // Descontar stock por cada línea con producto vinculado
-      for (const linea of lineas) {
-        if (linea.productoId) {
-          await ajustarStock(tx, linea.productoId, parseFloat(String(linea.cantidad)));
+      for (let indice = 0; indice < lineas.length; indice++) {
+        const linea = lineas[indice];
+        if (linea.productoId && lineasCreadas[indice]) {
+          const distribucion = await descontarStockCredito(tx, linea.productoId, parseFloat(String(linea.cantidad)));
+          await tx.update(creditoLineasTable).set({
+            cantidadLocalDescontada: String(distribucion.cantidadLocal),
+            cantidadBodegaDescontada: String(distribucion.cantidadBodega),
+          }).where(eq(creditoLineasTable.id, lineasCreadas[indice].id));
         }
       }
 
@@ -468,18 +519,22 @@ router.put("/:id", async (req, res) => {
       .returning();
 
     if (Array.isArray(lineas)) {
-      // Leer líneas actuales ANTES de modificar para calcular el delta de stock
+        const totalLineas = lineas.reduce((total, linea) => total + Number(linea.cantidad) * Number(linea.precioVenta), 0);
+        const valorCreditoEditado = valorCredito !== undefined ? Number(valorCredito) : toNum(existing.valorCredito);
+        if (!Number.isFinite(valorCreditoEditado) || Math.abs(totalLineas - valorCreditoEditado) > 0.01) {
+          throw new Error("El total de las líneas debe coincidir con el valor del crédito");
+        }
       const oldLineas = await tx
-        .select({ productoId: creditoLineasTable.productoId, cantidad: creditoLineasTable.cantidad })
+        .select()
         .from(creditoLineasTable)
         .where(eq(creditoLineasTable.creditoId, id));
 
-      // Mapa: productoId → cantidad total antigua
-      const oldStock = new Map<number, number>();
-      for (const ol of oldLineas) {
-        if (ol.productoId) {
-          oldStock.set(ol.productoId, (oldStock.get(ol.productoId) ?? 0) + toNum(ol.cantidad));
-        }
+      for (const linea of oldLineas) {
+        if (!linea.productoId) continue;
+        const local = toNum(linea.cantidadLocalDescontada);
+        const bodega = toNum(linea.cantidadBodegaDescontada);
+        if (local || bodega) await restaurarStockCredito(tx, linea.productoId, local, bodega);
+        else await ajustarStock(tx, linea.productoId, -toNum(linea.cantidad));
       }
 
       const keepIds = lineas
@@ -503,6 +558,8 @@ router.put("/:id", async (req, res) => {
           precioVenta: String(parseFloat(String(linea.precioVenta))),
           precioCompra: String(parseFloat(String(linea.precioCompra ?? 0))),
           valorAbonado: String(parseFloat(String(linea.valorAbonado || 0))),
+          cantidadLocalDescontada: "0",
+          cantidadBodegaDescontada: "0",
         };
         if (linea.id) {
           await tx
@@ -514,22 +571,14 @@ router.put("/:id", async (req, res) => {
         }
       }
 
-      // Mapa: productoId → cantidad total nueva
-      const newStock = new Map<number, number>();
-      for (const linea of lineas) {
-        if (linea.productoId) {
-          newStock.set(
-            linea.productoId,
-            (newStock.get(linea.productoId) ?? 0) + parseFloat(String(linea.cantidad)),
-          );
-        }
-      }
-
-      // Ajustar stock: delta = nueva - antigua; positivo→descontar más, negativo→restaurar
-      const allProductIds = new Set([...oldStock.keys(), ...newStock.keys()]);
-      for (const pid of allProductIds) {
-        const delta = (newStock.get(pid) ?? 0) - (oldStock.get(pid) ?? 0);
-        await ajustarStock(tx, pid, delta);
+      const nuevasLineas = await tx.select().from(creditoLineasTable).where(eq(creditoLineasTable.creditoId, id));
+      for (const linea of nuevasLineas) {
+        if (!linea.productoId) continue;
+        const distribucion = await descontarStockCredito(tx, linea.productoId, toNum(linea.cantidad));
+        await tx.update(creditoLineasTable).set({
+          cantidadLocalDescontada: String(distribucion.cantidadLocal),
+          cantidadBodegaDescontada: String(distribucion.cantidadBodega),
+        }).where(eq(creditoLineasTable.id, linea.id));
       }
 
       // La distribución de abonos puede cambiar al editar las líneas o el total.
@@ -591,14 +640,15 @@ router.post("/:id/abono", async (req, res) => {
     if (!linea) continue;
     const requestedValue = parseFloat(String(requested.valor));
     const remaining = Math.max(0, toNum(linea.cantidad) * toNum(linea.precioVenta) - toNum(linea.valorAbonado));
-    const appliedValue = Math.min(requestedValue, remaining);
-    if (appliedValue > 0) {
-      appliedTotal += appliedValue;
-      applied.push({ linea, valor: appliedValue });
+    if (!Number.isFinite(requestedValue) || requestedValue <= 0 || requestedValue > remaining + 0.01) {
+      res.status(400).json({ error: "El abono supera el saldo de una de las líneas seleccionadas" });
+      return;
     }
+    appliedTotal += requestedValue;
+    applied.push({ linea, valor: requestedValue });
   }
 
-  if (applied.length === 0 || Math.abs(appliedTotal - abonoTotal) > 1) {
+  if (applied.length === 0 || appliedTotal > toNum(credito.valorCredito) - toNum(credito.valorAbonado) + 0.01 || Math.abs(appliedTotal - abonoTotal) > 0.01) {
     res.status(400).json({ error: "El abono supera el saldo de los productos seleccionados" });
     return;
   }
@@ -779,10 +829,15 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
       if (!linea) continue;
       const requestedValue = parseFloat(String(requested.valor));
       const remaining = Math.max(0, toNum(linea.cantidad) * toNum(linea.precioVenta) - toNum(linea.valorAbonado));
-      const appliedValue = Math.min(requestedValue, remaining);
-      if (appliedValue > 0) { appliedTotal += appliedValue; applied.push({ linea, valor: appliedValue }); }
+      if (!Number.isFinite(requestedValue) || requestedValue <= 0 || requestedValue > remaining + 0.01) {
+        throw new Error("El abono supera el saldo de una de las líneas seleccionadas");
+      }
+      appliedTotal += requestedValue;
+      applied.push({ linea, valor: requestedValue });
     }
-    if (applied.length === 0) throw new Error("Sin líneas válidas para el nuevo valor");
+    if (applied.length === 0 || appliedTotal > toNum(credito.valorCredito) - (toNum(credito.valorAbonado) - toNum(abono.valorTotal)) + 0.01 || Math.abs(appliedTotal - abonoTotal) > 0.01) {
+      throw new Error("El abono supera el saldo disponible");
+    }
 
     // Aplicar nuevo abono a líneas
     for (const { linea, valor: av } of applied) {
@@ -840,12 +895,15 @@ router.delete("/:id", async (req, res) => {
     if (existing) await syncManoObraCredito(tx, existing, null);
     // Restaurar stock de todas las líneas con producto vinculado
     const lineasAEliminar = await tx
-      .select({ productoId: creditoLineasTable.productoId, cantidad: creditoLineasTable.cantidad })
+      .select()
       .from(creditoLineasTable)
       .where(eq(creditoLineasTable.creditoId, id));
     for (const linea of lineasAEliminar) {
       if (linea.productoId) {
-        await ajustarStock(tx, linea.productoId, -toNum(linea.cantidad)); // negativo = restaurar
+        const local = toNum(linea.cantidadLocalDescontada);
+        const bodega = toNum(linea.cantidadBodegaDescontada);
+        if (local || bodega) await restaurarStockCredito(tx, linea.productoId, local, bodega);
+        else await ajustarStock(tx, linea.productoId, -toNum(linea.cantidad));
       }
     }
         const abonosAEliminar = await tx.select({ id: abonosCreditosTable.id }).from(abonosCreditosTable).where(eq(abonosCreditosTable.creditoId, id));
@@ -929,6 +987,8 @@ async function crearFilaVentaPago(
       descripcion: detalle || `Pago ${etiqueta}${credito.concepto ? ` ${credito.concepto}` : ""}`,
       creditoAbonoId: abonoId,
       formaPago: formaPago || null,
+      origen: "abono_credito",
+      afectaInventario: false,
     });
     return;
   }
@@ -950,6 +1010,8 @@ async function crearFilaVentaPago(
       descripcion: `IVA ${etiqueta} - ${credito.nombreCliente}`,
       creditoAbonoId: abonoId,
       formaPago: formaPago || null,
+      origen: "abono_credito",
+      afectaInventario: false,
     });
     return;
   }
@@ -974,6 +1036,8 @@ async function crearFilaVentaPago(
       descripcion: `Pago ${etiqueta}${credito.concepto ? ` ${credito.concepto}` : ""}`,
       creditoAbonoId: abonoId,
       formaPago: formaPago || null,
+      origen: "abono_credito",
+      afectaInventario: false,
     });
     return;
   }
@@ -992,6 +1056,8 @@ async function crearFilaVentaPago(
     descripcion: `Abono a ${etiqueta} - ${credito.nombreCliente}`,
     creditoAbonoId: abonoId,
     formaPago: formaPago || null,
+    origen: "abono_credito",
+    afectaInventario: false,
   });
 }
 

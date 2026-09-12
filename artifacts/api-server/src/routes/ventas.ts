@@ -10,6 +10,43 @@ function toNum(v: unknown): number {
   return typeof v === "string" ? parseFloat(v) : Number(v);
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function ajustarStockVenta(tx: Tx, productoId: number, delta: number) {
+  if (!Number.isFinite(delta) || delta === 0) return;
+  const [producto] = await tx.select().from(productosTable).where(eq(productosTable.id, productoId));
+  if (!producto) throw new Error("Producto no encontrado");
+
+  const actual = toNum(producto.stockActual);
+  const localRegistrado = toNum(producto.stockLocal);
+  const bodegaRegistrada = toNum(producto.stockBodega);
+  const local = localRegistrado + bodegaRegistrada === 0 && actual > 0 ? actual : localRegistrado;
+  const bodega = bodegaRegistrada;
+
+  if (delta > 0 && local + bodega + 0.0001 < delta) {
+    throw new Error(`No hay existencias suficientes para ${producto.nombre}`);
+  }
+
+  if (delta > 0) {
+    const desdeLocal = Math.min(local, delta);
+    const desdeBodega = delta - desdeLocal;
+    await tx.update(productosTable).set({
+      stockLocal: String(local - desdeLocal),
+      stockBodega: String(bodega - desdeBodega),
+      stockActual: String(actual - delta),
+      actualizadoEn: new Date(),
+    }).where(eq(productosTable.id, productoId));
+    return;
+  }
+
+  await tx.update(productosTable).set({
+    stockLocal: String(local - delta),
+    stockBodega: String(bodega),
+    stockActual: String(actual - delta),
+    actualizadoEn: new Date(),
+  }).where(eq(productosTable.id, productoId));
+}
+
 function mapVenta(v: typeof ventasDiariasTable.$inferSelect) {
   return {
     id: v.id,
@@ -25,6 +62,8 @@ function mapVenta(v: typeof ventasDiariasTable.$inferSelect) {
     precioVentaUnidad: toNum(v.precioVentaUnidad),
     precioVentaTotal: toNum(v.precioVentaTotal),
     beneficio: toNum(v.beneficio),
+    origen: v.origen,
+    afectaInventario: v.afectaInventario,
     descripcion: v.descripcion,
     formaPago: v.formaPago,
     creadoEn: v.creadoEn,
@@ -110,8 +149,15 @@ router.post("/", async (req, res) => {
     fecha, referencia, tipoLinea, productoId,
     productoNombre, productoCodigo, productoMarca,
     cantidad, precioCompraUnidad, precioVentaUnidad,
-    precioVentaTotal, beneficio, descripcion, formaPago,
+    precioVentaTotal, beneficio, descripcion, formaPago, origen, afectaInventario,
   } = req.body;
+  const esPagoCreditoAntiguo = origen === "pago_credito_antiguo";
+  const afectaInventarioReal = !esPagoCreditoAntiguo && afectaInventario !== false;
+  const cantidadNum = parseFloat(String(cantidad));
+  if (!Number.isFinite(cantidadNum) || cantidadNum <= 0) {
+    res.status(400).json({ error: "La cantidad debe ser mayor que cero" });
+    return;
+  }
 
   try {
     const venta = await db.transaction(async (tx) => {
@@ -130,21 +176,13 @@ router.post("/", async (req, res) => {
         beneficio: String(parseFloat(beneficio || 0)),
         descripcion: descripcion || null,
         formaPago: formaPago || null,
+        origen: origen || "venta_normal",
+        afectaInventario: afectaInventarioReal,
       }).returning();
 
-      // Resta atómica de stock -- así una venta encolada offline nunca desface el inventario al sincronizar.
-      const esVentaConProducto = (tipoLinea === "venta" || !tipoLinea) && productoId;
+      const esVentaConProducto = (tipoLinea === "venta" || !tipoLinea) && productoId && afectaInventarioReal;
       if (esVentaConProducto) {
-        const cantidadNum = parseFloat(cantidad);
-        await tx.update(productosTable)
-          .set({
-            // Descuenta primero de Local; si no alcanza, el resto sale de Bodega
-            stockLocal: sql`GREATEST(0, ${productosTable.stockLocal} - LEAST(${productosTable.stockLocal}, ${cantidadNum}))`,
-            stockBodega: sql`GREATEST(0, ${productosTable.stockBodega} - GREATEST(0, ${cantidadNum} - ${productosTable.stockLocal}))`,
-            stockActual: sql`GREATEST(0, ${productosTable.stockActual} - ${cantidadNum})`,
-            actualizadoEn: new Date(),
-          })
-          .where(eq(productosTable.id, Number(productoId)));
+        await ajustarStockVenta(tx, Number(productoId), cantidadNum);
       }
 
       if (!req.header("x-sync-apply")) {
@@ -159,6 +197,35 @@ router.post("/", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
+});
+
+router.post("/lote-pago-antiguo", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const { items } = req.body as { items?: Array<Record<string, unknown>> };
+  if (!Array.isArray(items) || items.length === 0) {
+    res.status(400).json({ error: "El lote debe contener al menos una fila" });
+    return;
+  }
+  try {
+    const creadas = await db.transaction(async (tx) => {
+      const valores = items.map((item) => ({
+        fecha: String(item.fecha), referencia: String(item.referencia || ""), tipoLinea: item.tipoLinea === "manoobra" ? "manoobra" : "venta",
+        productoId: item.productoId ? Number(item.productoId) : null,
+        productoNombre: String(item.productoNombre || ""), productoCodigo: item.productoCodigo ? String(item.productoCodigo) : null,
+        productoMarca: item.productoMarca ? String(item.productoMarca) : null,
+        cantidad: String(parseFloat(String(item.cantidad))), precioCompraUnidad: String(parseFloat(String(item.precioCompraUnidad || 0))),
+        precioVentaUnidad: String(parseFloat(String(item.precioVentaUnidad))), precioVentaTotal: String(parseFloat(String(item.precioVentaTotal))),
+        beneficio: String(parseFloat(String(item.beneficio || 0))), descripcion: item.descripcion ? String(item.descripcion) : "Pago de crédito antiguo",
+        formaPago: item.formaPago ? String(item.formaPago) : null, origen: "pago_credito_antiguo", afectaInventario: false,
+      }));
+      if (valores.some((item) => !item.fecha || !item.referencia || !item.productoNombre || !Number.isFinite(Number(item.precioVentaUnidad)))) throw new Error("Todas las filas deben tener fecha, referencia, concepto y precio de venta válidos");
+      const insertadas = await tx.insert(ventasDiariasTable).values(valores).returning();
+      if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "venta", entidadId: operationId, tipo: "crear_lote_pago_antiguo", metodo: "POST", endpoint: "/ventas/lote-pago-antiguo", payload: req.body, origen: "local" });
+      await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "venta_lote_pago_antiguo", recursoId: insertadas[0].id }).onConflictDoNothing();
+      return insertadas;
+    });
+    res.status(201).json(creadas.map(mapVenta));
+  } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); }
 });
 
 router.post("/manoobra", async (req, res) => {
@@ -263,7 +330,7 @@ router.put("/:id", async (req, res) => {
     fecha, referencia, tipoLinea, productoId,
     productoNombre, productoCodigo, productoMarca,
     cantidad, precioCompraUnidad, precioVentaUnidad,
-    precioVentaTotal, beneficio, descripcion, formaPago
+    precioVentaTotal, beneficio, descripcion, formaPago, origen, afectaInventario
   } = req.body;
 
   // Leer fila actual antes de modificar — necesario para el delta de stock y preservar descripción
@@ -272,6 +339,10 @@ router.put("/:id", async (req, res) => {
     res.status(404).json({ error: "Venta no encontrada" });
     return;
   }
+  const esPagoCreditoAntiguo = existing.origen === "pago_credito_antiguo";
+  const nuevaAfectaInventario = esPagoCreditoAntiguo ? false : afectaInventario !== undefined
+    ? Boolean(afectaInventario)
+    : existing.afectaInventario;
 
   const setData: Partial<typeof ventasDiariasTable.$inferInsert> = {
     fecha,
@@ -287,51 +358,42 @@ router.put("/:id", async (req, res) => {
     precioVentaTotal: String(parseFloat(precioVentaTotal)),
     beneficio: String(parseFloat(beneficio || 0)),
     formaPago: formaPago || null,
+    origen: esPagoCreditoAntiguo ? existing.origen : origen || existing.origen,
+    afectaInventario: nuevaAfectaInventario,
   };
   // Solo sobreescribir descripción si viene explícitamente en el payload;
   // si el frontend no la envía (undefined), se preserva la existente.
   if (descripcion !== undefined) setData.descripcion = descripcion || null;
 
-  const [venta] = await db
-    .update(ventasDiariasTable)
-    .set(setData)
-    .where(eq(ventasDiariasTable.id, id))
-    .returning();
+  try {
+    const venta = await db.transaction(async (tx) => {
+      const [actualizada] = await tx
+        .update(ventasDiariasTable)
+        .set(setData)
+        .where(eq(ventasDiariasTable.id, id))
+        .returning();
 
-  // Ajustar stock solo para ventas manuales (filas de crédito tienen creditoAbonoId)
-  if (!existing.creditoAbonoId) {
-    const oldEsVenta = existing.tipoLinea === "venta" || !existing.tipoLinea;
-    const newEsVenta = tipoLinea === "venta" || !tipoLinea;
-    const oldProdId = existing.productoId;
-    const newProdId = productoId ? parseInt(String(productoId)) : null;
-    const cantidadNueva = parseFloat(String(cantidad));
+      const oldEsVenta = existing.tipoLinea === "venta" || !existing.tipoLinea;
+      const newEsVenta = tipoLinea === "venta" || !tipoLinea;
+      const oldProdId = existing.productoId;
+      const newProdId = productoId ? parseInt(String(productoId)) : null;
+      const esFilaManual = !existing.creditoAbonoId;
 
-    // 1. Restaurar stock del producto anterior (como si se "deshiciera" la venta vieja)
-    if (oldEsVenta && oldProdId) {
-      const [prod] = await db.select().from(productosTable).where(eq(productosTable.id, oldProdId));
-      if (prod) {
-        await db.update(productosTable)
-          .set({ stockActual: String(toNum(prod.stockActual) + toNum(existing.cantidad)), actualizadoEn: new Date() })
-          .where(eq(productosTable.id, oldProdId));
+      if (esFilaManual && oldEsVenta && existing.afectaInventario !== false && !esPagoCreditoAntiguo && oldProdId) {
+        await ajustarStockVenta(tx, oldProdId, -toNum(existing.cantidad));
       }
-    }
-
-    // 2. Descontar stock del producto nuevo (aplica la venta editada)
-    if (newEsVenta && newProdId) {
-      const [prod] = await db.select().from(productosTable).where(eq(productosTable.id, newProdId));
-      if (prod) {
-        const nuevoStock = Math.max(0, toNum(prod.stockActual) - cantidadNueva);
-        await db.update(productosTable)
-          .set({ stockActual: String(nuevoStock), actualizadoEn: new Date() })
-          .where(eq(productosTable.id, newProdId));
+      if (esFilaManual && newEsVenta && newProdId && nuevaAfectaInventario) {
+        await ajustarStockVenta(tx, newProdId, parseFloat(String(cantidad)));
       }
-    }
+
+      if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "venta", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/ventas/${id}`, payload: req.body, origen: "local" });
+      await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "venta", recursoId: id }).onConflictDoNothing();
+      return actualizada;
+    });
+    res.json(mapVenta(venta));
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
   }
-
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "venta", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/ventas/${id}`, payload: req.body, origen: "local" });
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "venta", recursoId: id }).onConflictDoNothing();
-
-  res.json(mapVenta(venta));
 });
 
 router.delete("/:id", async (req, res) => {
@@ -340,23 +402,21 @@ router.delete("/:id", async (req, res) => {
   const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
   if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
 
-  // Restore stock if it was a normal sale with product.
-  // Filas auto-creadas por pagos de crédito (creditoAbonoId != null) no tocan stock —
-  // el crédito ya descontó al crearse; restaurar aquí sería un doble conteo.
-  const [venta] = await db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.id, id));
-  if (venta && (venta.tipoLinea === "venta" || !venta.tipoLinea) && venta.productoId && !venta.creditoAbonoId) {
-    const [prod] = await db.select().from(productosTable).where(eq(productosTable.id, venta.productoId));
-    if (prod) {
-        await db.update(productosTable)
-        .set({ stockActual: sql`${productosTable.stockActual} + ${toNum(venta.cantidad)}`, actualizadoEn: new Date() })
-        .where(eq(productosTable.id, venta.productoId));
-    }
-  }
+  try {
+    await db.transaction(async (tx) => {
+      const [venta] = await tx.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.id, id));
+      if (venta && venta.origen !== "pago_credito_antiguo" && (venta.tipoLinea === "venta" || !venta.tipoLinea) && venta.productoId && !venta.creditoAbonoId && venta.afectaInventario === true) {
+        await ajustarStockVenta(tx, venta.productoId, -toNum(venta.cantidad));
+      }
 
-  await db.delete(ventasDiariasTable).where(eq(ventasDiariasTable.id, id));
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "venta", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/ventas/${id}`, payload: {}, origen: "local" });
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "venta", recursoId: id }).onConflictDoNothing();
-  res.json({ mensaje: "Venta eliminada" });
+      await tx.delete(ventasDiariasTable).where(eq(ventasDiariasTable.id, id));
+      if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "venta", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/ventas/${id}`, payload: {}, origen: "local" });
+      await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "venta", recursoId: id }).onConflictDoNothing();
+    });
+    res.json({ mensaje: "Venta eliminada" });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 router.post("/:id/trasladar", async (req, res) => {
