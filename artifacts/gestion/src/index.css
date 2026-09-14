@@ -52,6 +52,7 @@
 :root {
   --background: 224 71% 4%;
   --foreground: 213 31% 91%;
+  --calendar-icon-filter: invert(82%) sepia(96%) saturate(1000%) hue-rotate(2deg) brightness(102%) contrast(101%);
   
   --card: 222 47% 11%;
   --card-foreground: 213 31% 91%;
@@ -94,6 +95,7 @@
 .light {
   --background: 220 14% 95%;
   --foreground: 224 30% 12%;
+  --calendar-icon-filter: invert(39%) sepia(96%) saturate(2790%) hue-rotate(359deg) brightness(94%) contrast(91%);
 
   --card: 0 0% 98%;
   --card-foreground: 224 30% 12%;
@@ -131,6 +133,14 @@
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="month"]::-webkit-calendar-picker-indicator,
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: var(--calendar-icon-filter);
+    opacity: 1;
+    cursor: pointer;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-display tracking-tight font-semibold;
