@@ -2,7 +2,7 @@ import type { CSSProperties, Dispatch, ReactNode, SetStateAction } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Check, GripVertical, Pencil, Trash2, X } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatCurrencyDecimal, parseNumberCO } from "@/lib/utils";
 import { SearchableSelect, type ProductoOpcion } from "@/components/SearchableSelect";
 
 const FORMAS_PAGO_LABEL: Record<string, string> = {
@@ -60,8 +60,8 @@ export function FilaVentaSortable({
   );
 
   if (isEditing) {
-    const editPvU = parseFloat(editValues.precioVentaUnidad) || 0;
-    const editPcU = parseFloat(editValues.precioCompraUnidad) || 0;
+    const editPvU = parseNumberCO(editValues.precioVentaUnidad);
+    const editPcU = parseNumberCO(editValues.precioCompraUnidad);
     const editCant = parseFloat(editValues.cantidad) || 0;
     const editTotal = editPvU * editCant;
     const editBen = venta.tipoLinea === "venta" ? (editPvU - editPcU) * editCant : 0;
@@ -90,8 +90,8 @@ export function FilaVentaSortable({
         /></td>
         <td className="p-2"><span className="block w-20 truncate text-sm text-muted-foreground">{editValues.productoMarca || "X"}</span></td>
         <td className="p-2"><input type="number" min="0" step="0.25" value={editValues.cantidad} onChange={(e) => setEditValues((v: any) => ({ ...v, cantidad: e.target.value }))} className="w-20 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-        <td className="p-2"><input type="number" value={editValues.precioCompraUnidad} onChange={(e) => setEditValues((v: any) => ({ ...v, precioCompraUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-        <td className="p-2"><input type="number" value={editValues.precioVentaUnidad} onChange={(e) => setEditValues((v: any) => ({ ...v, precioVentaUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
+        <td className="p-2"><input type="text" inputMode="decimal" value={editValues.precioCompraUnidad} onChange={(e) => setEditValues((v: any) => ({ ...v, precioCompraUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
+        <td className="p-2"><input type="text" inputMode="decimal" value={editValues.precioVentaUnidad} onChange={(e) => setEditValues((v: any) => ({ ...v, precioVentaUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
         <td className="p-2 font-bold text-primary whitespace-nowrap">{formatCurrency(editTotal)}</td>
         <td className="p-2 font-medium text-green-500 whitespace-nowrap">{venta.tipoLinea === "venta" ? formatCurrency(editBen) : "—"}</td>
         <td className="p-2 no-print">
@@ -125,8 +125,8 @@ export function FilaVentaSortable({
           <span className="print-only-inline">{String(venta.cantidad).replace(".", ",")}</span>
         )}
       </td>
-      <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioCompraUnidad)}</td>
-      <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioVentaUnidad)}</td>
+      <td className="px-3 py-3 text-muted-foreground">{formatCurrencyDecimal(venta.precioCompraUnidad)}</td>
+      <td className="px-3 py-3 text-muted-foreground">{formatCurrencyDecimal(venta.precioVentaUnidad)}</td>
       <td className="px-3 py-3 font-bold text-primary">{formatCurrency(venta.precioVentaTotal)}</td>
       <td className="px-3 py-3 font-medium text-green-500">{venta.tipoLinea === "venta" ? formatCurrency(venta.beneficio) : "—"}</td>
       <td className="px-3 py-3 no-print text-xs text-muted-foreground">{FORMAS_PAGO_LABEL[venta.formaPago || "efectivo"]}</td>
@@ -159,8 +159,8 @@ export function FilaVentaSortable({
           {venta.productoNombre || "Mano de Obra"} - {venta.productoMarca || "—"}
         </td>
         <td className="px-3 py-3" />
-        <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioCompraUnidad)}</td>
-        <td className="px-3 py-3 text-muted-foreground">{formatCurrency(venta.precioVentaUnidad)}</td>
+        <td className="px-3 py-3 text-muted-foreground">{formatCurrencyDecimal(venta.precioCompraUnidad)}</td>
+        <td className="px-3 py-3 text-muted-foreground">{formatCurrencyDecimal(venta.precioVentaUnidad)}</td>
         <td className="px-3 py-3 font-bold text-primary">{formatCurrency(venta.precioVentaTotal)}</td>
         <td className="px-3 py-3 font-medium text-green-500">—</td>
         <td className="no-print" />

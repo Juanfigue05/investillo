@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/Layout";
-import { formatCurrency, formatNumberCO, parseNumberCO } from "@/lib/utils";
+import { formatCurrency, formatCurrencyDecimal, formatNumberCO, parseNumberCO } from "@/lib/utils";
 import { Pencil, Search, Trash2, X } from "lucide-react";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");

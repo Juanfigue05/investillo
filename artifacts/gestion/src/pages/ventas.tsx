@@ -11,7 +11,7 @@ import {
   useGetHistorial,
   useGuardarDiaHistorial,
 } from "@workspace/api-client-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, parseNumberCO } from "@/lib/utils";
 import { Printer, Save, BookMarked } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ManoObraSelector, calcularDistribucion } from "@/components/ManoObraSelector";
@@ -130,8 +130,8 @@ export default function VentasDiarias() {
     marca: "",
     cantidad: "1",
     precioManoObra: 0,
-    precioVenta: 0,
-    precioCompra: 0,
+    precioVenta: "",
+    precioCompra: "",
     valorAbono: 0,
     trabajadoresSeleccionados: [] as number[],
     valoresFijados: {} as Record<number, number>,
@@ -196,18 +196,18 @@ export default function VentasDiarias() {
 
   const handleProductoSelect = (id: string) => {
     if (id === SPECIAL_MANOOBRA || id.startsWith(`${SPECIAL_SOLDADURA}:`)) {
-      setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "X", cantidad: "1", precioCompra: 0, precioVenta: 0, precioManoObra: 0, valorAbono: 0, trabajadoresSeleccionados: [] }));
+      setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "X", cantidad: "1", precioCompra: "", precioVenta: "", precioManoObra: 0, valorAbono: 0, trabajadoresSeleccionados: [] }));
       setStockAlerta(null);
     } else if (id === SPECIAL_ABONO) {
-      setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "X", cantidad: "1", precioCompra: 0, precioVenta: 0, precioManoObra: 0, valorAbono: 0, productoNombreManual: "" }));
+      setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "X", cantidad: "1", precioCompra: "", precioVenta: "", precioManoObra: 0, valorAbono: 0, productoNombreManual: "" }));
       setStockAlerta(null);
     } else if (id === SPECIAL_EXTERNO) {
-      setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "X", productoNombreManual: "", precioCompra: 0, precioVenta: 0, trabajadoresSeleccionados: [] }));
+      setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: "X", productoNombreManual: "", precioCompra: "", precioVenta: "", trabajadoresSeleccionados: [] }));
       setStockAlerta(null);
     } else {
       const prod = productos?.find((p) => String(p.id) === id);
       if (prod) {
-        setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: prod.marca || "X", precioCompra: prod.precioCompra, precioVenta: prod.precioVentaSinIva, trabajadoresSeleccionados: [] }));
+        setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: prod.marca || "X", precioCompra: String(prod.precioCompra), precioVenta: String(prod.precioVentaSinIva), trabajadoresSeleccionados: [] }));
         const stock = parseFloat(String(prod.stockActual ?? 0)) || 0;
         const minimo = parseFloat(String(prod.stockMinimo ?? 0)) || 0;
         setStockAlerta({ stock, minimo });
@@ -244,8 +244,8 @@ export default function VentasDiarias() {
 
   const handleSaveEdit = (venta: NonNullable<typeof ventas>[number]) => {
     const cant = parseFloat(editValues.cantidad) || 0;
-    const pvU = parseFloat(editValues.precioVentaUnidad) || 0;
-    const pcU = parseFloat(editValues.precioCompraUnidad) || 0;
+    const pvU = parseNumberCO(editValues.precioVentaUnidad);
+    const pcU = parseNumberCO(editValues.precioCompraUnidad);
     const total = pvU * cant;
     const beneficio = venta.tipoLinea === "venta" ? (pvU - pcU) * cant : parseFloat(editValues.beneficio) || 0;
     const ventaActualizada = {
@@ -404,15 +404,17 @@ export default function VentasDiarias() {
     }
     const cantNumNueva = parseFloat(newRow.cantidad.replace(",", "."));
     if (isNaN(cantNumNueva) || cantNumNueva <= 0) { alert("Cantidad inválida. Usa coma para decimales, ej: 1,5"); return; }
-    const beneficio = (newRow.precioVenta - newRow.precioCompra) * cantNumNueva;
-    const total = newRow.precioVenta * cantNumNueva;
+    const precioCompra = parseNumberCO(newRow.precioCompra);
+    const precioVenta = parseNumberCO(newRow.precioVenta);
+    const beneficio = (precioVenta - precioCompra) * cantNumNueva;
+    const total = precioVenta * cantNumNueva;
 
     const payloadVenta = {
       fecha, referencia: newRow.referencia, tipoLinea: "venta" as const,
       productoId: prod ? prod.id : undefined, productoNombre: nombreProducto,
       productoCodigo: prod?.codigo, productoMarca: newRow.marca || prod?.marca || undefined,
-      cantidad: cantNumNueva, precioCompraUnidad: newRow.precioCompra,
-      precioVentaUnidad: newRow.precioVenta, precioVentaTotal: total, beneficio,
+      cantidad: cantNumNueva, precioCompraUnidad: precioCompra,
+      precioVentaUnidad: precioVenta, precioVentaTotal: total, beneficio,
       formaPago: newRow.formaPago,
     };
 
@@ -426,7 +428,7 @@ export default function VentasDiarias() {
           queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
           queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
           queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
-          setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0 }));
+          setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: "", precioVenta: "" }));
           setStockAlerta(null);
         },
         onError: async (error) => {
@@ -436,7 +438,7 @@ export default function VentasDiarias() {
           }
           await encolarOperacion({ tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadVenta });
           toast({ title: "Guardado sin conexión", description: "Esta venta se sincronizará automáticamente cuando vuelva internet." });
-          setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: 0, precioVenta: 0 }));
+          setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: "", precioVenta: "" }));
           setStockAlerta(null);
         },
       }
@@ -477,8 +479,10 @@ export default function VentasDiarias() {
   const totalVentaTotal = ventasRows.reduce((acc, v) => acc + v.precioVentaTotal, 0);
   const totalBeneficio = ventasRows.reduce((acc, v) => acc + v.beneficio, 0);
   const cantNum = parseFloat(newRow.cantidad.replace(",", ".")) || 0;
-  const previewTotal = modoActual === "normal" ? newRow.precioVenta * cantNum : modoActual === "manoobra" || modoActual === "soldadura" ? newRow.precioManoObra : 0;
-  const previewBeneficio = modoActual === "normal" ? (newRow.precioVenta - newRow.precioCompra) * cantNum : 0;
+  const previewPrecioCompra = parseNumberCO(newRow.precioCompra);
+  const previewPrecioVenta = parseNumberCO(newRow.precioVenta);
+  const previewTotal = modoActual === "normal" ? previewPrecioVenta * cantNum : modoActual === "manoobra" || modoActual === "soldadura" ? newRow.precioManoObra : 0;
+  const previewBeneficio = modoActual === "normal" ? (previewPrecioVenta - previewPrecioCompra) * cantNum : 0;
 
   const fechaFormateada = new Date(fecha + "T12:00:00").toLocaleDateString("es-CO", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -616,11 +620,11 @@ export default function VentasDiarias() {
                     {modoActual === "abono" && <span className="text-xs text-muted-foreground">—</span>}
                   </td>
                   <td className="p-2">
-                    {modoActual === "normal" && <input type="number" value={newRow.precioCompra || ""} onChange={(e) => setNewRow({ ...newRow, precioCompra: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="P.Compra" />}
+                    {modoActual === "normal" && <input type="text" inputMode="decimal" value={newRow.precioCompra} onChange={(e) => setNewRow({ ...newRow, precioCompra: e.target.value })} className="w-24 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="P.Compra" />}
                     {(modoActual === "manoobra" || modoActual === "soldadura") && <input type="number" value={newRow.precioManoObra || ""} onChange={(e) => setNewRow({ ...newRow, precioManoObra: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-yellow-500/50 px-2 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 outline-none text-sm" placeholder="Valor servicio" />}
                     {modoActual === "abono" && <input type="number" value={newRow.valorAbono || ""} onChange={(e) => setNewRow({ ...newRow, valorAbono: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-blue-500/50 px-2 py-2 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm" placeholder="Valor" />}
                   </td>
-                  <td className="p-2">{modoActual === "normal" ? <input type="number" value={newRow.precioVenta || ""} onChange={(e) => setNewRow({ ...newRow, precioVenta: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="P.Venta" /> : <span className="text-xs text-muted-foreground px-2">—</span>}</td>
+                  <td className="p-2">{modoActual === "normal" ? <input type="text" inputMode="decimal" value={newRow.precioVenta} onChange={(e) => setNewRow({ ...newRow, precioVenta: e.target.value })} className="w-24 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="P.Venta" /> : <span className="text-xs text-muted-foreground px-2">—</span>}</td>
                   <td className="p-2 font-medium text-primary whitespace-nowrap">{formatCurrency(previewTotal)}</td>
                   <td className="p-2 font-medium text-green-500 whitespace-nowrap">{modoActual === "normal" ? formatCurrency(previewBeneficio) : "—"}</td>
                   <td className="p-2 no-print"><select value={newRow.formaPago} onChange={(e) => setNewRow({ ...newRow, formaPago: e.target.value })} className="w-full bg-background border border-border px-2 py-2 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"><option value="efectivo">Efectivo</option><option value="cuenta_ernesto">Cuenta Ernesto</option><option value="cuenta_olga">Cuenta Olga</option><option value="cuenta_juan">Cuenta Juan</option></select></td>

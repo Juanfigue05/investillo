@@ -53,9 +53,9 @@ export function formatearMora(dias: number): string {
 export function formatCurrency(value: number | undefined | null) {
   if (value === undefined || value === null) return "$0";
   const negativo = value < 0;
-  const entero = Math.round(Math.abs(value));
-  let str = entero.toLocaleString("es-CO", { maximumFractionDigits: 0 }); // ej: "1.234.567"
-  if (entero >= 1_000_000) {
+  const absoluto = Math.abs(value);
+  let str = absoluto.toLocaleString("es-CO", { maximumFractionDigits: 2 });
+  if (absoluto >= 1_000_000) {
     str = str.replace(".", "'"); // solo el primer punto (el de millones) se cambia por comilla
   }
   return `${negativo ? "-" : ""}$ ${str}`;
@@ -73,7 +73,7 @@ export function parseNumberCO(value: string): number {
   if (texto.includes(",")) return Number(texto.replace(/\./g, "").replace(",", ".")) || 0;
   const ultimoPunto = texto.lastIndexOf(".");
   const decimales = ultimoPunto >= 0 ? texto.length - ultimoPunto - 1 : 0;
-  const normalizado = texto.includes(".") && texto.split(".").length === 2 && decimales === 2 ? texto : texto.replace(/\./g, "");
+  const normalizado = texto.includes(".") && texto.split(".").length === 2 && decimales >= 1 && decimales <= 2 ? texto : texto.replace(/\./g, "");
   return Number(normalizado) || 0;
 }
 

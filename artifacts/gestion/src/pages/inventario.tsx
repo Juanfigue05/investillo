@@ -6,7 +6,7 @@ import {
   useActualizarProducto,
   useEliminarProducto,
 } from "@workspace/api-client-react";
-import { formatCurrency, calcularPrecioConIva } from "@/lib/utils";
+import { formatCurrency, formatCurrencyDecimal, calcularPrecioConIva } from "@/lib/utils";
 import {
   Plus,
   Search,
@@ -1982,13 +1982,13 @@ export default function Inventario() {
                               {prod.referencia || "—"}
                             </td>
                             <td className="px-3 py-3 text-muted-foreground">
-                              {formatCurrency(prod.precioCompra)}
+                              {formatCurrencyDecimal(prod.precioCompra)}
                             </td>
                             <td className="px-3 py-3 text-muted-foreground">
-                              {formatCurrency(prod.precioVentaSinIva)}
+                              {formatCurrencyDecimal(prod.precioVentaSinIva)}
                             </td>
                             <td className="px-3 py-3 text-primary font-bold">
-                              {formatCurrency(prod.precioVentaConIva)}
+                              {formatCurrencyDecimal(prod.precioVentaConIva)}
                             </td>
                             <td className="px-3 py-3 text-right">
                               {(prod as any)._pendiente ? (

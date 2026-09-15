@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrencyDecimal } from "@/lib/utils";
 
 export interface ProductoOpcion {
   id: string;
@@ -155,7 +155,7 @@ export function SearchableSelect({
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium text-sm truncate">{o.nombre}</span>
                       {o.precioVenta !== undefined && (
-                        <span className="text-sm font-bold text-primary flex-shrink-0">{formatCurrency(o.precioVenta)}</span>
+                        <span className="text-sm font-bold text-primary flex-shrink-0">{formatCurrencyDecimal(o.precioVenta)}</span>
                       )}
                     </div>
                     {(o.codigo || o.marca || o.stockActual !== undefined) && (

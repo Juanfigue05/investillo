@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Calculator, Minus, X, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useGetInventario } from "@workspace/api-client-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatCurrencyDecimal } from "@/lib/utils";
 
 interface LineaConsulta {
   productoId: string;
@@ -174,8 +174,8 @@ export function FloatingPriceCheck({ topbar }: { topbar?: boolean }) {
                 />
                 {calc ? (
                   <div className="grid grid-cols-3 gap-x-1 text-xs">
-                    <span className="text-right text-muted-foreground font-medium tabular-nums">{formatCurrency(calc.prod.precioCompra)}</span>
-                    <span className="text-right text-muted-foreground font-medium tabular-nums">{formatCurrency(calc.prod.precioVentaSinIva)}</span>
+                    <span className="text-right text-muted-foreground font-medium tabular-nums">{formatCurrencyDecimal(calc.prod.precioCompra)}</span>
+                    <span className="text-right text-muted-foreground font-medium tabular-nums">{formatCurrencyDecimal(calc.prod.precioVentaSinIva)}</span>
                     <span className="text-right text-green-500 font-bold tabular-nums">{formatCurrency(Math.ceil((calc.prod.precioVentaSinIva * 1.19) / 1000) * 1000)}</span>
                   </div>
                 ) : (

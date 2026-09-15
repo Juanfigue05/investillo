@@ -7,7 +7,7 @@ import {
   useEliminarCompra,
   useGetInventario,
 } from "@workspace/api-client-react";
-import { fechaHoyColombia, formatCurrency, parseNumberCO } from "@/lib/utils";
+import { fechaHoyColombia, formatCurrency, formatCurrencyDecimal, parseNumberCO } from "@/lib/utils";
 import {
   PackageCheck,
   Truck,
@@ -394,7 +394,7 @@ export default function Compras() {
     ].filter((valor) => necesitaConfirmacionNumero(valor));
     if (camposNumericos.length > 0) {
       const interpretaciones = camposNumericos
-        .map((valor) => `${valor} -> ${formatCurrency(parseNumberCO(valor))}`)
+        .map((valor) => `${valor} -> ${formatCurrencyDecimal(parseNumberCO(valor))}`)
         .join("\n");
       if (!window.confirm(`Confirma cómo se interpretarán estos valores:\n\n${interpretaciones}`)) return;
     }
@@ -761,7 +761,7 @@ export default function Compras() {
                   P. Compra anterior:
                 </span>
                 <span className="line-through text-muted-foreground">
-                  {formatCurrency(precioConfirm.precioCompraAnterior)}
+                  {formatCurrencyDecimal(precioConfirm.precioCompraAnterior)}
                 </span>
               </div>
               <div className="flex justify-between font-medium">
@@ -774,7 +774,7 @@ export default function Compras() {
                       : "text-green-500"
                   }
                 >
-                  {formatCurrency(precioConfirm.precioCompraNuevo)}
+                  {formatCurrencyDecimal(precioConfirm.precioCompraNuevo)}
                   <span className="text-xs ml-1">
                     (
                     {precioConfirm.precioCompraNuevo >
@@ -796,7 +796,7 @@ export default function Compras() {
                   P. Venta anterior:
                 </span>
                 <span className="line-through text-muted-foreground">
-                  {formatCurrency(precioConfirm.precioVentaAnterior)}
+                  {formatCurrencyDecimal(precioConfirm.precioVentaAnterior)}
                 </span>
               </div>
               <div className="flex justify-between font-medium">
@@ -811,7 +811,7 @@ export default function Compras() {
                       : "text-green-500"
                   }
                 >
-                  {formatCurrency(precioConfirm.precioVentaNuevo)}
+                  {formatCurrencyDecimal(precioConfirm.precioVentaNuevo)}
                 </span>
               </div>
             </div>

@@ -17,6 +17,8 @@ import {
   fechaHoyColombia,
   formatearMora,
   formatCurrency,
+  formatCurrencyDecimal,
+  parseNumberCO,
   formatTelefono,
   soloDigitos,
 } from "@/lib/utils";
@@ -243,7 +245,7 @@ export default function NosDebePage() {
 
   const totalLineas = lineas.reduce(
     (sum, l) =>
-      sum + (parseFloat(l.cantidad) || 0) * (parseFloat(l.precioVenta) || 0),
+      sum + (parseFloat(l.cantidad) || 0) * parseNumberCO(l.precioVenta),
     0,
   );
   const handleClienteSelect = (nombre: string) => {
@@ -385,8 +387,8 @@ export default function NosDebePage() {
 
     // Advertir si alguna línea tiene precioVenta < precioCompra
     const lineasConPerdida = lineas.filter((l) => {
-      const pv = parseFloat(l.precioVenta) || 0;
-      const pc = parseFloat(l.precioCompra) || 0;
+      const pv = parseNumberCO(l.precioVenta);
+      const pc = parseNumberCO(l.precioCompra);
       return l.productoNombre.trim() && pv > 0 && pc > 0 && pv < pc;
     });
     if (lineasConPerdida.length > 0) {
@@ -421,7 +423,7 @@ export default function NosDebePage() {
       prevAbonado: number;
     };
     const allLineas: PendingLinea[] = lineas
-      .filter((l) => l.productoNombre.trim() && parseFloat(l.precioVenta) > 0)
+      .filter((l) => l.productoNombre.trim() && parseNumberCO(l.precioVenta) > 0)
       .map((l) => ({
         id: l.id > 0 ? l.id : undefined,
         productoId: l.productoId,
@@ -429,9 +431,9 @@ export default function NosDebePage() {
         cantidad: parseFloat(l.cantidad) || 0,
         productoNombre: l.productoNombre,
         productoMarca: l.marca || undefined,
-        precioVenta: parseFloat(l.precioVenta) || 0,
-        precioCompra: parseFloat(l.precioCompra) || 0,
-        total: (parseFloat(l.cantidad) || 0) * (parseFloat(l.precioVenta) || 0),
+        precioVenta: parseNumberCO(l.precioVenta),
+        precioCompra: parseNumberCO(l.precioCompra),
+        total: (parseFloat(l.cantidad) || 0) * parseNumberCO(l.precioVenta),
         prevAbonado: l.valorAbonado || 0,
       }));
     if (manoObra.activo && manoObraValor > 0) {
@@ -590,7 +592,7 @@ export default function NosDebePage() {
     } else {
       const lineasOptimistas = payloadLineas.map((l: any, i: number) => {
         const total =
-          (parseFloat(l.cantidad) || 0) * (parseFloat(l.precioVenta) || 0);
+          (parseFloat(l.cantidad) || 0) * parseNumberCO(l.precioVenta);
         return {
           ...l,
           id: -Date.now() - i,
@@ -685,7 +687,7 @@ export default function NosDebePage() {
       .map((l: any) => {
         const tope =
           editingAbonoId !== null
-            ? parseFloat(l.cantidad) * parseFloat(l.precioVenta)
+            ? parseFloat(l.cantidad) * parseNumberCO(l.precioVenta)
             : l.valorRestante;
         const v = Math.min(tope, rem);
         rem -= v;
@@ -700,7 +702,7 @@ export default function NosDebePage() {
     const detalle = lineasAbono
       .map((linea: any) => {
         const producto = selected.find((item: any) => item.id === linea.lineaId);
-        const total = producto ? parseFloat(producto.cantidad) * parseFloat(producto.precioVenta) : 0;
+        const total = producto ? parseFloat(producto.cantidad) * parseNumberCO(producto.precioVenta) : 0;
         return `${linea.valor >= total - 0.01 ? "PAGO COMPLETO" : "ABONO PARCIAL"}: ${producto?.productoNombre || "Producto"} - ${formatCurrency(linea.valor)}`;
       })
       .join("\n");
@@ -1230,7 +1232,8 @@ export default function NosDebePage() {
                           </td>
                           <td className="px-3 py-2">
                             <input
-                              type="number"
+                              type="text"
+                              inputMode="decimal"
                               min="0"
                               value={linea.precioCompra}
                               onChange={(e) =>
@@ -1245,8 +1248,8 @@ export default function NosDebePage() {
                           </td>
                           <td className="px-3 py-2">
                             {(() => {
-                              const pv = parseFloat(linea.precioVenta);
-                              const pc = parseFloat(linea.precioCompra);
+                              const pv = parseNumberCO(linea.precioVenta);
+                              const pc = parseNumberCO(linea.precioCompra);
                               const isBelow =
                                 linea.precioVenta !== "" &&
                                 linea.precioCompra !== "" &&
@@ -1255,7 +1258,8 @@ export default function NosDebePage() {
                               return (
                                 <div>
                                   <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="decimal"
                                     min="0"
                                     value={linea.precioVenta}
                                     onChange={(e) =>
@@ -1279,7 +1283,7 @@ export default function NosDebePage() {
                           <td className="px-3 py-2 text-xs font-bold text-primary">
                             {formatCurrency(
                               (parseFloat(linea.cantidad) || 0) *
-                                (parseFloat(linea.precioVenta) || 0),
+                                parseNumberCO(linea.precioVenta),
                             )}
                           </td>
                           <td className="px-3 py-2">
@@ -1721,7 +1725,7 @@ export default function NosDebePage() {
                                 const disponible =
                                   editingAbonoId !== null
                                     ? parseFloat(l.cantidad) *
-                                      parseFloat(l.precioVenta)
+                                      parseNumberCO(l.precioVenta)
                                     : l.valorRestante;
                                 return (
                                   <label
@@ -1988,7 +1992,7 @@ export default function NosDebePage() {
                       />
                       {c.lineas.map((l: any) => {
                         const tope =
-                          parseFloat(l.cantidad) * parseFloat(l.precioVenta);
+                          parseFloat(l.cantidad) * parseNumberCO(l.precioVenta);
                         return (
                           <label
                             key={l.id}

@@ -7,7 +7,7 @@ import {
   useActualizarVenta,
   useEliminarVenta,
 } from "@workspace/api-client-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatCurrencyDecimal, parseNumberCO } from "@/lib/utils";
 import { ChevronDown, ChevronUp, Pencil, Trash2, Check, X, BookOpen } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -111,8 +111,8 @@ export default function Historial() {
 
   const handleSaveVenta = (venta: NonNullable<NonNullable<typeof historial>[number]["ventas"]>[number]) => {
     const cant = parseFloat(editVentaValues.cantidad) || 0;
-    const pvU = parseFloat(editVentaValues.precioVentaUnidad) || 0;
-    const pcU = parseFloat(editVentaValues.precioCompraUnidad) || 0;
+    const pvU = parseNumberCO(editVentaValues.precioVentaUnidad);
+    const pcU = parseNumberCO(editVentaValues.precioCompraUnidad);
     const total = pvU * cant;
     const beneficio = venta.tipoLinea === "venta" ? (pvU - pcU) * cant : 0;
     actualizarVentaMutation.mutate(
@@ -299,7 +299,7 @@ export default function Historial() {
                                 const isEditingV = editingVentaId === venta.id;
 
                                 if (isEditingV) {
-                                  const pvU = parseFloat(editVentaValues.precioVentaUnidad) || 0;
+                                  const pvU = parseNumberCO(editVentaValues.precioVentaUnidad);
                                   const cant = parseFloat(editVentaValues.cantidad) || 0;
                                   return (
                                     <tr key={venta.id} className={`${rowCls} ring-2 ring-inset ring-primary/40`}>
@@ -307,8 +307,8 @@ export default function Historial() {
                                       <td className="px-2 py-1.5"><input value={editVentaValues.productoNombre} onChange={(e) => setEditVentaValues((v) => ({ ...v, productoNombre: e.target.value }))} className="w-36 bg-background border border-primary/50 px-2 py-1 rounded-lg text-xs outline-none" /></td>
                                       <td className="px-2 py-1.5"><input value={editVentaValues.productoMarca} onChange={(e) => setEditVentaValues((v) => ({ ...v, productoMarca: e.target.value }))} className="w-20 bg-background border border-primary/50 px-2 py-1 rounded-lg text-xs outline-none" /></td>
                                       <td className="px-2 py-1.5"><input type="number" value={editVentaValues.cantidad} onChange={(e) => setEditVentaValues((v) => ({ ...v, cantidad: e.target.value }))} className="w-14 bg-background border border-primary/50 px-2 py-1 rounded-lg text-xs outline-none" /></td>
-                                      <td className="px-2 py-1.5"><input type="number" value={editVentaValues.precioCompraUnidad} onChange={(e) => setEditVentaValues((v) => ({ ...v, precioCompraUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1 rounded-lg text-xs outline-none" /></td>
-                                      <td className="px-2 py-1.5"><input type="number" value={editVentaValues.precioVentaUnidad} onChange={(e) => setEditVentaValues((v) => ({ ...v, precioVentaUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1 rounded-lg text-xs outline-none" /></td>
+                                      <td className="px-2 py-1.5"><input type="text" inputMode="decimal" value={editVentaValues.precioCompraUnidad} onChange={(e) => setEditVentaValues((v) => ({ ...v, precioCompraUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1 rounded-lg text-xs outline-none" /></td>
+                                      <td className="px-2 py-1.5"><input type="text" inputMode="decimal" value={editVentaValues.precioVentaUnidad} onChange={(e) => setEditVentaValues((v) => ({ ...v, precioVentaUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1 rounded-lg text-xs outline-none" /></td>
                                       <td className="px-4 py-1.5 font-bold text-primary whitespace-nowrap">{formatCurrency(pvU * cant)}</td>
                                       <td className="px-2 py-1.5">
                                         <div className="flex gap-1">
@@ -326,8 +326,8 @@ export default function Historial() {
                                     <td className="px-4 py-2.5 font-medium">{venta.productoNombre}</td>
                                     <td className="px-4 py-2.5 text-muted-foreground text-xs">{venta.productoMarca || "—"}</td>
                                     <td className="px-4 py-2.5">{String(venta.cantidad).replace(".", ",")}</td>
-                                    <td className="px-4 py-2.5 text-muted-foreground">{formatCurrency(venta.precioCompraUnidad)}</td>
-                                    <td className="px-4 py-2.5 text-muted-foreground">{formatCurrency(venta.precioVentaUnidad)}</td>
+                                    <td className="px-4 py-2.5 text-muted-foreground">{formatCurrencyDecimal(venta.precioCompraUnidad)}</td>
+                                    <td className="px-4 py-2.5 text-muted-foreground">{formatCurrencyDecimal(venta.precioVentaUnidad)}</td>
                                     <td className="px-4 py-2.5 font-bold text-primary">{formatCurrency(venta.precioVentaTotal)}</td>
                                     <td className="px-2 py-2.5">
                                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">

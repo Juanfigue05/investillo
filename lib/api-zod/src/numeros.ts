@@ -20,7 +20,7 @@ export function parseNumeroColombia(raw: unknown): number {
 
   const ultimoPunto = texto.lastIndexOf(".");
   const decimalesFinales = texto.length - ultimoPunto - 1;
-  const normalizado = puntos === 1 && decimalesFinales === 2
+  const normalizado = puntos === 1 && decimalesFinales >= 1 && decimalesFinales <= 2
     ? texto
     : texto.replace(/\./g, "");
   const numero = Number(normalizado);

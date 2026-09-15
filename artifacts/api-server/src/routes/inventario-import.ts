@@ -3,6 +3,7 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { db, pool } from "@workspace/db";
 import { eventosSincronizacionTable, operacionesSincronizadasTable } from "@workspace/db/schema";
+import { parseNumeroColombia } from "@workspace/api-zod";
 import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -19,9 +20,7 @@ function calcPrecioConIva(v: number): number {
 
 function parsePrecio(raw: unknown): number {
   if (raw === null || raw === undefined || raw === "") return 0;
-  if (typeof raw === "number") return isNaN(raw) ? 0 : raw;
-  const n = parseFloat(String(raw).replace(/[$\s,]/g, ""));
-  return isNaN(n) ? 0 : n;
+  return parseNumeroColombia(raw);
 }
 
 function cleanStr(v: unknown): string {
