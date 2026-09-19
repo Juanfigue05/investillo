@@ -132,7 +132,7 @@ export default function ObraElectronica() {
           )}
         </div>
 
-        {editando && <div className="no-print fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4" onClick={() => setEditando(null)}>
+        {editando && <div className="no-print fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4">
           <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center"><h2 className="font-bold">Editar obra electrónica</h2><button onClick={() => setEditando(null)}><X className="w-5 h-5" /></button></div>
             <input type="date" value={borrador.fecha} onChange={(e) => setBorrador((p) => ({ ...p, fecha: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm" />

@@ -1812,7 +1812,6 @@ export default function NosDebePage() {
         {confirmarCancelarPago && (
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4"
-            onClick={() => setConfirmarCancelarPago(null)}
           >
             <div
               className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4"
@@ -2050,7 +2049,6 @@ export default function NosDebePage() {
       {showRefModal && (
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4"
-          onClick={() => setShowRefModal(false)}
         >
           <div
             className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4"

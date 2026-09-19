@@ -189,7 +189,6 @@ export function CalculadoraCierre({
         bottom: 0,
         zIndex: 90,
       }}
-      onClick={onClose}
     >
       <div
         className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-[1600px] max-h-[94vh] overflow-hidden flex flex-col"

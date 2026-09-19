@@ -38,7 +38,7 @@ export function DescuentoRapidoModal({ productos, onClose, onSaved }: { producto
     finally { setGuardando(false); }
   };
 
-  return <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+  return <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
     <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4" onClick={(event) => event.stopPropagation()}>
       <div className="flex items-center justify-between"><h2 className="text-lg font-bold">Descuento de inventario</h2><button onClick={onClose} title="Cerrar"><X className="w-5 h-5" /></button></div>
       <label className="block text-sm">Producto<select value={productoId} onChange={(event) => setProductoId(event.target.value)} className="mt-1 w-full bg-background border border-border rounded-lg px-3 py-2"><option value="">Selecciona un producto</option>{productos.map((item) => <option key={item.id} value={item.id}>{item.nombre} [{item.codigo}]</option>)}</select></label>

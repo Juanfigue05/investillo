@@ -219,7 +219,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </button>
 
             {showTensionada && createPortal(
-              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 90 }} onClick={() => setShowTensionada(false)}>
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 90 }}>
                 <div className="bg-card border border-cyan-500/40 rounded-2xl shadow-2xl w-full max-w-xs p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
                   <h3 className="font-bold text-foreground">Registrar Tensionada</h3>
                   <div>
@@ -244,7 +244,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             )}
 
             {showObraElectronica && createPortal(
-              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 90 }} onClick={() => setShowObraElectronica(false)}>
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 90 }}>
                 <div className="bg-card border border-amber-500/40 rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
                   <h3 className="font-bold text-foreground flex items-center gap-2"><Hand className="w-5 h-5 text-amber-400" /> Obra electrónica</h3>
                   <div>

@@ -849,7 +849,7 @@ export default function Inventario() {
         
         {/* Vista previa de cambios */}
         {previewCompleto && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }} onClick={() => setPreviewCompleto(null)}>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }}>
             <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
               <div className="sticky top-0 bg-card border-b border-border px-6 py-4 flex items-center justify-between z-10">
                 <h2 className="text-lg font-bold text-foreground">Vista previa de cambios</h2>
@@ -937,7 +937,7 @@ export default function Inventario() {
         )}
 
         {resultadoAplicado && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }} onClick={() => setResultadoAplicado(null)}>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }}>
             <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center space-y-3" onClick={(e) => e.stopPropagation()}>
               <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
               <h3 className="text-lg font-bold text-foreground">¡Listo!</h3>
@@ -964,7 +964,6 @@ export default function Inventario() {
                 bottom: 0,
                 zIndex: 90,
               }}
-              onClick={() => setShowTrasladar(false)}
             >
               <div
                 className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4"

@@ -193,7 +193,7 @@ function GruposTrabajoPanel({
   const nombrePorId = (id: number) => trabajadores.find((t) => t.id === id)?.nombre || `Trabajador ${id}`;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
       <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 bg-card border-b border-border px-6 py-3.5 flex items-center justify-between z-10">
           <h2 className="text-lg font-display font-bold text-foreground flex items-center gap-2">

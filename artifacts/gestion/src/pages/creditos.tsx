@@ -2106,7 +2106,6 @@ export default function Creditos() {
         {confirmarCancelarPago && (
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4"
-            onClick={() => setConfirmarCancelarPago(null)}
           >
             <div
               className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4"

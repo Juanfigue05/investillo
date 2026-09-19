@@ -541,7 +541,6 @@ export default function Compras() {
       {loteOpen && (
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4"
-          onClick={() => setLoteOpen(false)}
         >
           <div
             className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-5xl max-h-[94vh] overflow-y-auto"
@@ -943,7 +942,6 @@ export default function Compras() {
         {editandoLlegadaId !== null && (
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4"
-            onClick={() => setEditandoLlegadaId(null)}
           >
             <div
               className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-3"

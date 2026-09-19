@@ -10,7 +10,12 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 11,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+});
 
 // Sin esto, un corte de internet hace que Node trate el error de conexión
 // como no manejado y cierre TODO el proceso — con esto, solo se registra y sigue vivo.
