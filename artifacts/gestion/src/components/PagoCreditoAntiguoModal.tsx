@@ -11,7 +11,7 @@ type Fila = { id: number; tipoServicio: TipoServicio | null; productoId: string;
 
 function nuevaFila(id: number): Fila { return { id, tipoServicio: null, productoId: "", nombre: "", marca: "", cantidad: "1", precioCompra: "0", precioVenta: "", trabajadores: [] }; }
 
-export function PagoCreditoAntiguoModal({ fecha, productos, trabajadores, onClose, onSaved }: { fecha: string; productos: Producto[]; trabajadores: Trabajador[]; onClose: () => void; onSaved: () => void }) {
+export function PagoCreditoAntiguoModal({ fecha, productos, trabajadores, onClose, onSaved }: { fecha: string; productos: Producto[]; trabajadores: Trabajador[]; onClose: () => void; onSaved: (ventas: unknown[]) => void | Promise<void> }) {
   const [referencia, setReferencia] = useState("");
   const [formaPago, setFormaPago] = useState("efectivo");
   const [observacion, setObservacion] = useState("");
@@ -51,9 +51,10 @@ export function PagoCreditoAntiguoModal({ fecha, productos, trabajadores, onClos
     if (filas.some((fila) => fila.tipoServicio && fila.trabajadores.length === 0)) { setError("Selecciona al menos un empleado para cada servicio."); return; }
     setGuardando(true);
     try {
-      const response = await fetch(`${API}/ventas/lote-pago-antiguo`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: filas.map((fila) => ({ fecha, referencia: referencia.trim(), tipoLinea: fila.tipoServicio ? "manoobra" : "venta", productoId: fila.tipoServicio ? undefined : Number(fila.productoId) || undefined, productoNombre: fila.nombre.trim(), productoCodigo: fila.tipoServicio ? undefined : productos.find((p) => String(p.id) === fila.productoId)?.codigo, productoMarca: fila.tipoServicio ? trabajadores.filter((t) => fila.trabajadores.includes(t.id)).map((t) => t.nombre).join(", ") : fila.marca, cantidad: parseNumberCO(fila.cantidad), precioCompraUnidad: parseNumberCO(fila.precioCompra), precioVentaUnidad: parseNumberCO(fila.precioVenta), precioVentaTotal: parseNumberCO(fila.cantidad) * parseNumberCO(fila.precioVenta), beneficio: fila.tipoServicio ? parseNumberCO(fila.precioVenta) * parseNumberCO(fila.cantidad) : (parseNumberCO(fila.precioVenta) - parseNumberCO(fila.precioCompra)) * parseNumberCO(fila.cantidad), descripcion: observacion.trim() || "Pago de crédito antiguo", formaPago })) }) });
+      const response = await fetch(`${API}/ventas/lote-pago-antiguo`, { method: "POST", headers: { "Content-Type": "application/json", "X-Operation-Id": crypto.randomUUID() }, body: JSON.stringify({ items: filas.map((fila) => ({ fecha, referencia: referencia.trim(), tipoLinea: fila.tipoServicio ? "manoobra" : "venta", productoId: fila.tipoServicio ? undefined : Number(fila.productoId) || undefined, productoNombre: fila.nombre.trim(), productoCodigo: fila.tipoServicio ? undefined : productos.find((p) => String(p.id) === fila.productoId)?.codigo, productoMarca: fila.tipoServicio ? trabajadores.filter((t) => fila.trabajadores.includes(t.id)).map((t) => t.nombre).join(", ") : fila.marca, cantidad: parseNumberCO(fila.cantidad), precioCompraUnidad: parseNumberCO(fila.precioCompra), precioVentaUnidad: parseNumberCO(fila.precioVenta), precioVentaTotal: parseNumberCO(fila.cantidad) * parseNumberCO(fila.precioVenta), beneficio: fila.tipoServicio ? parseNumberCO(fila.precioVenta) * parseNumberCO(fila.cantidad) : (parseNumberCO(fila.precioVenta) - parseNumberCO(fila.precioCompra)) * parseNumberCO(fila.cantidad), descripcion: observacion.trim() || "Pago de crédito antiguo", formaPago })) }) });
       if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || "No se pudo guardar el lote");
-      onSaved();
+      const resultado = await response.json();
+      await onSaved(Array.isArray(resultado) ? resultado : []);
     } catch (err) { setError(err instanceof Error ? err.message : "No se pudo guardar"); }
     finally { setGuardando(false); }
   };

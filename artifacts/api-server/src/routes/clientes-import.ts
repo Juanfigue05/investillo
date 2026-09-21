@@ -6,7 +6,7 @@ import { pool, db } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1, parts: 2 } });
 
 function cleanStr(v: unknown): string {
   if (v === null || v === undefined) return "";
@@ -46,6 +46,10 @@ function parseExcel(buffer: Buffer): { rows: ParsedCliente[]; omitidos: number[]
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const raw: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
   const dataRows = raw.slice(1);
+
+  if (dataRows.length > 10_000) {
+    throw new Error("El archivo supera el máximo de 10000 filas");
+  }
 
   const rows: ParsedCliente[] = [];
   const omitidos: number[] = [];

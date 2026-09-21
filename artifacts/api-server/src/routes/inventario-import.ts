@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 const router: IRouter = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 30 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024, files: 1, parts: 2 },
 });
 
 // ─── helpers ───────────────────────────────────────────────────────────────
@@ -67,6 +67,10 @@ function parseExcel(buffer: Buffer): { rows: ParsedRow[]; skipped: number[] } {
   const dataRows = raw
     .slice(1)
     .filter((r) => Array.isArray(r) && cleanStr(r[0]) !== "");
+
+  if (dataRows.length > 10_000) {
+    throw new Error("El archivo supera el máximo de 10000 filas");
+  }
 
   const rows: ParsedRow[] = [];
   const skipped: number[] = [];

@@ -660,7 +660,7 @@ export default function VentasDiarias() {
           <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500/30 border border-blue-500/50"></div> Crédito / Abono</div>
         </div>
       </div>
-      {pagoCreditoAntiguoOpen && <PagoCreditoAntiguoModal fecha={fecha} productos={(productos || []) as any[]} trabajadores={(trabajadores || []) as any[]} onClose={() => setPagoCreditoAntiguoOpen(false)} onSaved={() => { setPagoCreditoAntiguoOpen(false); queryClient.invalidateQueries({ queryKey: ["/api/ventas"] }); }} />}
+      {pagoCreditoAntiguoOpen && <PagoCreditoAntiguoModal fecha={fecha} productos={(productos || []) as any[]} trabajadores={(trabajadores || []) as any[]} onClose={() => setPagoCreditoAntiguoOpen(false)} onSaved={async (nuevasVentas) => { setPagoCreditoAntiguoOpen(false); if (nuevasVentas.length) queryClient.setQueryData(["/api/ventas", { fecha }], (actuales: any[] = []) => [...actuales, ...nuevasVentas]); await queryClient.refetchQueries({ queryKey: ["/api/ventas", { fecha }] }); }} />}
     </Layout>
   );
 }

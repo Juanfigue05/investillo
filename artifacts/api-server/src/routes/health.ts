@@ -13,12 +13,13 @@ router.get("/healthz", (_req, res) => {
 
 // Esta ruta sí consulta la base de datos de verdad — para que el ping de "keep-alive"
 // también cuente como actividad ante Supabase, y nunca se pause por inactividad.
-router.get("/healthz-db", async (_req, res) => {
+router.get("/healthz-db", async (req, res) => {
   try {
     await db.select({ count: sql<number>`count(*)` }).from(productosTable);
     res.json({ status: "ok", db: "activa" });
-  } catch (err: any) {
-    res.status(500).json({ status: "error", error: err?.message });
+  } catch (err) {
+    req.log.error({ err }, "Database health check failed");
+    res.status(500).json({ status: "error", error: "Base de datos no disponible" });
   }
 });
 

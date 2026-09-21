@@ -207,7 +207,18 @@ router.post("/lote-pago-antiguo", async (req, res) => {
     return;
   }
   try {
+    const [yaProcesada] = await db.select().from(operacionesSincronizadasTable)
+      .where(eq(operacionesSincronizadasTable.operationId, operationId));
+    if (yaProcesada) {
+      res.status(200).json({ ok: true, yaProcesado: true, recursoId: yaProcesada.recursoId });
+      return;
+    }
+
     const creadas = await db.transaction(async (tx) => {
+      const [procesadaDuranteLaTransaccion] = await tx.select().from(operacionesSincronizadasTable)
+        .where(eq(operacionesSincronizadasTable.operationId, operationId));
+      if (procesadaDuranteLaTransaccion) return [];
+
       const valores = items.map((item) => ({
         fecha: String(item.fecha), referencia: String(item.referencia || ""), tipoLinea: item.tipoLinea === "manoobra" ? "manoobra" : "venta",
         productoId: item.productoId ? Number(item.productoId) : null,

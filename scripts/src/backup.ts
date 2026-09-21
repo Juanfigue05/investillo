@@ -8,8 +8,8 @@ const PG_BIN =
 const PG_DUMP = join(PG_BIN, "pg_dump.exe");
 const PG_RESTORE = join(PG_BIN, "pg_restore.exe");
 
-const SOURCE_URL = process.env.SOURCE_DATABASE_URL; // Supabase (producción)
-const AIVEN_URL = process.env.AIVEN_DATABASE_URL; // Capa 2
+const SOURCE_URL = process.env.SOURCE_DATABASE_URL; // AIVEN (producción)
+const AIVEN_URL = process.env.AIVEN_DATABASE_URL; // APUTA A SUPABASE
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
