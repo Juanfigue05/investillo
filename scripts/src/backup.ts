@@ -1,12 +1,19 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { platform } from "node:os";
+import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
-const PG_BIN =
-  process.env.PG_BIN_PATH ?? "C:\\Program Files\\PostgreSQL\\17\\bin";
-const PG_DUMP = join(PG_BIN, "pg_dump.exe");
-const PG_RESTORE = join(PG_BIN, "pg_restore.exe");
+const esWindows = platform() === "win32";
+const PG_BIN = process.env.PG_BIN_PATH;
+// En Windows (tu portátil) usa la ruta de siempre si no se define otra cosa.
+// En Linux (GitHub Actions) usa "pg_dump"/"pg_restore" directo, ya instalados en el PATH del sistema.
+const PG_DUMP = PG_BIN
+  ? join(PG_BIN, esWindows ? "pg_dump.exe" : "pg_dump")
+  : esWindows ? "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe" : "pg_dump";
+const PG_RESTORE = PG_BIN
+  ? join(PG_BIN, esWindows ? "pg_restore.exe" : "pg_restore")
+  : esWindows ? "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_restore.exe" : "pg_restore";
 
 const SOURCE_URL = process.env.SOURCE_DATABASE_URL; // AIVEN (producción)
 const AIVEN_URL = process.env.AIVEN_DATABASE_URL; // APUTA A SUPABASE
@@ -94,6 +101,19 @@ if (R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET) {
     }),
   );
   console.log("Subido a Cloudflare R2 correctamente.");
+
+  // Limpieza automática: conserva solo las N copias MÁS RECIENTES, borra todo lo demás.
+  const COPIAS_A_CONSERVAR = 6;
+  const lista = await s3.send(new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: "investillo_" }));
+  const objetos = (lista.Contents ?? [])
+    .filter((o) => o.Key && o.LastModified)
+    .sort((a, b) => b.LastModified!.getTime() - a.LastModified!.getTime()); // más nuevo primero
+
+  const aBorrar = objetos.slice(COPIAS_A_CONSERVAR); // todo lo que sobre después de las primeras N
+  for (const obj of aBorrar) {
+    await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: obj.Key! }));
+  }
+  console.log(`🧹 Limpieza en R2: se conservan las ${Math.min(COPIAS_A_CONSERVAR, objetos.length)} más recientes, se eliminaron ${aBorrar.length}.`);
 } else {
   console.log("[3/3] Variables de R2 no definidas, se omite.");
 }

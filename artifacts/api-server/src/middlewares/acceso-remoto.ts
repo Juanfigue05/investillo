@@ -37,6 +37,10 @@ const HTML_FORMULARIO = (error?: string) => `<!DOCTYPE html>
 export function bloqueoAccesoRemoto(req: Request, res: Response, next: NextFunction) {
   if (!CLAVE_ACCESO) { next(); return; } // si no se configuró la clave, no bloquea nada (útil en local)
 
+  // Deja pasar libre el chequeo de "sigo vivo" que usa el robot de GitHub —
+  // no muestra ningún dato del negocio, solo confirma que el servidor responde.
+  if (req.path === "/api/healthz" || req.path === "/api/healthz-db") { next(); return; }
+
   if (req.path === "/acceso" && req.method === "POST") {
     const clave = (req.body?.clave || "").toString();
     if (clave === CLAVE_ACCESO) {

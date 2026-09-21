@@ -1,0 +1,37 @@
+name: Backup Automático
+
+on:
+  schedule:
+    - cron: "0 14 * * *"   # 9:00 a.m. hora Colombia
+    - cron: "0 1 * * *"    # 8:00 p.m. hora Colombia (del día anterior en UTC)
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar cliente de PostgreSQL 17
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: corepack enable && corepack prepare pnpm@latest --activate
+      - run: pnpm install --frozen-lockfile
+
+      - name: Ejecutar respaldo
+        run: pnpm --filter @workspace/scripts run backup
+        env:
+          SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
+          AIVEN_DATABASE_URL: ${{ secrets.AIVEN_DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
