@@ -3,8 +3,10 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import cookieParser from "cookie-parser";
 import { capturarCambiosRemotos } from "./middlewares/capturar-cambios-remotos";
 import { bloqueoOperacion } from "./middlewares/bloqueo-operacion";
+import { bloqueoAccesoRemoto } from "./middlewares/acceso-remoto";
 
 const app: Express = express();
 
@@ -55,6 +57,8 @@ app.use(
 );
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false, limit: "100kb" }));
+app.use(cookieParser());
+app.use(bloqueoAccesoRemoto);
 
 app.use(capturarCambiosRemotos);
 app.use(bloqueoOperacion);
