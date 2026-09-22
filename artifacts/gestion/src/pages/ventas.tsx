@@ -467,7 +467,14 @@ export default function VentasDiarias() {
       { data: { fecha } },
       {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/historial"] }),
-        onError: () => queryClient.invalidateQueries({ queryKey: ["/api/historial"] }),
+        onError: (error) => {
+          queryClient.invalidateQueries({ queryKey: ["/api/historial"] });
+          toast({
+            title: "No se pudo guardar el historial",
+            description: error instanceof Error ? error.message : String(error),
+            variant: "destructive",
+          });
+        },
       }
     );
   };

@@ -511,9 +511,19 @@ export default function Compras() {
   const pendientes = compras?.filter((c) => c.estado === "pendiente") || [];
   const llegados = compras?.filter((c) => c.estado === "llegado") || [];
   const [aniosAbiertos, setAniosAbiertos] = useState<Set<string>>(new Set());
+  const [buscarPendientes, setBuscarPendientes] = useState("");
   const [buscarHistorial, setBuscarHistorial] = useState("");
   const [mesesAbiertos, setMesesAbiertos] = useState<Set<string>>(new Set());
   const [mesImprimir, setMesImprimir] = useState<string>("");
+
+  const pendientesFiltrados = buscarPendientes.trim()
+    ? pendientes.filter((c: any) => {
+        const texto = buscarPendientes.trim().toLowerCase();
+        return [c.productoNombre, c.productoCodigo, c.productoMarca]
+          .filter(Boolean)
+          .some((valor) => String(valor).toLowerCase().includes(texto));
+      })
+    : pendientes;
 
   const llegadosFiltrados = buscarHistorial.trim()
     ? llegados.filter(
@@ -1057,12 +1067,30 @@ export default function Compras() {
           <div className="space-y-8">
             {pendientes.length > 0 && (
               <div className="no-print">
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-destructive inline-block"></span>
-                  Pedidos Pendientes ({pendientes.length})
-                </h3>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                  <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-destructive inline-block"></span>
+                    Pedidos Pendientes ({pendientes.length})
+                  </h3>
+                  <div className="relative w-full sm:max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type="search"
+                      value={buscarPendientes}
+                      onChange={(e) => setBuscarPendientes(e.target.value)}
+                      placeholder="Buscar pendiente por nombre..."
+                      aria-label="Buscar productos pendientes por nombre"
+                      className="w-full bg-background border border-border pl-9 pr-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
+                    />
+                  </div>
+                </div>
+                {buscarPendientes.trim() && (
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Mostrando {pendientesFiltrados.length} de {pendientes.length} pedidos pendientes.
+                  </p>
+                )}
                 <div className="space-y-3">
-                  {pendientes.map((compra) => (
+                  {pendientesFiltrados.map((compra) => (
                     <div
                       key={compra.id}
                       className="bg-card rounded-xl border border-destructive/40 shadow-md overflow-hidden"
@@ -1328,6 +1356,11 @@ export default function Compras() {
                       )}
                     </div>
                   ))}
+                  {pendientesFiltrados.length === 0 && (
+                    <div className="bg-card border border-border rounded-xl px-4 py-8 text-center text-sm text-muted-foreground">
+                      No hay productos pendientes que coincidan con la búsqueda.
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -22,6 +22,14 @@ function isAllowedOrigin(origin: string | undefined): boolean {
   return !origin || allowedOrigins.has(origin);
 }
 
+function isSameOrigin(req: express.Request): boolean {
+  const origin = req.header("origin");
+  if (!origin) return true;
+  const forwardedProtocol = req.header("x-forwarded-proto")?.split(",")[0]?.trim();
+  const protocol = forwardedProtocol || req.protocol;
+  return origin === `${protocol}://${req.get("host")}`;
+}
+
 app.use(
   pinoHttp({
     logger,
@@ -43,7 +51,7 @@ app.use(
 );
 app.use((req, res, next) => {
   const origin = req.header("origin");
-  if (!isAllowedOrigin(origin)) {
+  if (!isAllowedOrigin(origin) && !isSameOrigin(req)) {
     res.status(403).json({ error: "Origen no permitido" });
     return;
   }
