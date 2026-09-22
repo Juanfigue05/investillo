@@ -24,6 +24,7 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type D
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { FilaVentaSortable } from "@/components/FilaVentaSortable";
 import { PagoCreditoAntiguoModal } from "@/components/PagoCreditoAntiguoModal";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 
 const SPECIAL_MANOOBRA = "__manoobra__";
 const SPECIAL_SOLDADURA = "__soldadura__";
@@ -55,6 +56,7 @@ interface EditValues {
   precioVentaTotal: string;
   beneficio: string;
   formaPago: string;
+  distribuciones?: { trabajadorId: number; trabajadorNombre: string; valor: number }[];
 }
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
@@ -132,6 +134,7 @@ export default function VentasDiarias() {
     precioManoObra: 0,
     precioVenta: "",
     precioCompra: "",
+    precioVentaTotal: "",
     valorAbono: 0,
     trabajadoresSeleccionados: [] as number[],
     valoresFijados: {} as Record<number, number>,
@@ -141,6 +144,7 @@ export default function VentasDiarias() {
   const [stockAlerta, setStockAlerta] = useState<{ stock: number; minimo: number } | null>(null);
 
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [deleteVentaId, setDeleteVentaId] = useState<number | null>(null);
     const [editValues, setEditValues] = useState<EditValues>({
     referencia: "",
       productoId: "",
@@ -207,7 +211,7 @@ export default function VentasDiarias() {
     } else {
       const prod = productos?.find((p) => String(p.id) === id);
       if (prod) {
-        setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: prod.marca || "X", precioCompra: String(prod.precioCompra), precioVenta: String(prod.precioVentaSinIva), trabajadoresSeleccionados: [] }));
+        setNewRow((prev) => ({ ...prev, productoSeleccionado: id, marca: prod.marca || "X", precioCompra: String(prod.precioCompra), precioVenta: String(prod.precioVentaSinIva), precioVentaTotal: "", trabajadoresSeleccionados: [] }));
         const stock = parseFloat(String(prod.stockActual ?? 0)) || 0;
         const minimo = parseFloat(String(prod.stockMinimo ?? 0)) || 0;
         setStockAlerta({ stock, minimo });
@@ -239,6 +243,7 @@ export default function VentasDiarias() {
       precioVentaTotal: String(venta.precioVentaTotal),
       beneficio: String(venta.beneficio),
       formaPago: (venta as { formaPago?: string }).formaPago || "efectivo",
+      distribuciones: (venta as any).distribuciones || [],
     });
   };
 
@@ -246,8 +251,10 @@ export default function VentasDiarias() {
     const cant = parseFloat(editValues.cantidad) || 0;
     const pvU = parseNumberCO(editValues.precioVentaUnidad);
     const pcU = parseNumberCO(editValues.precioCompraUnidad);
-    const total = pvU * cant;
-    const beneficio = venta.tipoLinea === "venta" ? (pvU - pcU) * cant : parseFloat(editValues.beneficio) || 0;
+    const totalEditado = parseNumberCO(editValues.precioVentaTotal);
+    const total = totalEditado > 0 ? totalEditado : pvU * cant;
+    const precioVentaFinal = cant > 0 ? total / cant : 0;
+    const beneficio = venta.tipoLinea === "venta" ? (precioVentaFinal - pcU) * cant : parseFloat(editValues.beneficio) || 0;
     const ventaActualizada = {
       ...venta,
       referencia: editValues.referencia,
@@ -255,7 +262,7 @@ export default function VentasDiarias() {
       productoMarca: editValues.productoMarca || undefined,
       cantidad: cant,
       precioCompraUnidad: pcU,
-      precioVentaUnidad: pvU,
+      precioVentaUnidad: precioVentaFinal,
       precioVentaTotal: total,
       beneficio,
       formaPago: editValues.formaPago,
@@ -279,10 +286,11 @@ export default function VentasDiarias() {
           productoMarca: editValues.productoMarca || undefined,
           cantidad: cant,
           precioCompraUnidad: pcU,
-          precioVentaUnidad: pvU,
+          precioVentaUnidad: precioVentaFinal,
           precioVentaTotal: total,
           beneficio,
           formaPago: editValues.formaPago,
+          ...(venta.tipoLinea === "manoobra" ? { distribuciones: editValues.distribuciones || [] } : {}),
         },
       },
       {
@@ -406,15 +414,17 @@ export default function VentasDiarias() {
     if (isNaN(cantNumNueva) || cantNumNueva <= 0) { alert("Cantidad inválida. Usa coma para decimales, ej: 1,5"); return; }
     const precioCompra = parseNumberCO(newRow.precioCompra);
     const precioVenta = parseNumberCO(newRow.precioVenta);
-    const beneficio = (precioVenta - precioCompra) * cantNumNueva;
-    const total = precioVenta * cantNumNueva;
+    const totalEditado = parseNumberCO(newRow.precioVentaTotal);
+    const total = totalEditado > 0 ? totalEditado : precioVenta * cantNumNueva;
+    const precioVentaFinal = cantNumNueva > 0 ? total / cantNumNueva : 0;
+    const beneficio = (precioVentaFinal - precioCompra) * cantNumNueva;
 
     const payloadVenta = {
       fecha, referencia: newRow.referencia, tipoLinea: "venta" as const,
       productoId: prod ? prod.id : undefined, productoNombre: nombreProducto,
       productoCodigo: prod?.codigo, productoMarca: newRow.marca || prod?.marca || undefined,
       cantidad: cantNumNueva, precioCompraUnidad: precioCompra,
-      precioVentaUnidad: precioVenta, precioVentaTotal: total, beneficio,
+      precioVentaUnidad: precioVentaFinal, precioVentaTotal: total, beneficio,
       formaPago: newRow.formaPago,
     };
 
@@ -428,7 +438,7 @@ export default function VentasDiarias() {
           queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
           queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
           queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
-          setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: "", precioVenta: "" }));
+          setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: "", precioVenta: "", precioVentaTotal: "" }));
           setStockAlerta(null);
         },
         onError: async (error) => {
@@ -438,7 +448,7 @@ export default function VentasDiarias() {
           }
           await encolarOperacion({ tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadVenta });
           toast({ title: "Guardado sin conexión", description: "Esta venta se sincronizará automáticamente cuando vuelva internet." });
-          setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: "", precioVenta: "" }));
+          setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: "", precioVenta: "", precioVentaTotal: "" }));
           setStockAlerta(null);
         },
       }
@@ -446,18 +456,7 @@ export default function VentasDiarias() {
   };
 
   const handleDelete = (id: number) => {
-    if (confirm("¿Eliminar esta fila?")) {
-      eliminarMutation.mutate(
-        { id },
-        {
-          onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
-            queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
-            queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
-          },
-        }
-      );
-    }
+    setDeleteVentaId(id);
   };
 
   const handleGuardarDia = () => {
@@ -488,8 +487,10 @@ export default function VentasDiarias() {
   const cantNum = parseFloat(newRow.cantidad.replace(",", ".")) || 0;
   const previewPrecioCompra = parseNumberCO(newRow.precioCompra);
   const previewPrecioVenta = parseNumberCO(newRow.precioVenta);
-  const previewTotal = modoActual === "normal" ? previewPrecioVenta * cantNum : modoActual === "manoobra" || modoActual === "soldadura" ? newRow.precioManoObra : 0;
-  const previewBeneficio = modoActual === "normal" ? (previewPrecioVenta - previewPrecioCompra) * cantNum : 0;
+  const previewTotalEditado = parseNumberCO(newRow.precioVentaTotal);
+  const previewTotal = modoActual === "normal" ? (previewTotalEditado > 0 ? previewTotalEditado : previewPrecioVenta * cantNum) : modoActual === "manoobra" || modoActual === "soldadura" ? newRow.precioManoObra : 0;
+  const previewPrecioVentaFinal = cantNum > 0 ? previewTotal / cantNum : 0;
+  const previewBeneficio = modoActual === "normal" ? (previewPrecioVentaFinal - previewPrecioCompra) * cantNum : 0;
 
   const fechaFormateada = new Date(fecha + "T12:00:00").toLocaleDateString("es-CO", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -596,6 +597,7 @@ export default function VentasDiarias() {
                       onDelete={handleDelete}
                       guardando={actualizarMutation.isPending}
                       opcionesProducto={opcionesProducto}
+                      trabajadores={trabajadores || []}
                     />
                   ))
                 )}
@@ -631,8 +633,8 @@ export default function VentasDiarias() {
                     {(modoActual === "manoobra" || modoActual === "soldadura") && <input type="number" value={newRow.precioManoObra || ""} onChange={(e) => setNewRow({ ...newRow, precioManoObra: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-yellow-500/50 px-2 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 outline-none text-sm" placeholder="Valor servicio" />}
                     {modoActual === "abono" && <input type="number" value={newRow.valorAbono || ""} onChange={(e) => setNewRow({ ...newRow, valorAbono: parseFloat(e.target.value) || 0 })} className="w-24 bg-background border border-blue-500/50 px-2 py-2 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm" placeholder="Valor" />}
                   </td>
-                  <td className="p-2">{modoActual === "normal" ? <input type="text" inputMode="decimal" value={newRow.precioVenta} onChange={(e) => setNewRow({ ...newRow, precioVenta: e.target.value })} className="w-24 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="P.Venta" /> : <span className="text-xs text-muted-foreground px-2">—</span>}</td>
-                  <td className="p-2 font-medium text-primary whitespace-nowrap">{formatCurrency(previewTotal)}</td>
+                  <td className="p-2">{modoActual === "normal" ? <input type="text" inputMode="decimal" value={newRow.precioVenta} onChange={(e) => setNewRow({ ...newRow, precioVenta: e.target.value, precioVentaTotal: "" })} className="w-24 bg-background border border-border px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder="P.Venta" /> : <span className="text-xs text-muted-foreground px-2">—</span>}</td>
+                  <td className="p-2">{modoActual === "normal" ? <input type="text" inputMode="decimal" value={newRow.precioVentaTotal} onChange={(e) => { const total = e.target.value; const cantidad = parseFloat(newRow.cantidad.replace(",", ".")) || 0; setNewRow({ ...newRow, precioVentaTotal: total, precioVenta: cantidad > 0 ? String(parseNumberCO(total) / cantidad) : newRow.precioVenta }); }} className="w-28 bg-background border border-primary/50 px-2 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" placeholder={formatCurrency(previewTotal)} /> : <span className="text-xs text-muted-foreground px-2">—</span>}</td>
                   <td className="p-2 font-medium text-green-500 whitespace-nowrap">{modoActual === "normal" ? formatCurrency(previewBeneficio) : "—"}</td>
                   <td className="p-2 no-print"><select value={newRow.formaPago} onChange={(e) => setNewRow({ ...newRow, formaPago: e.target.value })} className="w-full bg-background border border-border px-2 py-2 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"><option value="efectivo">Efectivo</option><option value="cuenta_ernesto">Cuenta Ernesto</option><option value="cuenta_olga">Cuenta Olga</option><option value="cuenta_juan">Cuenta Juan</option></select></td>
                   <td className="p-2 no-print"></td>
@@ -668,6 +670,23 @@ export default function VentasDiarias() {
         </div>
       </div>
       {pagoCreditoAntiguoOpen && <PagoCreditoAntiguoModal fecha={fecha} productos={(productos || []) as any[]} trabajadores={(trabajadores || []) as any[]} onClose={() => setPagoCreditoAntiguoOpen(false)} onSaved={async (nuevasVentas) => { setPagoCreditoAntiguoOpen(false); if (nuevasVentas.length) queryClient.setQueryData(["/api/ventas", { fecha }], (actuales: any[] = []) => [...actuales, ...nuevasVentas]); await queryClient.refetchQueries({ queryKey: ["/api/ventas", { fecha }] }); }} />}
+      <ConfirmDeleteDialog
+        open={deleteVentaId !== null}
+        description="Esta fila se eliminará de Ventas Diarias. Esta acción no se puede deshacer."
+        onCancel={() => setDeleteVentaId(null)}
+        onConfirm={() => {
+          if (deleteVentaId === null) return;
+          eliminarMutation.mutate({ id: deleteVentaId }, {
+            onSuccess: () => {
+              queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+              setDeleteVentaId(null);
+            },
+          });
+        }}
+        confirming={eliminarMutation.isPending}
+      />
     </Layout>
   );
 }

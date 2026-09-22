@@ -22,6 +22,14 @@ export function FloatingPriceCheck({ topbar }: { topbar?: boolean }) {
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
+    const closeWhenOtherPanelOpens = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === "notes") setIsOpen(false);
+    };
+    window.addEventListener("floating-panel-open", closeWhenOtherPanelOpens);
+    return () => window.removeEventListener("floating-panel-open", closeWhenOtherPanelOpens);
+  }, []);
+
+  useEffect(() => {
     function onClickOutside(e: MouseEvent) {
       const target = e.target as Node;
       if (
@@ -260,7 +268,11 @@ export function FloatingPriceCheck({ topbar }: { topbar?: boolean }) {
     return (
       <div ref={containerRef} className="relative">
                 <button
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => {
+            const nextOpen = !isOpen;
+            if (nextOpen) window.dispatchEvent(new CustomEvent("floating-panel-open", { detail: "price" }));
+            setIsOpen(nextOpen);
+          }}
           aria-label="Consultar precios"
           className="relative flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors cursor-pointer shrink-0"
         >
@@ -273,7 +285,7 @@ export function FloatingPriceCheck({ topbar }: { topbar?: boolean }) {
               initial={{ opacity: 0, y: -10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -10, scale: 0.95 }}
-              className="absolute right-0 top-full mt-2 w-[min(680px,calc(100vw-2rem))] bg-card border border-border shadow-2xl rounded-2xl flex flex-col z-50"
+              className="absolute right-0 top-full mt-2 w-[min(780px,calc(100vw-2rem))] bg-card border border-border shadow-2xl rounded-2xl flex flex-col z-50"
               style={{ maxHeight: "min(600px, calc(100vh - 120px))" }}
             >
               {panelContent}
@@ -292,7 +304,7 @@ export function FloatingPriceCheck({ topbar }: { topbar?: boolean }) {
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            className="mb-4 w-[680px] bg-card border border-border shadow-2xl rounded-2xl flex flex-col"
+            className="mb-4 w-[780px] max-w-[calc(100vw-2rem)] bg-card border border-border shadow-2xl rounded-2xl flex flex-col"
             style={{ maxHeight: "min(600px, calc(100vh - 120px))" }}
           >
             {panelContent}
@@ -301,7 +313,11 @@ export function FloatingPriceCheck({ topbar }: { topbar?: boolean }) {
       </AnimatePresence>
       <div className="relative group/price">
         <button
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => {
+            const nextOpen = !isOpen;
+            if (nextOpen) window.dispatchEvent(new CustomEvent("floating-panel-open", { detail: "price" }));
+            setIsOpen(nextOpen);
+          }}
           className="w-14 h-14 bg-green-600 text-white rounded-full shadow-xl flex items-center justify-center hover:scale-105 hover:shadow-green-600/30 transition-all duration-200 active:scale-95"
           aria-label="Consultar precios"
         >

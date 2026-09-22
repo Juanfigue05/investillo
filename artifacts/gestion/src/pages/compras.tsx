@@ -23,6 +23,7 @@ import { encolarOperacion } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { esFalloDeRed } from "@/lib/offline-db";
 import { Pencil } from "lucide-react";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 
 function agregarFilaOptimista(
   queryClient: any,
@@ -298,6 +299,11 @@ export default function Compras() {
   );
   const [editCantidad, setEditCantidad] = useState("");
   const [editPrecioCompra, setEditPrecioCompra] = useState("");
+  const [deleteCompraId, setDeleteCompraId] = useState<number | null>(null);
+
+  useEffect(() => {
+    setSeleccionadas((actuales) => actuales.filter((id) => pendientes.some((compra: any) => compra.id === id)));
+  }, [compras]);
 
   const openLlegada = (compra: any) => {
     setLlegadaOpen(compra.id);
@@ -497,15 +503,7 @@ export default function Compras() {
   };
 
   const handleEliminar = (id: number) => {
-    if (confirm("¿Eliminar esta orden de compra?")) {
-      eliminarMutation.mutate(
-        { id },
-        {
-          onSuccess: () =>
-            queryClient.invalidateQueries({ queryKey: ["/api/compras"] }),
-        },
-      );
-    }
+    setDeleteCompraId(id);
   };
 
   const pendientes = compras?.filter((c) => c.estado === "pendiente") || [];
@@ -585,6 +583,8 @@ export default function Compras() {
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                 {seleccionadas.map((id) => {
                   const compra = pendientes.find((c: any) => c.id === id);
+                  const producto = productos?.find((p: any) => p.id === compra?.productoId);
+                  if (!compra) return null;
                   const datos = loteDatos[id] || {
                     cantidadRecibida: "",
                     cantidadLocal: "",
@@ -599,10 +599,10 @@ export default function Compras() {
                     <div key={id} className="bg-background border border-border rounded-xl p-4">
                       <div className="flex items-start justify-between gap-3 mb-3">
                         <div>
-                          <p className="text-sm font-semibold text-foreground">{compra?.productoNombre}</p>
+                          <p className="text-sm font-semibold text-foreground">{compra.productoNombre || producto?.nombre || `Producto ${compra.productoId}`}</p>
                           <p className="text-xs text-muted-foreground">Cantidad y distribución del inventario</p>
                         </div>
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">{compra?.productoCodigo || "Sin código"}</span>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">{compra.productoCodigo || producto?.codigo || "Sin código"}</span>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         <div className="text-xs text-muted-foreground">
@@ -702,37 +702,46 @@ export default function Compras() {
                 <button
                   disabled={procesandoLote || !loteProveedor.trim()}
                   onClick={async () => {
+                    const items = seleccionadas.map((id) => ({
+                      id,
+                      cantidadLocal: parseNumberCO(loteDatos[id]?.cantidadLocal || "0"),
+                      cantidadBodega: parseNumberCO(loteDatos[id]?.cantidadBodega || "0"),
+                      cantidadRecibida:
+                        parseNumberCO(loteDatos[id]?.cantidadLocal || "0") +
+                        parseNumberCO(loteDatos[id]?.cantidadBodega || "0"),
+                      nuevoPrecioCompra: parseNumberCO(loteDatos[id]?.nuevoPrecioCompra || "0"),
+                      nuevoPrecioVentaSinIva: parseNumberCO(loteDatos[id]?.nuevoPrecioVentaSinIva || "0"),
+                      tieneIva: false,
+                      actualizarPrecioInventario: true,
+                    }));
+                    if (items.some((item) => item.cantidadRecibida <= 0)) {
+                      toast({ title: "Cantidad inválida", description: "Ingresa una cantidad mayor que cero para cada producto.", variant: "destructive" });
+                      return;
+                    }
                     setProcesandoLote(true);
                     try {
                       const res = await fetch(`${API}/compras/lote-llegada`, {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
+                        headers: { "Content-Type": "application/json", "X-Operation-Id": crypto.randomUUID() },
                         body: JSON.stringify({
                           proveedor: loteProveedor,
                           fechaLlegada: loteFecha,
-                          items: seleccionadas.map((id) => ({
-                            id,
-                            cantidadLocal: parseNumberCO(loteDatos[id]?.cantidadLocal || "0"),
-                            cantidadBodega: parseNumberCO(loteDatos[id]?.cantidadBodega || "0"),
-                            cantidadRecibida:
-                              parseNumberCO(loteDatos[id]?.cantidadLocal || "0") +
-                              parseNumberCO(loteDatos[id]?.cantidadBodega || "0"),
-                            nuevoPrecioCompra: parseNumberCO(loteDatos[id]?.nuevoPrecioCompra || "0"),
-                            nuevoPrecioVentaSinIva: parseNumberCO(loteDatos[id]?.nuevoPrecioVentaSinIva || "0"),
-                          })),
+                          items,
                         }),
                       });
-                      if (res.ok) {
-                        queryClient.invalidateQueries({
-                          queryKey: ["/api/compras"],
-                        });
-                        queryClient.invalidateQueries({
-                          queryKey: ["/api/inventario"],
-                        });
-                        setLoteOpen(false);
-                        setSeleccionadas([]);
-                        setLoteProveedor("");
+                      if (!res.ok) {
+                        const error = await res.json().catch(() => null);
+                        throw new Error(error?.error || `Error del servidor (${res.status})`);
                       }
+                      await queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+                      await queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+                      await queryClient.invalidateQueries({ queryKey: ["/api/historial-precios"] });
+                      setLoteOpen(false);
+                      setSeleccionadas([]);
+                      setLoteProveedor("");
+                      toast({ title: "Llegada guardada", description: `Se registraron ${items.length} productos.` });
+                    } catch (error) {
+                      toast({ title: "No se pudo guardar la llegada", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
                     } finally {
                       setProcesandoLote(false);
                     }
@@ -1681,6 +1690,21 @@ export default function Compras() {
           </div>
         )}
       </div>
+      <ConfirmDeleteDialog
+        open={deleteCompraId !== null}
+        description="La orden de compra se eliminará de forma permanente."
+        onCancel={() => setDeleteCompraId(null)}
+        onConfirm={() => {
+          if (deleteCompraId === null) return;
+          eliminarMutation.mutate({ id: deleteCompraId }, {
+            onSuccess: () => {
+              queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+              setDeleteCompraId(null);
+            },
+          });
+        }}
+        confirming={eliminarMutation.isPending}
+      />
     </Layout>
   );
 }

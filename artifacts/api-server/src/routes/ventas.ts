@@ -47,7 +47,16 @@ async function ajustarStockVenta(tx: Tx, productoId: number, delta: number) {
   }).where(eq(productosTable.id, productoId));
 }
 
-function mapVenta(v: typeof ventasDiariasTable.$inferSelect) {
+async function mapVenta(v: typeof ventasDiariasTable.$inferSelect) {
+  let manoObraId = v.manoObraId;
+  if (!manoObraId && v.tipoLinea === "manoobra") {
+    const [legacy] = await db.select({ id: manoObraTable.id }).from(manoObraTable)
+      .where(and(eq(manoObraTable.fecha, v.fecha), eq(manoObraTable.descripcion, v.referencia)));
+    manoObraId = legacy?.id ?? null;
+  }
+  const distribuciones = manoObraId
+    ? await db.select().from(distribucionesTable).where(eq(distribucionesTable.manoObraId, manoObraId))
+    : [];
   return {
     id: v.id,
     fecha: v.fecha,
@@ -67,6 +76,8 @@ function mapVenta(v: typeof ventasDiariasTable.$inferSelect) {
     descripcion: v.descripcion,
     formaPago: v.formaPago,
     creadoEn: v.creadoEn,
+    manoObraId,
+    distribuciones: distribuciones.map((d) => ({ trabajadorId: d.trabajadorId, trabajadorNombre: d.trabajadorNombre, valor: toNum(d.valor) })),
   };
 }
 
@@ -119,7 +130,7 @@ router.get("/", async (req, res) => {
       if (aCreado !== bCreado) return aCreado - bCreado;
       return Number(a.id) - Number(b.id);
     });
-    res.json(ordenadas.map(mapVenta));
+    res.json(await Promise.all(ordenadas.map(mapVenta)));
     return;
   }
   const ventas = await db.select().from(ventasDiariasTable);
@@ -134,7 +145,7 @@ router.get("/", async (req, res) => {
     if (aCreado !== bCreado) return aCreado - bCreado;
     return Number(a.id) - Number(b.id);
   });
-  res.json(ordenadas.map(mapVenta));
+  res.json(await Promise.all(ordenadas.map(mapVenta)));
 });
 
 router.post("/", async (req, res) => {
@@ -193,7 +204,7 @@ router.post("/", async (req, res) => {
       return creada;
     });
 
-    res.status(201).json(mapVenta(venta));
+    res.status(201).json(await mapVenta(venta));
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -235,7 +246,7 @@ router.post("/lote-pago-antiguo", async (req, res) => {
       await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "venta_lote_pago_antiguo", recursoId: insertadas[0].id }).onConflictDoNothing();
       return insertadas;
     });
-    res.status(201).json(creadas.map(mapVenta));
+    res.status(201).json(await Promise.all(creadas.map(mapVenta)));
   } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); }
 });
 
@@ -283,6 +294,7 @@ router.post("/manoobra", async (req, res) => {
         descripcion: descripcion || null,
         formaPago: formaPago || null,
       }).returning();
+      await tx.update(manoObraTable).set({ ventaId: venta.id }).where(eq(manoObraTable.id, mo.id));
 
       if (!req.header("x-sync-apply")) {
         await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "venta", entidadId: String(venta.id), tipo: "crear_manoobra", metodo: "POST", endpoint: "/ventas/manoobra", payload: req.body, origen: "local" });
@@ -384,6 +396,27 @@ router.put("/:id", async (req, res) => {
         .where(eq(ventasDiariasTable.id, id))
         .returning();
 
+      if (existing.tipoLinea === "manoobra") {
+        const manoObraId = existing.manoObraId ?? (await tx.select({ id: manoObraTable.id }).from(manoObraTable)
+          .where(and(eq(manoObraTable.fecha, existing.fecha), eq(manoObraTable.descripcion, existing.referencia))))[0]?.id;
+        if (manoObraId) {
+          const anteriores = await tx.select().from(distribucionesTable).where(eq(distribucionesTable.manoObraId, manoObraId));
+          for (const dist of anteriores) {
+            const [trabajador] = await tx.select().from(trabajadoresTable).where(eq(trabajadoresTable.id, dist.trabajadorId));
+            if (trabajador) await tx.update(trabajadoresTable).set({ totalGanado: String(toNum(trabajador.totalGanado) - toNum(dist.valor)) }).where(eq(trabajadoresTable.id, dist.trabajadorId));
+          }
+          await tx.delete(distribucionesTable).where(eq(distribucionesTable.manoObraId, manoObraId));
+          const distribuciones = Array.isArray((req.body as any).distribuciones) ? (req.body as any).distribuciones : [];
+          for (const dist of distribuciones) {
+            await tx.insert(distribucionesTable).values({ manoObraId, trabajadorId: Number(dist.trabajadorId), trabajadorNombre: String(dist.trabajadorNombre || `Trabajador ${dist.trabajadorId}`), valor: String(parseFloat(dist.valor)), descuentoSeguro: "0", descuentoOtros: "0" });
+            const [trabajador] = await tx.select().from(trabajadoresTable).where(eq(trabajadoresTable.id, Number(dist.trabajadorId)));
+            if (trabajador) await tx.update(trabajadoresTable).set({ totalGanado: String(toNum(trabajador.totalGanado) + parseFloat(dist.valor)) }).where(eq(trabajadoresTable.id, Number(dist.trabajadorId)));
+          }
+          await tx.update(manoObraTable).set({ fecha, descripcion: referencia, valorTotal: String(parseFloat(precioVentaTotal)) }).where(eq(manoObraTable.id, manoObraId));
+          await tx.update(ventasDiariasTable).set({ manoObraId }).where(eq(ventasDiariasTable.id, id));
+        }
+      }
+
       const oldEsVenta = existing.tipoLinea === "venta" || !existing.tipoLinea;
       const newEsVenta = tipoLinea === "venta" || !tipoLinea;
       const oldProdId = existing.productoId;
@@ -401,7 +434,7 @@ router.put("/:id", async (req, res) => {
       await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "venta", recursoId: id }).onConflictDoNothing();
       return actualizada;
     });
-    res.json(mapVenta(venta));
+    res.json(await mapVenta(venta));
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
   }

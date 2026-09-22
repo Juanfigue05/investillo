@@ -23,6 +23,7 @@ export const ventasDiariasTable = pgTable("ventas_diarias", {
   creditoAbonoId: integer("credito_abono_id"),
   origen: text("origen").notNull().default("venta_normal"),
   afectaInventario: boolean("afecta_inventario").notNull().default(true),
+  manoObraId: integer("mano_obra_id"),
   creadoEn: timestamp("creado_en").defaultNow(),
 });
 

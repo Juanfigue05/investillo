@@ -10,6 +10,7 @@ import {
 import { formatCurrency, formatCurrencyDecimal, parseNumberCO } from "@/lib/utils";
 import { ChevronDown, ChevronUp, Pencil, Trash2, Check, X, BookOpen } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 
 interface EditVentaValues {
   referencia: string;
@@ -53,6 +54,7 @@ export default function Historial() {
   const [filtroAnio, setFiltroAnio] = useState("");
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroDia, setFiltroDia] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ type: "dia" | "venta"; id: number; description: string } | null>(null);
   const aniosDisponibles = useMemo(() => [...new Set((historial || []).map((dia) => dia.fecha.slice(0, 4)))].sort((a, b) => b.localeCompare(a)), [historial]);
   const historialFiltrado = useMemo(() => (historial || []).filter((dia) => {
     const [anio, mes] = dia.fecha.split("-");
@@ -89,12 +91,7 @@ export default function Historial() {
   };
 
   const handleDeleteDia = (id: number, fecha: string) => {
-    if (confirm(`¿Eliminar el día ${new Date(fecha + "T12:00:00").toLocaleDateString("es-CO")} del historial?\n\nLas ventas de ese día no se eliminan — solo se quita del historial.`)) {
-      eliminarHistorialMutation.mutate(
-        { id },
-        { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/historial"] }) }
-      );
-    }
+    setDeleteTarget({ type: "dia", id, description: `Se quitará el día ${new Date(fecha + "T12:00:00").toLocaleDateString("es-CO")} del historial.\n\nLas ventas de ese día no se eliminarán.` });
   };
 
   const openEditVenta = (venta: NonNullable<NonNullable<typeof historial>[number]["ventas"]>[number]) => {
@@ -135,12 +132,14 @@ export default function Historial() {
   };
 
   const handleDeleteVenta = (id: number) => {
-    if (confirm("¿Eliminar esta fila de ventas?")) {
-      eliminarVentaMutation.mutate(
-        { id },
-        { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/historial"] }) }
-      );
-    }
+    setDeleteTarget({ type: "venta", id, description: "Esta fila se eliminará de Ventas Diarias y del historial. Esta acción no se puede deshacer." });
+  };
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return;
+    const { type, id } = deleteTarget;
+    const mutation = type === "dia" ? eliminarHistorialMutation : eliminarVentaMutation;
+    mutation.mutate({ id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/historial"] }); setDeleteTarget(null); } });
   };
 
   return (
@@ -368,6 +367,13 @@ export default function Historial() {
           <div className="py-16 text-center bg-card rounded-2xl border border-border text-muted-foreground">No hay días que coincidan con los filtros seleccionados.</div>
         )}
       </div>
+      <ConfirmDeleteDialog
+        open={deleteTarget !== null}
+        description={deleteTarget?.description || ""}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+        confirming={eliminarHistorialMutation.isPending || eliminarVentaMutation.isPending}
+      />
     </Layout>
   );
 }

@@ -4,6 +4,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Check, GripVertical, Pencil, Trash2, X } from "lucide-react";
 import { formatCurrency, formatCurrencyDecimal, parseNumberCO } from "@/lib/utils";
 import { SearchableSelect, type ProductoOpcion } from "@/components/SearchableSelect";
+import { ManoObraSelector } from "@/components/ManoObraSelector";
 
 const FORMAS_PAGO_LABEL: Record<string, string> = {
   efectivo: "Efectivo",
@@ -23,6 +24,7 @@ interface Props {
   onDelete: (id: number) => void;
   guardando: boolean;
   opcionesProducto: ProductoOpcion[];
+  trabajadores: { id: number; nombre: string }[];
 }
 
 export function FilaVentaSortable({
@@ -36,6 +38,7 @@ export function FilaVentaSortable({
   onDelete,
   guardando,
   opcionesProducto,
+  trabajadores,
 }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: venta.id });
 
@@ -63,14 +66,25 @@ export function FilaVentaSortable({
     const editPvU = parseNumberCO(editValues.precioVentaUnidad);
     const editPcU = parseNumberCO(editValues.precioCompraUnidad);
     const editCant = parseFloat(editValues.cantidad) || 0;
-    const editTotal = editPvU * editCant;
-    const editBen = venta.tipoLinea === "venta" ? (editPvU - editPcU) * editCant : 0;
+    const editTotal = parseNumberCO(editValues.precioVentaTotal) || editPvU * editCant;
+    const editPvFinal = editCant > 0 ? editTotal / editCant : 0;
+    const editBen = venta.tipoLinea === "venta" ? (editPvFinal - editPcU) * editCant : 0;
+    const distribuciones = editValues.distribuciones || [];
+    const seleccionados = distribuciones.map((d: any) => d.trabajadorId);
+    const fijados = Object.fromEntries(distribuciones.map((d: any) => [d.trabajadorId, d.valor]));
 
     return (
       <tr ref={setNodeRef} style={style} className={`${rowCls} ring-2 ring-inset ring-primary/40`}>
         {dragHandle}
         <td className="p-2"><input value={editValues.referencia} onChange={(e) => setEditValues((v: any) => ({ ...v, referencia: e.target.value }))} className="w-full bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-        <td className="p-2 min-w-[180px]"><SearchableSelect
+        <td className="p-2 min-w-[180px]">{venta.tipoLinea === "manoobra" ? <ManoObraSelector
+          trabajadores={trabajadores}
+          total={editTotal}
+          seleccionados={seleccionados}
+          fijados={fijados}
+          onChangeSeleccionados={(ids) => setEditValues((v: any) => ({ ...v, distribuciones: ids.map((id) => ({ trabajadorId: id, trabajadorNombre: trabajadores.find((t) => t.id === id)?.nombre || `Trabajador ${id}`, valor: Number(v.distribuciones?.find((d: any) => d.trabajadorId === id)?.valor || 0) })) }))}
+          onChangeFijados={(values) => setEditValues((v: any) => ({ ...v, distribuciones: (v.distribuciones || []).map((d: any) => ({ ...d, valor: values[d.trabajadorId] ?? d.valor })) }))}
+        /> : <SearchableSelect
           opciones={opcionesProducto}
           value={editValues.productoId ? String(editValues.productoId) : ""}
           onChange={(id) => {
@@ -82,17 +96,18 @@ export function FilaVentaSortable({
               productoNombre: producto.nombre,
               productoCodigo: producto.codigo || "",
               productoMarca: producto.marca || "X",
+              precioVentaTotal: String((producto.precioVenta ?? 0) * (parseFloat(v.cantidad) || 0)),
               precioCompraUnidad: String(producto.precioCompra ?? 0),
               precioVentaUnidad: String(producto.precioVenta ?? 0),
             }));
           }}
           placeholder="Seleccionar producto..."
-        /></td>
+        />}</td>
         <td className="p-2"><span className="block w-20 truncate text-sm text-muted-foreground">{editValues.productoMarca || "X"}</span></td>
         <td className="p-2"><input type="number" min="0" step="0.25" value={editValues.cantidad} onChange={(e) => setEditValues((v: any) => ({ ...v, cantidad: e.target.value }))} className="w-20 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
         <td className="p-2"><input type="text" inputMode="decimal" value={editValues.precioCompraUnidad} onChange={(e) => setEditValues((v: any) => ({ ...v, precioCompraUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-        <td className="p-2"><input type="text" inputMode="decimal" value={editValues.precioVentaUnidad} onChange={(e) => setEditValues((v: any) => ({ ...v, precioVentaUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-        <td className="p-2 font-bold text-primary whitespace-nowrap">{formatCurrency(editTotal)}</td>
+        <td className="p-2"><input type="text" inputMode="decimal" value={editValues.precioVentaUnidad} onChange={(e) => setEditValues((v: any) => { const precio = parseNumberCO(e.target.value); const cantidad = parseFloat(v.cantidad) || 0; return { ...v, precioVentaUnidad: e.target.value, precioVentaTotal: String(precio * cantidad) }; })} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
+        <td className="p-2"><input type="text" inputMode="decimal" value={editValues.precioVentaTotal} onChange={(e) => { const total = e.target.value; setEditValues((v: any) => ({ ...v, precioVentaTotal: total, precioVentaUnidad: editCant > 0 ? String(parseNumberCO(total) / editCant) : v.precioVentaUnidad })); }} className="w-28 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
         <td className="p-2 font-medium text-green-500 whitespace-nowrap">{venta.tipoLinea === "venta" ? formatCurrency(editBen) : "—"}</td>
         <td className="p-2 no-print">
           <select value={editValues.formaPago || venta.formaPago || "efectivo"} onChange={(e) => setEditValues((v: any) => ({ ...v, formaPago: e.target.value }))}

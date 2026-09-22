@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { Layout } from "@/components/Layout";
 import { formatCurrency } from "@/lib/utils";
 import { History, ChevronDown, ChevronUp, Trash2, AlertCircle, Pencil } from "lucide-react";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 
 // ---------- types ----------
 interface CierreGuardado {
@@ -83,6 +84,7 @@ export default function HistorialCierres() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [deleting, setDeleting] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [filtroAnio, setFiltroAnio] = useState("");
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroDia, setFiltroDia] = useState("");
@@ -123,7 +125,6 @@ export default function HistorialCierres() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("¿Eliminar este cierre del historial?")) return;
     setDeleting(id);
     try {
       await deleteCierre(id);
@@ -227,7 +228,7 @@ export default function HistorialCierres() {
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }}
+                      onClick={(e) => { e.stopPropagation(); setDeleteTarget(c.id); }}
                       disabled={deleting === c.id}
                       className="p-1.5 text-muted-foreground hover:text-destructive bg-muted rounded-lg transition-colors"
                     >
@@ -304,6 +305,13 @@ export default function HistorialCierres() {
           })}
         </div>
       </div>
+      <ConfirmDeleteDialog
+        open={deleteTarget !== null}
+        description="El cierre se eliminará del historial. Esta acción no se puede deshacer."
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => { if (deleteTarget !== null) { const id = deleteTarget; setDeleteTarget(null); void handleDelete(id); } }}
+        confirming={deleting !== null}
+      />
     </Layout>
   );
 }

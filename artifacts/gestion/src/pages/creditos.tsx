@@ -41,6 +41,7 @@ import {
 import { encolarOperacion, esFalloDeRed } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { fechaColombia } from "@/lib/utils";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 import {
   SearchableSelect,
   type ProductoOpcion,
@@ -360,8 +361,8 @@ export default function Creditos() {
         ? {
             activo: true,
             valor: String(moLine.precioVenta),
-            trabajadores: [],
-            fijados: {},
+            trabajadores: (c.manoObra?.trabajadores || []).map((t: any) => t.id),
+            fijados: Object.fromEntries((c.manoObra?.trabajadores || []).map((t: any) => [t.id, t.valor])),
             marca: moLine.productoMarca || "",
             lineaId: moLine.id,
             valorAbonado: moLine.valorAbonado,
@@ -808,17 +809,8 @@ export default function Creditos() {
     );
   };
 
-  const handleEliminar = (id: number) => {
-    if (confirm("¿Eliminar este crédito?")) {
-      eliminarMutation.mutate(
-        { id },
-        {
-          onSuccess: () =>
-            queryClient.invalidateQueries({ queryKey: ["/api/creditos"] }),
-        },
-      );
-    }
-  };
+  const [deleteCreditoId, setDeleteCreditoId] = useState<number | null>(null);
+  const handleEliminar = (id: number) => setDeleteCreditoId(id);
 
   const toggleExpandAbonos = (id: number) => {
     setExpandedAbonos((prev) => {
@@ -2358,6 +2350,13 @@ export default function Creditos() {
           </div>
         )}
       </div>
+      <ConfirmDeleteDialog
+        open={deleteCreditoId !== null}
+        description="El crédito y sus líneas se eliminarán de forma permanente."
+        onCancel={() => setDeleteCreditoId(null)}
+        onConfirm={() => { if (deleteCreditoId !== null) eliminarMutation.mutate({ id: deleteCreditoId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/creditos"] }); setDeleteCreditoId(null); } }); }}
+        confirming={eliminarMutation.isPending}
+      />
     </Layout>
   );
 }

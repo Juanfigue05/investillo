@@ -12,6 +12,14 @@ export function FloatingNotepad({ topbar }: { topbar?: boolean }) {
   const guardarMutation = useGuardarNotas();
 
   useEffect(() => {
+    const closeWhenOtherPanelOpens = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === "price") setIsOpen(false);
+    };
+    window.addEventListener("floating-panel-open", closeWhenOtherPanelOpens);
+    return () => window.removeEventListener("floating-panel-open", closeWhenOtherPanelOpens);
+  }, []);
+
+  useEffect(() => {
     if (notas?.contenido) setContent(notas.contenido);
   }, [notas]);
 
@@ -31,8 +39,8 @@ export function FloatingNotepad({ topbar }: { topbar?: boolean }) {
       exit={{ opacity: 0, y: topbar ? -10 : 20, scale: 0.9 }}
       className={
         topbar
-          ? "absolute right-0 top-full mt-2 w-80 bg-card border border-border shadow-2xl rounded-2xl overflow-hidden flex flex-col z-50"
-          : "mb-4 w-80 bg-card border border-border shadow-2xl rounded-2xl overflow-hidden flex flex-col"
+          ? "absolute right-0 top-full mt-2 w-96 max-w-[calc(100vw-2rem)] bg-card border border-border shadow-2xl rounded-2xl overflow-hidden flex flex-col z-50"
+          : "mb-4 w-96 max-w-[calc(100vw-2rem)] bg-card border border-border shadow-2xl rounded-2xl overflow-hidden flex flex-col"
       }
       style={{ fontSize: "16.5px" }}
     >
@@ -64,7 +72,7 @@ export function FloatingNotepad({ topbar }: { topbar?: boolean }) {
         onChange={(e) => setContent(e.target.value)}
         onBlur={handleSave}
         placeholder="Anota cosas pendientes aquí..."
-        className="w-full h-72 p-4 bg-card text-foreground resize-none focus:outline-none placeholder:text-muted-foreground/40 text-base font-semibold leading-relaxed tracking-wide"
+        className="w-full h-80 p-4 bg-card text-foreground resize-none focus:outline-none placeholder:text-muted-foreground/40 text-base font-semibold leading-relaxed tracking-wide"
         style={{ color: "hsl(var(--foreground))", caretColor: "hsl(var(--primary))" }}
       />
     </motion.div>
@@ -74,7 +82,11 @@ export function FloatingNotepad({ topbar }: { topbar?: boolean }) {
     return (
       <div className="relative">
         <button
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => {
+            const nextOpen = !isOpen;
+            if (nextOpen) window.dispatchEvent(new CustomEvent("floating-panel-open", { detail: "notes" }));
+            setIsOpen(nextOpen);
+          }}
           aria-label="Notas rápidas"
           className="relative flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors cursor-pointer shrink-0"
         >
@@ -91,7 +103,11 @@ export function FloatingNotepad({ topbar }: { topbar?: boolean }) {
       <AnimatePresence>{isOpen && panel}</AnimatePresence>
       <div className="relative group/note">
         <button
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => {
+            const nextOpen = !isOpen;
+            if (nextOpen) window.dispatchEvent(new CustomEvent("floating-panel-open", { detail: "notes" }));
+            setIsOpen(nextOpen);
+          }}
           className="w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-xl flex items-center justify-center hover:scale-105 hover:shadow-primary/25 transition-all duration-200 active:scale-95"
           aria-label="Notas rápidas"
         >

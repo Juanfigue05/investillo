@@ -254,6 +254,10 @@ async function mapCredito(c: typeof creditosTable.$inferSelect) {
     .from(abonosCreditosTable)
     .where(eq(abonosCreditosTable.creditoId, c.id))
     .orderBy(desc(abonosCreditosTable.fecha));
+  const [manoObra] = await db.select().from(manoObraTable).where(eq(manoObraTable.creditoId, c.id));
+  const distribuciones = manoObra
+    ? await db.select().from(distribucionesTable).where(eq(distribucionesTable.manoObraId, manoObra.id))
+    : [];
   return {
     id: c.id,
     tipo: c.tipo ?? "credito",
@@ -267,6 +271,16 @@ async function mapCredito(c: typeof creditosTable.$inferSelect) {
     valorAbonado,
     valorRestante: Math.max(0, valorCredito - valorAbonado),
     lineas: lineas.map(mapLinea),
+    manoObra: manoObra
+      ? {
+          valor: toNum(manoObra.valorTotal),
+          trabajadores: distribuciones.map((d) => ({
+            id: d.trabajadorId,
+            nombre: d.trabajadorNombre,
+            valor: toNum(d.valor),
+          })),
+        }
+      : null,
     abonos: abonos.map((a) => ({
       id: a.id,
       creditoId: a.creditoId,

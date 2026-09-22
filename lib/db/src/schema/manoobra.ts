@@ -9,6 +9,7 @@ export const manoObraTable = pgTable("mano_obra", {
   valorTotal: numeric("valor_total", { precision: 15, scale: 2 }).notNull(),
   /** Si la mano de obra pertenece a un crédito/Nos Debe, referencia a creditos.id para mantenerla sincronizada */
   creditoId: integer("credito_id"),
+  ventaId: integer("venta_id"),
   creadoEn: timestamp("creado_en").defaultNow(),
 });
 

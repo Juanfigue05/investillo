@@ -214,6 +214,10 @@ router.post("/lote-llegada", async (req, res) => {
   for (const item of items) {
     const recibida = toNum(item.cantidadRecibida);
     const distribuida = toNum(item.cantidadLocal) + toNum(item.cantidadBodega);
+    if (recibida <= 0) {
+      res.status(400).json({ error: `La cantidad recibida debe ser mayor que cero en el producto ${item.id}.` });
+      return;
+    }
     if (Math.abs(recibida - distribuida) > 0.001) {
       res.status(400).json({ error: `La cantidad de Local + Bodega debe coincidir con la recibida en el producto ${item.id}.` });
       return;
@@ -221,8 +225,9 @@ router.post("/lote-llegada", async (req, res) => {
   }
   
   const resultados = [];
-  for (const item of items) {
-    const { compra, preciosModificados } = await procesarLlegadaCompra(item.id, {
+  try {
+    for (const item of items) {
+      const { compra, preciosModificados } = await procesarLlegadaCompra(item.id, {
       estado: "llegado",
       cantidadRecibida: item.cantidadRecibida,
       cantidadLocal: item.cantidadLocal,
@@ -234,7 +239,11 @@ router.post("/lote-llegada", async (req, res) => {
       fechaLlegada,
       actualizarPrecioInventario: item.actualizarPrecioInventario,
     });
-    resultados.push({ ...mapCompra(compra), preciosModificados });
+      resultados.push({ ...mapCompra(compra), preciosModificados });
+    }
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    return;
   }
 
   if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "compra_lote", entidadId: operationId, tipo: "lote_llegada", metodo: "POST", endpoint: "/compras/lote-llegada", payload: req.body, origen: "local" });
