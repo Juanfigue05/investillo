@@ -44,10 +44,11 @@ export function bloqueoAccesoRemoto(req: Request, res: Response, next: NextFunct
   if (req.path === "/acceso" && req.method === "POST") {
     const clave = (req.body?.clave || "").toString();
     if (clave === CLAVE_ACCESO) {
+      const protocolo = req.header("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol;
       res.cookie(NOMBRE_COOKIE, hashClave(clave), {
         maxAge: UN_ANIO_MS,
         httpOnly: true,
-        secure: true,
+        secure: protocolo === "https",
         sameSite: "lax",
       });
       res.redirect("/");
