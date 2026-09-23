@@ -20,7 +20,11 @@ jobs:
           sudo apt-get install -y postgresql-client-18
 
       - name: Verificar herramientas de PostgreSQL
-        run: /usr/lib/postgresql/18/bin/pg_dump --version
+        run: |
+          export PATH="/usr/lib/postgresql/18/bin:$PATH"
+          command -v pg_dump
+          pg_dump --version
+          pg_restore --version
 
       - uses: actions/setup-node@v4
         with:

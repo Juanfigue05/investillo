@@ -1,19 +1,25 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { existsSync } from "node:fs";
 import { platform } from "node:os";
 import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 const esWindows = platform() === "win32";
 const PG_BIN = process.env.PG_BIN_PATH;
+const PG_BIN_LINUX = "/usr/lib/postgresql/18/bin";
 // En Windows (tu portátil) usa la ruta de siempre si no se define otra cosa.
 // En Linux (GitHub Actions) usa "pg_dump"/"pg_restore" directo, ya instalados en el PATH del sistema.
 const PG_DUMP = PG_BIN
   ? join(PG_BIN, esWindows ? "pg_dump.exe" : "pg_dump")
-  : esWindows ? "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe" : "pg_dump";
+  : esWindows
+    ? "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe"
+    : existsSync(join(PG_BIN_LINUX, "pg_dump")) ? join(PG_BIN_LINUX, "pg_dump") : "pg_dump";
 const PG_RESTORE = PG_BIN
   ? join(PG_BIN, esWindows ? "pg_restore.exe" : "pg_restore")
-  : esWindows ? "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_restore.exe" : "pg_restore";
+  : esWindows
+    ? "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_restore.exe"
+    : existsSync(join(PG_BIN_LINUX, "pg_restore")) ? join(PG_BIN_LINUX, "pg_restore") : "pg_restore";
 
 const SOURCE_URL = process.env.SOURCE_DATABASE_URL; // AIVEN (producción)
 const AIVEN_URL = process.env.AIVEN_DATABASE_URL; // APUTA A SUPABASE
@@ -33,6 +39,8 @@ const fileName = `investillo_${timestamp}.dump`;
 const filePath = join(BACKUP_DIR, fileName);
 
 console.log("[1/3] Generando respaldo desde Supabase...");
+console.log(`Usando pg_dump: ${PG_DUMP}`);
+execFileSync(PG_DUMP, ["--version"], { stdio: "inherit" });
 execFileSync(
   PG_DUMP,
   [
