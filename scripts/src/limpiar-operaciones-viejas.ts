@@ -7,8 +7,17 @@ const DIAS_A_CONSERVAR = 60; // de sobra â€” nadie reintenta algo offline despuÃ
 
 async function main() {
   const pool = new Pool({ connectionString: DATABASE_URL });
-  const res = await pool.query(`DELETE FROM operaciones_sincronizadas WHERE creado_en < now() - interval '${DIAS_A_CONSERVAR} days'`);
-  const eventos = await pool.query(`DELETE FROM eventos_sincronizacion WHERE estado = 'sincronizado' AND procesado_en < now() - interval '${DIAS_A_CONSERVAR} days'`);
+  const res = await pool.query(
+    `DELETE FROM operaciones_sincronizadas
+     WHERE creado_en < now() - make_interval(days => $1)`,
+    [DIAS_A_CONSERVAR],
+  );
+  const eventos = await pool.query(
+    `DELETE FROM eventos_sincronizacion
+     WHERE estado = 'sincronizado'
+       AND procesado_en < now() - make_interval(days => $1)`,
+    [DIAS_A_CONSERVAR],
+  );
   console.log(`Limpieza: ${res.rowCount} operaciones anti-duplicados y ${eventos.rowCount} eventos sincronizados antiguos.`);
   await pool.end();
 }
