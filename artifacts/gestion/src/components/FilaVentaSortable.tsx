@@ -97,6 +97,7 @@ export function FilaVentaSortable({
               productoCodigo: producto.codigo || "",
               productoMarca: producto.marca || "X",
               precioVentaTotal: String((producto.precioVenta ?? 0) * (parseFloat(v.cantidad) || 0)),
+              precioVentaTotalManual: false,
               precioCompraUnidad: String(producto.precioCompra ?? 0),
               precioVentaUnidad: String(producto.precioVenta ?? 0),
             }));
@@ -104,10 +105,10 @@ export function FilaVentaSortable({
           placeholder="Seleccionar producto..."
         />}</td>
         <td className="p-2"><span className="block w-20 truncate text-sm text-muted-foreground">{editValues.productoMarca || "X"}</span></td>
-        <td className="p-2"><input type="number" min="0" step="0.25" value={editValues.cantidad} onChange={(e) => setEditValues((v: any) => ({ ...v, cantidad: e.target.value }))} className="w-20 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
+        <td className="p-2"><input type="number" min="0" step="0.25" value={editValues.cantidad} onChange={(e) => setEditValues((v: any) => { const cantidad = parseFloat(e.target.value) || 0; return { ...v, cantidad: e.target.value, precioVentaTotal: v.precioVentaTotalManual ? v.precioVentaTotal : String(parseNumberCO(v.precioVentaUnidad) * cantidad) }; })} className="w-20 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
         <td className="p-2"><input type="text" inputMode="decimal" value={editValues.precioCompraUnidad} onChange={(e) => setEditValues((v: any) => ({ ...v, precioCompraUnidad: e.target.value }))} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-        <td className="p-2"><input type="text" inputMode="decimal" value={editValues.precioVentaUnidad} onChange={(e) => setEditValues((v: any) => { const precio = parseNumberCO(e.target.value); const cantidad = parseFloat(v.cantidad) || 0; return { ...v, precioVentaUnidad: e.target.value, precioVentaTotal: String(precio * cantidad) }; })} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
-        <td className="p-2"><input type="text" inputMode="decimal" value={editValues.precioVentaTotal} onChange={(e) => { const total = e.target.value; setEditValues((v: any) => ({ ...v, precioVentaTotal: total, precioVentaUnidad: editCant > 0 ? String(parseNumberCO(total) / editCant) : v.precioVentaUnidad })); }} className="w-28 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
+        <td className="p-2"><input type="text" inputMode="decimal" value={editValues.precioVentaUnidad} onChange={(e) => setEditValues((v: any) => { const precio = parseNumberCO(e.target.value); const cantidad = parseFloat(v.cantidad) || 0; return { ...v, precioVentaUnidad: e.target.value, precioVentaTotal: String(precio * cantidad), precioVentaTotalManual: false }; })} className="w-24 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
+        <td className="p-2"><input type="text" inputMode="decimal" value={editValues.precioVentaTotal} onChange={(e) => { const total = e.target.value; setEditValues((v: any) => ({ ...v, precioVentaTotal: total, precioVentaTotalManual: true, precioVentaUnidad: editCant > 0 ? String(parseNumberCO(total) / editCant) : v.precioVentaUnidad })); }} className="w-28 bg-background border border-primary/50 px-2 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-primary" /></td>
         <td className="p-2 font-medium text-green-500 whitespace-nowrap">{venta.tipoLinea === "venta" ? formatCurrency(editBen) : "—"}</td>
         <td className="p-2 no-print">
           <select value={editValues.formaPago || venta.formaPago || "efectivo"} onChange={(e) => setEditValues((v: any) => ({ ...v, formaPago: e.target.value }))}

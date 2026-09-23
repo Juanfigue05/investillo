@@ -54,6 +54,7 @@ interface EditValues {
   precioCompraUnidad: string;
   precioVentaUnidad: string;
   precioVentaTotal: string;
+  precioVentaTotalManual?: boolean;
   beneficio: string;
   formaPago: string;
   distribuciones?: { trabajadorId: number; trabajadorNombre: string; valor: number }[];
@@ -241,6 +242,7 @@ export default function VentasDiarias() {
       precioCompraUnidad: String(venta.precioCompraUnidad),
       precioVentaUnidad: String(venta.precioVentaUnidad),
       precioVentaTotal: String(venta.precioVentaTotal),
+      precioVentaTotalManual: false,
       beneficio: String(venta.beneficio),
       formaPago: (venta as { formaPago?: string }).formaPago || "efectivo",
       distribuciones: (venta as any).distribuciones || [],
@@ -252,7 +254,7 @@ export default function VentasDiarias() {
     const pvU = parseNumberCO(editValues.precioVentaUnidad);
     const pcU = parseNumberCO(editValues.precioCompraUnidad);
     const totalEditado = parseNumberCO(editValues.precioVentaTotal);
-    const total = totalEditado > 0 ? totalEditado : pvU * cant;
+    const total = editValues.precioVentaTotalManual ? totalEditado : pvU * cant;
     const precioVentaFinal = cant > 0 ? total / cant : 0;
     const beneficio = venta.tipoLinea === "venta" ? (precioVentaFinal - pcU) * cant : parseFloat(editValues.beneficio) || 0;
     const ventaActualizada = {
