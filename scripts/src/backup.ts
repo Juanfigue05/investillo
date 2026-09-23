@@ -21,6 +21,16 @@ const PG_RESTORE = PG_BIN
     ? "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_restore.exe"
     : existsSync(join(PG_BIN_LINUX, "pg_restore")) ? join(PG_BIN_LINUX, "pg_restore") : "pg_restore";
 
+function verificarVersionPostgres(binario: string) {
+  const version = execFileSync(binario, ["--version"], { encoding: "utf8" }).trim();
+  const match = version.match(/(?:PostgreSQL|pg_dump|pg_restore)\s+(\d+)/i);
+  const major = match ? Number(match[1]) : 0;
+  if (major < 18) {
+    throw new Error(`Se requiere PostgreSQL 18 o superior. Se encontró ${version} usando ${binario}.`);
+  }
+  console.log(`${binario}: ${version}`);
+}
+
 const SOURCE_URL = process.env.SOURCE_DATABASE_URL; // AIVEN (producción)
 const AIVEN_URL = process.env.AIVEN_DATABASE_URL; // APUTA A SUPABASE
 
@@ -40,7 +50,8 @@ const filePath = join(BACKUP_DIR, fileName);
 
 console.log("[1/3] Generando respaldo desde Supabase...");
 console.log(`Usando pg_dump: ${PG_DUMP}`);
-execFileSync(PG_DUMP, ["--version"], { stdio: "inherit" });
+verificarVersionPostgres(PG_DUMP);
+verificarVersionPostgres(PG_RESTORE);
 execFileSync(
   PG_DUMP,
   [

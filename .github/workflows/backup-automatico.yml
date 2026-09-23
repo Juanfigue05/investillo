@@ -34,7 +34,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Ejecutar respaldo
-        run: pnpm --filter @workspace/scripts run backup
+        run: pnpm --filter @workspace/scripts run backup:ci
         env:
           SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
           AIVEN_DATABASE_URL: ${{ secrets.AIVEN_DATABASE_URL }}

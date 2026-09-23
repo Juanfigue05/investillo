@@ -6,6 +6,7 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "backup": "tsx ./src/backup.ts",
+    "backup:ci": "tsx ./src/backup.ts",
     "backup:local": "tsx ./src/backup-local.ts",
     "sync:local": "tsx ./src/sincronizar-local.ts",
     "sync:status": "tsx ./src/estado-sincronizacion.ts",
