@@ -1,10 +1,65 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { cierreDiarioTable, eventosSincronizacionTable, trabajadoresTable } from "@workspace/db/schema";
+import { cierreDiarioBorradoresTable, cierreDiarioTable, eventosSincronizacionTable, trabajadoresTable } from "@workspace/db/schema";
 import { eq, desc, sql } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
 
 const router = Router();
+let tablaBorradoresLista: Promise<void> | null = null;
+
+function asegurarTablaBorradores() {
+  if (!tablaBorradoresLista) {
+    tablaBorradoresLista = db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS cierre_diario_borradores (
+        id SERIAL PRIMARY KEY,
+        fecha TEXT NOT NULL UNIQUE,
+        datos JSONB NOT NULL,
+        actualizado_en TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `)).then(() => undefined).catch((error) => {
+      tablaBorradoresLista = null;
+      throw error;
+    });
+  }
+  return tablaBorradoresLista;
+}
+
+router.get("/borrador", async (req, res) => {
+  try {
+    const fecha = String(req.query.fecha || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) { res.status(400).json({ error: "fecha inválida" }); return; }
+    await asegurarTablaBorradores();
+    const [borrador] = await db.select().from(cierreDiarioBorradoresTable).where(eq(cierreDiarioBorradoresTable.fecha, fecha)).limit(1);
+    res.json(borrador || null);
+  } catch (error) {
+    res.status(500).json({ error: `No se pudo cargar el borrador: ${String(error)}` });
+  }
+});
+
+router.put("/borrador", async (req, res) => {
+  try {
+    const { fecha, datos } = req.body as { fecha?: string; datos?: unknown };
+    if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha) || !datos) { res.status(400).json({ error: "fecha y datos son requeridos" }); return; }
+    await asegurarTablaBorradores();
+    const [borrador] = await db.insert(cierreDiarioBorradoresTable)
+      .values({ fecha, datos, actualizadoEn: new Date() })
+      .onConflictDoUpdate({ target: cierreDiarioBorradoresTable.fecha, set: { datos, actualizadoEn: new Date() } })
+      .returning();
+    res.json(borrador);
+  } catch (error) {
+    res.status(500).json({ error: `No se pudo guardar el borrador: ${String(error)}` });
+  }
+});
+
+router.delete("/borrador/:fecha", async (req, res) => {
+  try {
+    await asegurarTablaBorradores();
+    await db.delete(cierreDiarioBorradoresTable).where(eq(cierreDiarioBorradoresTable.fecha, req.params.fecha));
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: `No se pudo eliminar el borrador: ${String(error)}` });
+  }
+});
 
 interface TrabajadorSnapshotIn {
   trabajadorId?: number | null;
@@ -55,6 +110,7 @@ router.post("/", async (req, res) => {
   try {
     const { fecha, datos, totalPagar, editar } = req.body as { fecha: string; datos: unknown; totalPagar: number; editar?: boolean };
     if (!fecha || !datos) { res.status(400).json({ error: "fecha y datos son requeridos" }); return; }
+    await asegurarTablaBorradores();
 
     const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
     if (operationId) {
@@ -83,6 +139,7 @@ router.post("/", async (req, res) => {
         }
       }
 
+      await tx.delete(cierreDiarioBorradoresTable).where(eq(cierreDiarioBorradoresTable.fecha, fecha));
       if (existing) {
         const [updated] = await tx
           .update(cierreDiarioTable)

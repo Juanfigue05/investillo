@@ -8,6 +8,7 @@ export * from "./notas";
 export * from "./historial";
 export * from "./historial_precios";
 export * from "./cierre_diario";
+export * from "./cierre_diario_borradores";
 export * from "./clientes";
 export * from "./pagos_seguro";
 export * from "./operaciones_sincronizadas";

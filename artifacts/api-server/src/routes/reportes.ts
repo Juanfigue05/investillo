@@ -15,7 +15,7 @@ function parseReportNumber(value: unknown): number {
 
 router.get("/formas-pago", async (_req, res) => {
   const fechaLimite = new Date();
-  fechaLimite.setMonth(fechaLimite.getMonth() - 6);
+  fechaLimite.setMonth(fechaLimite.getMonth() - 12);
   const fechaLimiteStr = fechaColombia(fechaLimite);
   const fechaHoy = fechaColombia(new Date());
 

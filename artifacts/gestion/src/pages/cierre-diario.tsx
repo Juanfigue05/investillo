@@ -48,7 +48,13 @@ const parseMiles = (raw: string): number => {
 
 const emptyConceptos = (): ConceptoEntrada[] =>
   Array.from({ length: 3 }, () => ({ descripcion: "", valor: "" }));
-const emptyMO = (): string[] => Array.from({ length: 10 }, () => "");
+const emptyMO = (): string[] => Array.from({ length: 20 }, () => "");
+const normalizarMO = (entries?: string[]): string[] => Array.from({ length: 20 }, (_, i) => entries?.[i] ?? "");
+
+const normalizarConceptos = (entries?: ConceptoEntrada[]): ConceptoEntrada[] => {
+  const valores = entries?.map((entry) => ({ descripcion: entry.descripcion ?? "", valor: entry.valor ?? "" })) ?? [];
+  return valores.length >= 3 ? valores : valores.concat(emptyConceptos().slice(valores.length));
+};
 
 const newTrabajador = (nombre = "", trabajadorId: number | null = null): CierreTrabajador => ({
   id: `${Date.now()}-${Math.random()}`,
@@ -112,8 +118,8 @@ function MilesInput({
 }
 
 function ConceptoRows({
-  label, entries, color, onChange,
-}: { label: string; entries: ConceptoEntrada[]; color: string; onChange: (idx: number, field: "descripcion" | "valor", val: string) => void }) {
+  label, entries, color, onChange, onAdd,
+}: { label: string; entries: ConceptoEntrada[]; color: string; onChange: (idx: number, field: "descripcion" | "valor", val: string) => void; onAdd: () => void }) {
   return (
     <div>
       <p className={`text-xs font-semibold mb-1.5 ${color}`}>{label}</p>
@@ -129,6 +135,9 @@ function ConceptoRows({
           </div>
         ))}
       </div>
+      <button type="button" onClick={onAdd} className="mt-2 flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80">
+        <Plus className="w-3.5 h-3.5" /> Agregar fila
+      </button>
     </div>
   );
 }
@@ -179,7 +188,7 @@ function GruposTrabajoPanel({
       recargarGruposDefault();
     }
 
-    setGruposDia((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, trabajadorIds: idsNormalizados, moEntradas: Array.from({ length: 10 }, () => "") }]);setNuevoGrupoIds([]);
+    setGruposDia((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, trabajadorIds: idsNormalizados, moEntradas: emptyMO() }]);setNuevoGrupoIds([]);
     setNuevoEsPermanente(false);
   };
 
@@ -297,28 +306,7 @@ function GruposTrabajoPanel({
 
 // ---------- API helpers ----------
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
-const BORRADOR_CIERRE_PREFIX = "investillo-cierre-borrador:";
-
-function claveBorradorCierre(fecha: string) {
-  return `${BORRADOR_CIERRE_PREFIX}${fecha}`;
-}
-
-function leerBorradorCierre(fecha: string): { items: CierreTrabajador[]; gruposDia: GrupoTrabajoDia[] } | null {
-  try {
-    const raw = localStorage.getItem(claveBorradorCierre(fecha));
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function eliminarBorradorCierre(fecha: string) {
-  try {
-    localStorage.removeItem(claveBorradorCierre(fecha));
-  } catch {
-    return;
-  }
-}
+const CIERRE_ACTIVO_KEY = "investillo-cierre-activo";
 
 async function guardarCierre(fecha: string, datos: unknown, totalPagar: number, editar: boolean) {
   const res = await fetch(`${API}/cierre-diario`, {
@@ -332,10 +320,9 @@ async function guardarCierre(fecha: string, datos: unknown, totalPagar: number, 
 
 // ---------- helpers: restore from snapshot ----------
 function snapshotToItem(snap: TrabajadorSnapshot): CierreTrabajador {
-  const moEntradas = Array.from({ length: 10 }, (_, i) => snap.moEntradas?.[i] ?? "");
-  const emptyC = (): ConceptoEntrada[] => Array.from({ length: 3 }, () => ({ descripcion: "", valor: "" }));
-  const leDamos = snap.leDamos ? snap.leDamos.slice(0, 3).concat(emptyC().slice(snap.leDamos.length)) : emptyC();
-  const nosDebe = snap.nosDebe ? snap.nosDebe.slice(0, 3).concat(emptyC().slice(snap.nosDebe.length)) : emptyC();
+  const moEntradas = normalizarMO(snap.moEntradas);
+  const leDamos = normalizarConceptos(snap.leDamos);
+  const nosDebe = normalizarConceptos(snap.nosDebe);
   return {
     id: snap.id ?? `${Date.now()}-${Math.random()}`,
     trabajadorId: snap.trabajadorId ?? null,
@@ -368,7 +355,7 @@ export default function CierreDiario() {
   const [gruposDia, setGruposDia] = useState<GrupoTrabajoDia[]>([]);
 
   const fechaHoy = fechaHoyColombia();
-  const [fechaCierre, setFechaCierre] = useState(fechaHoy);
+  const [fechaCierre, setFechaCierre] = useState(() => fechaCierreActiva(fechaHoy));
   const hoyLabel = new Date(fechaCierre + "T12:00:00").toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const hoyStr = hoyLabel.charAt(0).toUpperCase() + hoyLabel.slice(1);
 
@@ -378,7 +365,40 @@ export default function CierreDiario() {
   const [guardando, setGuardando] = useState(false);
   const [guardadoOk, setGuardadoOk] = useState(false);
   const [editFecha, setEditFecha] = useState<string | null>(null);
+  const [editado, setEditado] = useState(false);
+  const [salidaPendiente, setSalidaPendiente] = useState<(() => void) | null>(null);
   const [cierreInicialCargado, setCierreInicialCargado] = useState(false);
+
+  const solicitarSalida = (accion: () => void) => {
+    if (editFecha && editado) setSalidaPendiente(() => accion);
+    else accion();
+  };
+
+  useEffect(() => {
+    if (!editFecha || !editado) return;
+    const advertirRecarga = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", advertirRecarga);
+    return () => window.removeEventListener("beforeunload", advertirRecarga);
+  }, [editFecha, editado]);
+
+  useEffect(() => {
+    if (!editFecha || !editado) return;
+    const interceptarNavegacion = (event: MouseEvent) => {
+      const elemento = event.target as HTMLElement | null;
+      const enlace = elemento?.closest("a[href]") as HTMLAnchorElement | null;
+      if (!enlace || enlace.target === "_blank") return;
+      const destino = new URL(enlace.href, window.location.href);
+      if (destino.pathname === window.location.pathname) return;
+      event.preventDefault();
+      event.stopPropagation();
+      solicitarSalida(() => { window.location.href = enlace.href; });
+    };
+    document.addEventListener("click", interceptarNavegacion, true);
+    return () => document.removeEventListener("click", interceptarNavegacion, true);
+  }, [editFecha, editado]);
 
   const cargarGruposDefault = async () => {
     const res = await fetch(`${API}/grupos-trabajo`);
@@ -396,13 +416,13 @@ export default function CierreDiario() {
       return gruposDefault.map((g) => ({
         id: `${Date.now()}-${g.id}-${Math.random()}`,
         trabajadorIds: g.trabajadorIds,
-        moEntradas: Array.from({ length: 10 }, () => ""),
+        moEntradas: emptyMO(),
       }));
     });
   }, [gruposDefault, editFecha]);
 
   useEffect(() => {
-    if (editFecha) return;
+    if (editFecha === fechaCierre) return;
     const raw = sessionStorage.getItem("editarCierre");
     const cargarDatos = (fecha: string, datos: TrabajadorSnapshot[] | { trabajadores: TrabajadorSnapshot[]; gruposTrabajo?: GrupoTrabajoDia[] }) => {
       setEditFecha(fecha);
@@ -410,7 +430,7 @@ export default function CierreDiario() {
       const trabajadoresGuardados = Array.isArray(datos) ? datos : datos.trabajadores;
       const grupos = Array.isArray(datos) ? [] : (datos.gruposTrabajo || []);
       setItems(trabajadoresGuardados.map(snapshotToItem));
-      setGruposDia(grupos);
+      setGruposDia(grupos.map((grupo) => ({ ...grupo, moEntradas: normalizarMO(grupo.moEntradas) })));
     };
 
     if (raw) {
@@ -425,30 +445,34 @@ export default function CierreDiario() {
       return;
     }
 
-    const borrador = leerBorradorCierre(fechaCierre);
-    if (borrador) {
-      setItems(borrador.items);
-      setGruposDia(borrador.gruposDia);
-      setCierreInicialCargado(true);
-      return;
-    }
-
-    fetch(`${API}/cierre-diario/por-fecha?fecha=${fechaCierre}`)
+    fetch(`${API}/cierre-diario/borrador?fecha=${fechaCierre}`)
       .then((res) => res.ok ? res.json() : null)
-      .then((cierre) => {
-        if (cierre?.datos) cargarDatos(cierre.fecha, cierre.datos);
-        setCierreInicialCargado(true);
+      .then((borrador) => {
+        if (borrador?.datos) {
+          const datos = borrador.datos as { trabajadores: TrabajadorSnapshot[]; gruposTrabajo?: GrupoTrabajoDia[] };
+          setItems((datos.trabajadores || []).map(snapshotToItem));
+          setGruposDia((datos.gruposTrabajo || []).map((grupo) => ({ ...grupo, moEntradas: normalizarMO(grupo.moEntradas) })));
+          setCierreInicialCargado(true);
+          return;
+        }
+        return fetch(`${API}/cierre-diario/por-fecha?fecha=${fechaCierre}`)
+          .then((res) => res.ok ? res.json() : null)
+          .then((cierre) => {
+            if (cierre?.datos) cargarDatos(cierre.fecha, cierre.datos);
+            setCierreInicialCargado(true);
+          });
       })
       .catch(() => setCierreInicialCargado(true));
   }, [editFecha, fechaCierre]);
 
   useEffect(() => {
-    if (!cierreInicialCargado || editFecha) return;
-    try {
-      localStorage.setItem(claveBorradorCierre(fechaCierre), JSON.stringify({ items, gruposDia }));
-    } catch {
-      return;
-    }
+    if (!cierreInicialCargado || editFecha || items.length === 0) return;
+    const datos = { trabajadores: items, gruposTrabajo: gruposDia };
+    const timer = window.setTimeout(() => {
+      guardarBorrador(fechaCierre, datos).catch(() => undefined);
+      try { sessionStorage.setItem(CIERRE_ACTIVO_KEY, fechaCierre); } catch { /* almacenamiento de sesión no es la fuente de datos */ }
+    }, 350);
+    return () => window.clearTimeout(timer);
   }, [cierreInicialCargado, editFecha, fechaCierre, gruposDia, items]);
 
   useEffect(() => {
@@ -460,36 +484,61 @@ export default function CierreDiario() {
   }, [editFecha, items.length, trabajadores]);
 
   const agregarDesdeLista = (id: number, nombre: string) => {
-    setItems((prev) => [...prev, newTrabajador(nombre, id)]);
-    setShowSelect(false);
+    solicitarSalida(() => {
+      if (editFecha) setEditado(true);
+      setItems((prev) => [...prev, newTrabajador(nombre, id)]);
+      setShowSelect(false);
+    });
   };
   const agregarLibre = () => {
     const n = nombreLibre.trim();
     if (!n) return;
-    setItems((prev) => [...prev, newTrabajador(n)]);
-    setNombreLibre("");
-    setShowSelect(false);
+    solicitarSalida(() => {
+      if (editFecha) setEditado(true);
+      setItems((prev) => [...prev, newTrabajador(n)]);
+      setNombreLibre("");
+      setShowSelect(false);
+    });
   };
 
-  const updateItem = (id: string, patch: Partial<CierreTrabajador>) =>
-    setItems((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
-  const removeItem = (id: string) => setItems((prev) => prev.filter((t) => t.id !== id));
+  const cambiarFecha = (fecha: string) => {
+    setFechaCierre(fecha);
+    setEditFecha(null);
+    setEditado(false);
+    setCierreInicialCargado(false);
+    setItems([]);
+    setGruposDia([]);
+    setGuardadoOk(false);
+  };
 
-  const updateMO = (id: string, idx: number, val: string) =>
+  const updateItem = (id: string, patch: Partial<CierreTrabajador>) => {
+    if (editFecha && Object.keys(patch).some((key) => key !== "expandido")) setEditado(true);
+    setItems((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  };
+  const removeItem = (id: string) => { solicitarSalida(() => { if (editFecha) setEditado(true); setItems((prev) => prev.filter((t) => t.id !== id)); }); };
+
+  const updateMO = (id: string, idx: number, val: string) => {
+    if (editFecha) setEditado(true);
     setItems((prev) => prev.map((t) => {
       if (t.id !== id) return t;
       const arr = [...t.moEntradas];
       arr[idx] = val;
       return { ...t, moEntradas: arr };
     }));
+  };
 
-  const updateConcepto = (id: string, tipo: "leDamos" | "nosDebe", idx: number, field: "descripcion" | "valor", val: string) =>
+  const updateConcepto = (id: string, tipo: "leDamos" | "nosDebe", idx: number, field: "descripcion" | "valor", val: string) => {
+    if (editFecha) setEditado(true);
     setItems((prev) => prev.map((t) => {
       if (t.id !== id) return t;
       const arr = [...t[tipo]];
       arr[idx] = { ...arr[idx], [field]: val };
       return { ...t, [tipo]: arr };
     }));
+  };
+
+  const agregarConcepto = (id: string, tipo: "leDamos" | "nosDebe") =>
+    solicitarSalida(() => { if (editFecha) setEditado(true); setItems((prev) => prev.map((t) => t.id === id ? { ...t, [tipo]: [...t[tipo], { descripcion: "", valor: "" }] } : t)); });
 
   const grandTotal = useMemo(
     () => items.reduce((s, t, i) => s + calcTrabajador(t, gruposDia, trabajadores || []).total, 0),
@@ -510,7 +559,7 @@ export default function CierreDiario() {
 
     try {
       await guardarCierre(fecha, datos, grandTotal, Boolean(editFecha));
-      eliminarBorradorCierre(fecha);
+      setEditado(false);
       setGuardadoOk(true);
       setTimeout(() => setGuardadoOk(false), 3000);
     } catch (e) {
@@ -518,7 +567,7 @@ export default function CierreDiario() {
         alert("Error al guardar: " + e);
       } else {
         await encolarOperacion({ tipo: "cierre_diario", metodo: "POST", endpoint: "/cierre-diario", payload: { fecha, datos, totalPagar: grandTotal } });
-        eliminarBorradorCierre(fecha);
+        setEditado(false);
         toast({ title: "Guardado sin conexión", description: "Este cierre diario se sincronizará automáticamente cuando vuelva internet." });
         setGuardadoOk(true);
         setTimeout(() => setGuardadoOk(false), 3000);
@@ -558,22 +607,17 @@ export default function CierreDiario() {
               Fecha del cierre
               <input
                 type="date"
-                value={editFecha ?? fechaCierre}
-                disabled={Boolean(editFecha)}
+                value={fechaCierre}
                 onChange={(e) => {
-                  setFechaCierre(e.target.value);
-                  setCierreInicialCargado(false);
-                  setItems([]);
-                  setGruposDia([]);
-                  setGuardadoOk(false);
+                  solicitarSalida(() => cambiarFecha(e.target.value));
                 }}
                 className="bg-background text-foreground border border-border px-2 py-1 rounded-lg text-sm disabled:opacity-60"
               />
             </label>
-            <button onClick={() => setGruposPanelOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm">
+                        <button onClick={() => solicitarSalida(() => setGruposPanelOpen(true))} className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm">
               <Users className="w-4 h-4" /> Grupos de trabajo{gruposDia.length > 0 ? ` (${gruposDia.length})` : ""}
             </button>
-            <button onClick={() => setCalcCierreOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm">
+            <button onClick={() => solicitarSalida(() => setCalcCierreOpen(true))} className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm">
               <CalcIcon className="w-4 h-4" /> Calculadora
             </button>
             {items.length > 0 && (
@@ -585,7 +629,7 @@ export default function CierreDiario() {
                 {guardadoOk ? (<><CheckCircle className="w-4 h-4" /> Guardado</>) : (<><Save className="w-4 h-4" /> {guardando ? "Guardando..." : "Guardar Cierre"}</>)}
               </button>
             )}
-            <button onClick={() => setShowSelect((v) => !v)} className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg text-sm">
+            <button onClick={() => solicitarSalida(() => setShowSelect((v) => !v))} className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg text-sm">
               <Plus className="w-4 h-4" /> Agregar trabajador
             </button>
           </div>
@@ -627,6 +671,19 @@ export default function CierreDiario() {
           <div className="bg-card border border-border rounded-2xl p-10 text-center text-muted-foreground">
             <Calculator className="w-10 h-10 mx-auto mb-3 opacity-30" />
             <p className="text-sm">Agrega trabajadores para calcular el cierre del día.</p>
+          </div>
+        )}
+
+        {salidaPendiente && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4">
+            <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+              <h2 className="text-lg font-bold text-foreground">Cambios sin guardar</h2>
+              <p className="mt-2 text-sm text-muted-foreground">Este cierre histórico tiene modificaciones. Debes guardar el cierre antes de continuar o puedes salir sin conservarlas.</p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button type="button" onClick={() => setSalidaPendiente(null)} className="rounded-xl border border-border px-4 py-2 text-sm text-foreground hover:bg-muted">Seguir editando</button>
+                <button type="button" onClick={() => { const accion = salidaPendiente; setSalidaPendiente(null); setEditado(false); accion(); }} className="rounded-xl bg-destructive px-4 py-2 text-sm text-destructive-foreground hover:bg-destructive/90">Salir sin guardar</button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -679,9 +736,11 @@ export default function CierreDiario() {
                         {moPropia > 0 && <span className="text-xs font-bold text-primary">Σ {formatCurrency(moPropia)}</span>}
                       </div>
                       <div className="space-y-1.5">
+                        <div className="grid grid-cols-2 gap-1.5">
                         {t.moEntradas.map((v, idx) => (
                           <MilesInput key={idx} value={v} onChange={(val) => updateMO(t.id, idx, val)} placeholder={`MO ${idx + 1}`} />
                         ))}
+                        </div>
                       </div>
                     </div>
 
@@ -692,8 +751,8 @@ export default function CierreDiario() {
                       </div>
                     )}
 
-                    <ConceptoRows label="➕ Le damos" entries={t.leDamos} color="text-green-400" onChange={(idx, field, val) => updateConcepto(t.id, "leDamos", idx, field, val)} />
-                    <ConceptoRows label="➖ Nos debe" entries={t.nosDebe} color="text-destructive" onChange={(idx, field, val) => updateConcepto(t.id, "nosDebe", idx, field, val)} />
+                    <ConceptoRows label="➕ Le damos" entries={t.leDamos} color="text-green-400" onChange={(idx, field, val) => updateConcepto(t.id, "leDamos", idx, field, val)} onAdd={() => agregarConcepto(t.id, "leDamos")} />
+                    <ConceptoRows label="➖ Nos debe" entries={t.nosDebe} color="text-destructive" onChange={(idx, field, val) => updateConcepto(t.id, "nosDebe", idx, field, val)} onAdd={() => agregarConcepto(t.id, "nosDebe")} />
 
                     <div className="bg-muted/50 border border-border rounded-xl p-3">
                       <div className="space-y-1 text-xs">
@@ -724,4 +783,21 @@ export default function CierreDiario() {
       </div>
     </Layout>
   );
+}
+
+function fechaCierreActiva(fechaPorDefecto: string) {
+  try {
+    return sessionStorage.getItem(CIERRE_ACTIVO_KEY) || fechaPorDefecto;
+  } catch {
+    return fechaPorDefecto;
+  }
+}
+
+async function guardarBorrador(fecha: string, datos: unknown) {
+  const res = await fetch(`${API}/cierre-diario/borrador`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fecha, datos }),
+  });
+  if (!res.ok) throw new Error(await res.text());
 }
