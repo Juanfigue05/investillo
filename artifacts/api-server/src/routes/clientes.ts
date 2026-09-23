@@ -273,7 +273,7 @@ router.put("/:id/vehiculos/:vid", async (req, res) => {
     if (row && !req.header("x-sync-apply")) {
       await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "vehiculo", entidadId: String(vid), tipo: "actualizar", metodo: "PUT", endpoint: "/clientes/{clienteId}/vehiculos/{id}", referenciasEndpoint: [{ marcador: "{clienteId}", entidad: "cliente", valorLocal: String(clienteId) }], payload: req.body, origen: "local" });
     }
-    if (row) await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "cliente", recursoId: clienteId }).onConflictDoNothing();
+    if (row) await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "vehiculo", recursoId: vid }).onConflictDoNothing();
     return row;
   });
   if (!updated) { res.status(404).json({ error: "Vehículo no encontrado" }); return; }
@@ -293,7 +293,7 @@ router.delete("/:id/vehiculos/:vid", async (req, res) => {
       if (!req.header("x-sync-apply")) {
         await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "vehiculo", entidadId: String(vid), tipo: "eliminar", metodo: "DELETE", endpoint: "/clientes/{clienteId}/vehiculos/{id}", referenciasEndpoint: [{ marcador: "{clienteId}", entidad: "cliente", valorLocal: String(clienteId) }], payload: req.body ?? {}, origen: "local" });
       }
-      await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "cliente", recursoId: clienteId }).onConflictDoNothing();
+      await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "vehiculo", recursoId: vid }).onConflictDoNothing();
     }
     return rows;
   });

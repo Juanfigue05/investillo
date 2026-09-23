@@ -308,7 +308,7 @@ router.post("/", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId, _syncNuevoAbonoId: ya.recursoSecundarioId ?? undefined }); return; }
   }
   const {
     tipo,
@@ -345,6 +345,7 @@ router.post("/", async (req, res) => {
   };
 
   const abonoInicial = parseFloat(String(valorAbonado || 0));
+  let abonoInicialId: number | undefined;
   const valorCreditoNum = parseFloat(String(valorCredito));
   const totalLineas = (lineas || []).reduce((total, linea) => total + Number(linea.cantidad) * Number(linea.precioVenta), 0);
   const detalleInicial = (lineas || [])
@@ -437,6 +438,7 @@ router.post("/", async (req, res) => {
             }),
           })
           .returning();
+        abonoInicialId = nuevoAbono.id;
         for (const { linea, valor } of detalleInicial) {
           const indice = lineas.indexOf(linea);
           const lineaCreada = lineasCreadas[indice];
@@ -457,16 +459,28 @@ router.post("/", async (req, res) => {
       }
     }
     if (!req.header("x-sync-apply")) {
-      await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "credito", entidadId: String(created.id), tipo: "crear", metodo: "POST", endpoint: "/creditos", payload: req.body, origen: "local" });
+      await tx.insert(eventosSincronizacionTable).values({
+        operationId,
+        entidad: "credito",
+        entidadId: String(created.id),
+        tipo: "crear",
+        metodo: "POST",
+        endpoint: "/creditos",
+        payload: req.body,
+        origen: "local",
+        referenciasRespuesta: abonoInicialId
+          ? [{ campo: "_syncNuevoAbonoId", entidad: "abono_credito", valorLocal: String(abonoInicialId) }]
+          : undefined,
+      });
     }
-    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: created.id }).onConflictDoNothing();
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: created.id, recursoSecundarioId: abonoInicialId ?? null }).onConflictDoNothing();
     return created;
     });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Error al crear el crédito" });
     return;
   }
-  res.status(201).json(await mapCredito(credito));
+  res.status(201).json({ ...(await mapCredito(credito)), _syncNuevoAbonoId: abonoInicialId });
 });
 
 // PUT /creditos/:id

@@ -5,5 +5,6 @@ export const operacionesSincronizadasTable = pgTable("operaciones_sincronizadas"
   operationId: text("operation_id").primaryKey(),
   tipo: text("tipo").notNull(),
   recursoId: integer("recurso_id"),
+  recursoSecundarioId: integer("recurso_secundario_id"),
   creadoEn: timestamp("creado_en").defaultNow(),
 });

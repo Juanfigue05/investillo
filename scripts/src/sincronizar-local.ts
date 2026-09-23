@@ -37,8 +37,9 @@ try {
     payload: unknown;
     creado_en: Date;
     referencias_endpoint: unknown;
+    referencias_respuesta: unknown;
   }>(
-    `SELECT operation_id, entidad, entidad_id, endpoint, metodo, payload, creado_en, referencias_endpoint
+    `SELECT operation_id, entidad, entidad_id, endpoint, metodo, payload, creado_en, referencias_endpoint, referencias_respuesta
        FROM eventos_sincronizacion
       WHERE estado IN ('pendiente', 'error')
       ORDER BY creado_en ASC
@@ -149,6 +150,22 @@ try {
            ON CONFLICT (entidad, id_local) DO UPDATE SET id_remoto = EXCLUDED.id_remoto, actualizado_en = now()`,
           [evento.entidad, evento.entidad_id, String(idNuevo)],
         );
+      }
+      if (Array.isArray(evento.referencias_respuesta) && evento.referencias_respuesta.length > 0) {
+        for (const ref of evento.referencias_respuesta as { campo: string; entidad: string; valorLocal: string }[]) {
+          const valorRemoto = respuestaRemota && typeof respuestaRemota === "object"
+            ? (respuestaRemota as Record<string, unknown>)[ref.campo]
+            : undefined;
+          if (valorRemoto === undefined || valorRemoto === null) {
+            throw new Error(`La respuesta remota no contiene ${ref.campo}; se reintentará.`);
+          }
+          await pool.query(
+            `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (entidad, id_local) DO UPDATE SET id_remoto = EXCLUDED.id_remoto, actualizado_en = now()`,
+            [ref.entidad, ref.valorLocal, String(valorRemoto)],
+          );
+        }
       }
       sincronizadas++;
     } catch (error) {
