@@ -23,7 +23,7 @@ const PG_RESTORE = PG_BIN
 
 function verificarVersionPostgres(binario: string) {
   const version = execFileSync(binario, ["--version"], { encoding: "utf8" }).trim();
-  const match = version.match(/(?:PostgreSQL|pg_dump|pg_restore)\s+(\d+)/i);
+  const match = version.match(/(?:PostgreSQL|pg_dump|pg_restore)[^\d]*(\d+)/i);
   const major = match ? Number(match[1]) : 0;
   if (major < 18) {
     throw new Error(`Se requiere PostgreSQL 18 o superior. Se encontró ${version} usando ${binario}.`);
