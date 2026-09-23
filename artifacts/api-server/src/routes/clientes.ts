@@ -249,9 +249,9 @@ router.post("/:id/vehiculos", async (req, res) => {
   const v = await db.transaction(async (tx) => {
     const [created] = await tx.insert(vehiculosClienteTable).values({ clienteId, placa: placa.trim(), descripcion: descripcion || null }).returning();
     if (!req.header("x-sync-apply")) {
-      await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "vehiculo", entidadId: String(created.id), tipo: "crear", metodo: "POST", endpoint: `/clientes/${clienteId}/vehiculos`, payload: req.body, origen: "local" });
+      await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "vehiculo", entidadId: String(created.id), tipo: "crear", metodo: "POST", endpoint: "/clientes/{clienteId}/vehiculos", referenciasEndpoint: [{ marcador: "{clienteId}", entidad: "cliente", valorLocal: String(clienteId) }], payload: req.body, origen: "local" });
     }
-    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "cliente", recursoId: clienteId }).onConflictDoNothing();
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "vehiculo", recursoId: created.id }).onConflictDoNothing();
     return created;
   });
   res.status(201).json({ id: v.id, clienteId: v.clienteId, placa: v.placa, descripcion: v.descripcion ?? null, creadoEn: v.creadoEn });
@@ -271,7 +271,7 @@ router.put("/:id/vehiculos/:vid", async (req, res) => {
   const updated = await db.transaction(async (tx) => {
     const [row] = await tx.update(vehiculosClienteTable).set(update).where(and(eq(vehiculosClienteTable.id, vid), eq(vehiculosClienteTable.clienteId, clienteId))).returning();
     if (row && !req.header("x-sync-apply")) {
-      await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "vehiculo", entidadId: String(vid), tipo: "actualizar", metodo: "PUT", endpoint: `/clientes/${clienteId}/vehiculos/${vid}`, payload: req.body, origen: "local" });
+      await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "vehiculo", entidadId: String(vid), tipo: "actualizar", metodo: "PUT", endpoint: "/clientes/{clienteId}/vehiculos/{id}", referenciasEndpoint: [{ marcador: "{clienteId}", entidad: "cliente", valorLocal: String(clienteId) }], payload: req.body, origen: "local" });
     }
     if (row) await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "cliente", recursoId: clienteId }).onConflictDoNothing();
     return row;
@@ -291,7 +291,7 @@ router.delete("/:id/vehiculos/:vid", async (req, res) => {
     const rows = await tx.delete(vehiculosClienteTable).where(and(eq(vehiculosClienteTable.id, vid), eq(vehiculosClienteTable.clienteId, clienteId))).returning();
     if (rows.length > 0) {
       if (!req.header("x-sync-apply")) {
-        await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "vehiculo", entidadId: String(vid), tipo: "eliminar", metodo: "DELETE", endpoint: `/clientes/${clienteId}/vehiculos/${vid}`, payload: req.body ?? {}, origen: "local" });
+        await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "vehiculo", entidadId: String(vid), tipo: "eliminar", metodo: "DELETE", endpoint: "/clientes/{clienteId}/vehiculos/{id}", referenciasEndpoint: [{ marcador: "{clienteId}", entidad: "cliente", valorLocal: String(clienteId) }], payload: req.body ?? {}, origen: "local" });
       }
       await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "cliente", recursoId: clienteId }).onConflictDoNothing();
     }

@@ -36,8 +36,9 @@ try {
     metodo: string;
     payload: unknown;
     creado_en: Date;
+    referencias_endpoint: unknown;
   }>(
-    `SELECT operation_id, entidad, entidad_id, endpoint, metodo, payload, creado_en
+    `SELECT operation_id, entidad, entidad_id, endpoint, metodo, payload, creado_en, referencias_endpoint
        FROM eventos_sincronizacion
       WHERE estado IN ('pendiente', 'error')
       ORDER BY creado_en ASC
@@ -57,9 +58,29 @@ try {
         [evento.entidad, evento.entidad_id],
       );
       const idRemoto = referencia.rows[0]?.id_remoto;
-      const endpoint = idRemoto
-        ? evento.endpoint.replaceAll(`/${evento.entidad_id}`, `/${idRemoto}`)
-        : evento.endpoint;
+      let endpoint = evento.endpoint;
+
+      if (Array.isArray(evento.referencias_endpoint) && evento.referencias_endpoint.length > 0) {
+        for (const ref of evento.referencias_endpoint as { marcador: string; entidad: string; valorLocal: string }[]) {
+          const refRemota = await pool.query<{ id_remoto: string }>(
+            `SELECT id_remoto FROM referencias_sincronizacion WHERE entidad = $1 AND id_local = $2`,
+            [ref.entidad, ref.valorLocal],
+          );
+          const valor = refRemota.rows[0]?.id_remoto;
+          if (!valor) {
+            throw new Error(`Referencia sin resolver: ${ref.entidad} local=${ref.valorLocal}. El padre aún no se ha sincronizado; se reintentará.`);
+          }
+          endpoint = endpoint.replace(ref.marcador, valor);
+        }
+        if (idRemoto) endpoint = endpoint.replace("{id}", idRemoto);
+        if (endpoint.includes("{")) {
+          throw new Error(`Endpoint sin resolver por completo: ${endpoint}. Se reintentará.`);
+        }
+      } else {
+        endpoint = idRemoto
+          ? evento.endpoint.replaceAll(`/${evento.entidad_id}`, `/${idRemoto}`)
+          : evento.endpoint;
+      }
 
       // No sobrescribe una edición remota posterior sin revisión manual.
       if (evento.metodo !== "POST") {
@@ -117,7 +138,8 @@ try {
         [evento.operation_id, JSON.stringify(respuestaRemota)],
       );
       const idNuevo = respuestaRemota && typeof respuestaRemota === "object"
-        ? (respuestaRemota as { id?: number | string; recursoId?: number | string }).id ??
+        ? (respuestaRemota as { _syncNuevoAbonoId?: number | string })._syncNuevoAbonoId ??
+          (respuestaRemota as { id?: number | string }).id ??
           (respuestaRemota as { recursoId?: number | string }).recursoId
         : undefined;
       if (idNuevo !== undefined && !idRemoto) {

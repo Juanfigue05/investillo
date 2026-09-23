@@ -23,6 +23,7 @@ export const eventosSincronizacionTable = pgTable(
     intentos: integer("intentos").notNull().default(0),
     ultimoError: text("ultimo_error"),
     respuestaRemota: jsonb("respuesta_remota"),
+    referenciasEndpoint: jsonb("referencias_endpoint"),
     creadoEn: timestamp("creado_en").defaultNow().notNull(),
     procesadoEn: timestamp("procesado_en"),
   },

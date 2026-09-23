@@ -139,7 +139,7 @@ router.post("/:id/pagos-seguro", async (req, res) => {
     .values({ trabajadorId, fecha, monto: String(toNum(monto)) })
     .returning();
 
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "pago_seguro", entidadId: String(pago.id), tipo: "crear", metodo: "POST", endpoint: `/trabajadores/${trabajadorId}/pagos-seguro`, payload: req.body, origen: "local" });
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "pago_seguro", entidadId: String(pago.id), tipo: "crear", metodo: "POST", endpoint: "/trabajadores/{trabajadorId}/pagos-seguro", referenciasEndpoint: [{ marcador: "{trabajadorId}", entidad: "trabajador", valorLocal: String(trabajadorId) }], payload: req.body, origen: "local" });
   await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "pago_seguro", recursoId: pago.id }).onConflictDoNothing();
 
   res.status(201).json({ id: pago.id, fecha: pago.fecha, monto: toNum(pago.monto) });
@@ -151,7 +151,7 @@ router.delete("/:id/pagos-seguro/:pagoId", async (req, res) => {
   const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
   if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   await db.delete(pagosSeguroTable).where(eq(pagosSeguroTable.id, pagoId));
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "pago_seguro", entidadId: String(pagoId), tipo: "eliminar", metodo: "DELETE", endpoint: `/trabajadores/${req.params.id}/pagos-seguro/${pagoId}`, payload: {}, origen: "local" });
+  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "pago_seguro", entidadId: String(pagoId), tipo: "eliminar", metodo: "DELETE", endpoint: "/trabajadores/{trabajadorId}/pagos-seguro/{id}", referenciasEndpoint: [{ marcador: "{trabajadorId}", entidad: "trabajador", valorLocal: String(req.params.id) }], payload: {}, origen: "local" });
   await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "pago_seguro", recursoId: pagoId }).onConflictDoNothing();
   res.json({ ok: true });
 });

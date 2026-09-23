@@ -711,12 +711,12 @@ router.post("/:id/abono", async (req, res) => {
       await crearFilaVentaPago(tx, updatedCredito, linea, av, pagaCompleto, newAbono.id, fechaVenta, customRef, formaPago);
     }
 
-    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "credito", entidadId: String(creditoId), tipo: "abono_crear", metodo: "POST", endpoint: `/creditos/${creditoId}/abono`, payload: req.body, origen: "local" });
-    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: creditoId }).onConflictDoNothing();
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "abono_credito", entidadId: String(newAbono.id), tipo: "abono_crear", metodo: "POST", endpoint: `/creditos/{creditoId}/abono`, referenciasEndpoint: [{ marcador: "{creditoId}", entidad: "credito", valorLocal: String(creditoId) }], payload: req.body, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "abono_credito", recursoId: newAbono.id }).onConflictDoNothing();
 
-    return updatedCredito;
+    return { credito: updatedCredito, nuevoAbonoId: newAbono.id };
   });
-  res.json(await mapCredito(updated));
+  res.json({ ...(await mapCredito(updated.credito)), _syncNuevoAbonoId: updated.nuevoAbonoId });
 });
 
 // ── Helpers para revertir un abono ─────────────────────────────────────────
@@ -783,7 +783,7 @@ router.delete("/:id/abono/:abonoId", async (req, res) => {
 
       // 3. Borrar el registro del abono en sí
       await tx.delete(abonosCreditosTable).where(eq(abonosCreditosTable.id, abonoId));
-      if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "credito", entidadId: String(creditoId), tipo: "abono_eliminar", metodo: "DELETE", endpoint: `/creditos/${creditoId}/abono/${abonoId}`, payload: {}, origen: "local" });
+      if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "abono_credito", entidadId: String(abonoId), tipo: "abono_eliminar", metodo: "DELETE", endpoint: "/creditos/{creditoId}/abono/{id}", referenciasEndpoint: [{ marcador: "{creditoId}", entidad: "credito", valorLocal: String(creditoId) }], payload: {}, origen: "local" });
       await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: creditoId }).onConflictDoNothing();
 
       const [creditoActualizado] = await tx.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
@@ -888,7 +888,7 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
     // Reconstruir TODAS las filas de Ventas de los pagos de este crédito en orden
     // cronológico (el estado completo/parcial de otros pagos puede haber cambiado)
     await rebuildVentasCredito(tx, updatedCredito);
-    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "credito", entidadId: String(creditoId), tipo: "abono_actualizar", metodo: "PUT", endpoint: `/creditos/${creditoId}/abono/${abonoId}`, payload: req.body, origen: "local" });
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "abono_credito", entidadId: String(abonoId), tipo: "abono_actualizar", metodo: "PUT", endpoint: "/creditos/{creditoId}/abono/{id}", referenciasEndpoint: [{ marcador: "{creditoId}", entidad: "credito", valorLocal: String(creditoId) }], payload: req.body, origen: "local" });
     await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: creditoId }).onConflictDoNothing();
     return updatedCredito;
   });
