@@ -255,7 +255,7 @@ export default function VentasDiarias() {
     const pcU = parseNumberCO(editValues.precioCompraUnidad);
     const totalEditado = parseNumberCO(editValues.precioVentaTotal);
     const total = editValues.precioVentaTotalManual ? totalEditado : pvU * cant;
-    const precioVentaFinal = cant > 0 ? total / cant : 0;
+    const precioVentaFinal = editValues.precioVentaTotalManual ? (cant > 0 ? total / cant : 0) : pvU;
     const beneficio = venta.tipoLinea === "venta" ? (precioVentaFinal - pcU) * cant : parseFloat(editValues.beneficio) || 0;
     const ventaActualizada = {
       ...venta,
