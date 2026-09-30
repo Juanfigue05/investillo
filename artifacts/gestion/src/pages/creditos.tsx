@@ -1,6 +1,9 @@
 import { type CSSProperties, Fragment, useState, useMemo, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import {
+  getGetInventarioQueryKey,
+  getGetTrabajadoresQueryKey,
+  getGetClientesQueryKey,
   useGetCreditos,
   useCrearCredito,
   useActualizarCredito,
@@ -170,9 +173,6 @@ const emptyForm = {
 
 export default function Creditos() {
   const { data: creditos, isLoading } = useGetCreditos({ tipo: TIPO });
-  const { data: productos } = useGetInventario();
-  const { data: trabajadores } = useGetTrabajadores();
-  const { data: clientes } = useGetClientes({});
   const queryClient = useQueryClient();
 
   const printMenuRef = useRef<HTMLDivElement>(null);
@@ -204,6 +204,9 @@ export default function Creditos() {
   } | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const { data: productos } = useGetInventario({ query: { queryKey: getGetInventarioQueryKey(), enabled: showForm } });
+  const { data: trabajadores } = useGetTrabajadores({ query: { queryKey: getGetTrabajadoresQueryKey(), enabled: showForm } });
+  const { data: clientes } = useGetClientes({}, { query: { queryKey: getGetClientesQueryKey({}), enabled: showForm } });
   const [form, setForm] = useState({ ...emptyForm });
   const [lineas, setLineas] = useState<LineaInput[]>([
     {
@@ -1063,8 +1066,8 @@ export default function Creditos() {
               <th style={{ width: "12%" }}>Fecha</th>
               <th style={{ width: "9%" }}>Vehículo</th>
               <th style={{ width: "18%" }}>Cliente</th>
-              <th style={{ width: "16%" }}>Teléfono</th>
-              <th style={{ width: "6%" }}>Factura</th>
+              <th style={{ width: "13%" }}>Teléfono</th>
+              <th style={{ width: "9%" }}>Factura</th>
               <th style={{ width: "10%", textAlign: "right" }}>Total Deuda</th>
               <th style={{ width: "10%", textAlign: "right" }}>Abono</th>
               <th style={{ width: "9%" }}>Fecha Abono</th>

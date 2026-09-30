@@ -12,6 +12,7 @@ import { Calculator as CalcIcon } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { RelojColombia } from "./RelojColombia";
 import { fechaHoyColombia } from "@/lib/utils";
+import { hayGetsApiActivos, suscribirGetsApi } from "@/lib/api-request-tracker";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 function loadSet(key: string): Set<number> {
@@ -26,10 +27,37 @@ const KEYS = { read: "alertas_read", dismissed: "alertas_dismissed", pinned: "al
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [calcCierreOpen, setCalcCierreOpen] = useState(false);
+  const [alertasHabilitadas, setAlertasHabilitadas] = useState(false);
   const { data: alertas } = useGetAlertasStock({
-    query: { queryKey: getGetAlertasStockQueryKey(), refetchInterval: 4000 },
+    query: {
+      queryKey: getGetAlertasStockQueryKey(),
+      enabled: alertasHabilitadas,
+      refetchInterval: alertasHabilitadas ? 4000 : false,
+    },
   });
   const [trabajadores, setTrabajadores] = useState<any[]>([]);
+
+  useEffect(() => {
+    let timer: number | undefined;
+    const habilitarCuandoEsteLibre = () => {
+      if (hayGetsApiActivos()) {
+        if (timer !== undefined) window.clearTimeout(timer);
+        timer = undefined;
+        return;
+      }
+      if (timer !== undefined) return;
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        if (!hayGetsApiActivos()) setAlertasHabilitadas(true);
+      }, 150);
+    };
+    const unsubscribe = suscribirGetsApi(habilitarCuandoEsteLibre);
+    habilitarCuandoEsteLibre();
+    return () => {
+      unsubscribe();
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, []);
 
   const [showTensionada, setShowTensionada] = useState(false);
   const [tensionadaFecha, setTensionadaFecha] = useState("");
@@ -45,6 +73,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [obraError, setObraError] = useState("");
 
   useEffect(() => {
+    if (!showObraElectronica) return;
     fetch(`${import.meta.env.BASE_URL}api/trabajadores`.replace(/\/+/g, "/"))
       .then((res) => res.json())
       .then(setTrabajadores)

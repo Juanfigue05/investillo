@@ -419,6 +419,12 @@ html.light::-webkit-scrollbar-thumb:hover {
     line-height: 1 !important;
   }
 
+  .nomina-report-print .nomina-table th {
+    text-align: center !important;
+    white-space: normal !important;
+    line-height: 1.1 !important;
+  }
+
   .nomina-report-print .nomina-tensionadas-table th,
   .nomina-report-print .nomina-tensionadas-table td,
   .nomina-report-print .nomina-table th,

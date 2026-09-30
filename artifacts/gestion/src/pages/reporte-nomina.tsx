@@ -6,6 +6,15 @@ import { Check, Pencil, Printer, Trash2, X } from "lucide-react";
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 const NOMBRES_MES = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
+function anchosColumnasNomina(aplicaDescuento30: boolean, aplicaSeguro: boolean) {
+  const pesos = [0.75, 2.4];
+  if (aplicaDescuento30) pesos.push(0.7, 1.8);
+  if (aplicaSeguro) pesos.push(1.4);
+  pesos.push(2.1);
+  const total = pesos.reduce((suma, peso) => suma + peso, 0);
+  return pesos.map((peso) => `${(peso / total) * 100}%`);
+}
+
 function datosDeEjemplo(mes: string) {
   const base = `${mes}-05`;
   return {
@@ -197,7 +206,9 @@ export default function ReporteNomina() {
             <div className="nomina-trabajadores-print">
             {paginasDeTrabajadores.map((pagina, indicePagina) => (
               <div key={indicePagina} className="nomina-print-page">
-              {pagina.map((t: any) => (
+              {pagina.map((t: any) => {
+              const anchos = anchosColumnasNomina(t.aplicaDescuento30, t.aplicaSeguro);
+              return (
               <div key={t.trabajadorId} className={`nomina-trabajador ${trabajadoresSeleccionados.includes(String(t.trabajadorId)) ? "" : "print-omit"}`}>
                 {/* Tabla amarilla del trabajador */}
                 <div className="border-2 border-amber-500 rounded-lg overflow-hidden text-xs" style={{ minWidth: 280 }}>
@@ -205,6 +216,9 @@ export default function ReporteNomina() {
                     MES {NOMBRES_MES[parseInt(mes.split("-")[1])].toUpperCase()} {mes.split("-")[0]} {t.nombre.toUpperCase()}
                   </div>
                   <table className="w-full bg-amber-50 nomina-table">
+                    <colgroup>
+                      {anchos.map((ancho: string, indice: number) => <col key={indice} style={{ width: ancho }} />)}
+                    </colgroup>
                     <thead>
                       <tr className="bg-amber-200 text-black">
                         <th className="px-2 py-1 text-left">FECHA</th>
@@ -263,7 +277,8 @@ export default function ReporteNomina() {
                 </div>
 
               </div>
-              ))}
+              );
+              })}
               </div>
             ))}
             </div>

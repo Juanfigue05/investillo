@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { StickyNote, Minus, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useGetNotas, useGuardarNotas } from "@workspace/api-client-react";
+import { getGetNotasQueryKey, useGetNotas, useGuardarNotas } from "@workspace/api-client-react";
 
 export function FloatingNotepad({ topbar }: { topbar?: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
   const [content, setContent] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { data: notas } = useGetNotas();
+  const { data: notas } = useGetNotas({ query: { queryKey: getGetNotasQueryKey(), enabled: isOpen } });
   const guardarMutation = useGuardarNotas();
 
   useEffect(() => {

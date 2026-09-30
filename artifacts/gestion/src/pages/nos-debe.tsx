@@ -1,6 +1,9 @@
 import { useState, useMemo } from "react";
 import { Layout } from "@/components/Layout";
 import {
+  getGetInventarioQueryKey,
+  getGetTrabajadoresQueryKey,
+  getGetClientesQueryKey,
   useGetCreditos,
   useCrearCredito,
   useActualizarCredito,
@@ -108,9 +111,6 @@ const emptyForm = {
 
 export default function NosDebePage() {
   const { data: creditos, isLoading } = useGetCreditos({ tipo: TIPO });
-  const { data: productos } = useGetInventario();
-  const { data: trabajadores } = useGetTrabajadores();
-  const { data: clientes } = useGetClientes({});
   const queryClient = useQueryClient();
 
   const [confirmarCancelarPago, setConfirmarCancelarPago] = useState<{
@@ -121,6 +121,9 @@ export default function NosDebePage() {
   } | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const { data: productos } = useGetInventario({ query: { queryKey: getGetInventarioQueryKey(), enabled: showForm } });
+  const { data: trabajadores } = useGetTrabajadores({ query: { queryKey: getGetTrabajadoresQueryKey(), enabled: showForm } });
+  const { data: clientes } = useGetClientes({}, { query: { queryKey: getGetClientesQueryKey({}), enabled: showForm } });
   const [form, setForm] = useState({ ...emptyForm });
   const [lineas, setLineas] = useState<LineaInput[]>([
     {

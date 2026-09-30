@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Calculator, Minus, X, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useGetInventario } from "@workspace/api-client-react";
+import { getGetInventarioQueryKey, useGetInventario } from "@workspace/api-client-react";
 import { formatCurrency, formatCurrencyDecimal } from "@/lib/utils";
 
 interface LineaConsulta {
@@ -15,7 +15,7 @@ export function FloatingPriceCheck({ topbar }: { topbar?: boolean }) {
   const [lineas, setLineas] = useState<LineaConsulta[]>([{ productoId: "", cantidad: "1" }]);
   const [busquedas, setBusquedas] = useState<string[]>([""]);
   const [dropdownOpen, setDropdownOpen] = useState<number | null>(null);
-  const { data: productos } = useGetInventario();
+  const { data: productos } = useGetInventario({ query: { queryKey: getGetInventarioQueryKey(), enabled: isOpen } });
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const portalRef = useRef<HTMLDivElement | null>(null);
