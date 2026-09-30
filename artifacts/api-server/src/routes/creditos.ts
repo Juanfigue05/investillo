@@ -270,6 +270,7 @@ async function mapCredito(c: typeof creditosTable.$inferSelect) {
     valorCredito,
     valorAbonado,
     valorRestante: Math.max(0, valorCredito - valorAbonado),
+    ordenImpresion: c.ordenImpresion,
     lineas: lineas.map(mapLinea),
     manoObra: manoObra
       ? {
@@ -301,6 +302,72 @@ router.get("/", async (req, res) => {
     ? await db.select().from(creditosTable).where(eq(creditosTable.tipo, tipo)).orderBy(desc(creditosTable.fechaFactura))
     : await db.select().from(creditosTable).orderBy(desc(creditosTable.fechaFactura));
   res.json(await Promise.all(creditos.map(mapCredito)));
+});
+
+router.put("/reordenar", async (req, res) => {
+  const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+  const [ya] = await db
+    .select()
+    .from(operacionesSincronizadasTable)
+    .where(eq(operacionesSincronizadasTable.operationId, operationId));
+  if (ya) {
+    res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId });
+    return;
+  }
+
+  const { ids, fecha } = req.body as { ids: number[]; fecha?: string };
+  if (
+    !Array.isArray(ids) ||
+    !ids.length ||
+    ids.some((id) => !Number.isInteger(id) || id <= 0) ||
+    new Set(ids).size !== ids.length
+  ) {
+    res.status(400).json({ error: "ids inválidos" });
+    return;
+  }
+  if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    res.status(400).json({ error: "fecha inválida" });
+    return;
+  }
+
+  const creditos = await db
+    .select({ id: creditosTable.id, creadoEn: creditosTable.creadoEn })
+    .from(creditosTable)
+    .where(and(inArray(creditosTable.id, ids), eq(creditosTable.tipo, "credito")));
+  const idsDelDia = creditos
+    .filter((credito) => credito.creadoEn && fechaColombia(credito.creadoEn) === fecha)
+    .map((credito) => credito.id);
+  if (idsDelDia.length !== ids.length) {
+    res.status(400).json({ error: "Los créditos no corresponden a la fecha seleccionada" });
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    for (const [index, id] of ids.entries()) {
+      await tx
+        .update(creditosTable)
+        .set({ ordenImpresion: index + 1 })
+        .where(eq(creditosTable.id, id));
+    }
+  });
+
+  if (!req.header("x-sync-apply")) {
+    await db.insert(eventosSincronizacionTable).values({
+      operationId,
+      entidad: "creditos_orden",
+      entidadId: operationId,
+      tipo: "reordenar",
+      metodo: "PUT",
+      endpoint: "/creditos/reordenar",
+      payload: req.body,
+      origen: "local",
+    });
+  }
+  await db
+    .insert(operacionesSincronizadasTable)
+    .values({ operationId, tipo: "creditos_orden", recursoId: null })
+    .onConflictDoNothing();
+  res.json({ ok: true });
 });
 
 // POST /creditos

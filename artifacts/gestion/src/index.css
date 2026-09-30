@@ -659,6 +659,13 @@ html.light::-webkit-scrollbar-thumb:hover {
     vertical-align: top !important;
   }
 
+  .creditos-print-table th:nth-child(4),
+  .creditos-print-table td:nth-child(4) {
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+  }
+
   /* Keep one complete, symmetric box around each credit and its writing space. */
   .print-credito-data td {
     height: 72px !important;

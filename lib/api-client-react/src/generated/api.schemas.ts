@@ -162,6 +162,7 @@ export interface Credito {
   valorCredito: number;
   valorAbonado: number;
   valorRestante: number;
+  ordenImpresion: number | null;
   creadoEn?: string;
   actualizadoEn?: string;
   lineas: CreditoLinea[];

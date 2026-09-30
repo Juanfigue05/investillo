@@ -15,6 +15,7 @@ export const creditosTable = pgTable("creditos", {
   descripcion: text("descripcion"),
   valorCredito: numeric("valor_credito", { precision: 15, scale: 2 }).notNull(),
   valorAbonado: numeric("valor_abonado", { precision: 15, scale: 2 }).notNull().default("0"),
+  ordenImpresion: integer("orden_impresion"),
   creadoEn: timestamp("creado_en").defaultNow(),
   actualizadoEn: timestamp("actualizado_en").defaultNow(),
 });

@@ -1237,6 +1237,9 @@ components:
           type: number
         valorRestante:
           type: number
+        ordenImpresion:
+          type: integer
+          nullable: true
         creadoEn:
           type: string
           format: date-time
@@ -1259,6 +1262,7 @@ components:
         - valorCredito
         - valorAbonado
         - valorRestante
+        - ordenImpresion
         - lineas
         - abonos
 

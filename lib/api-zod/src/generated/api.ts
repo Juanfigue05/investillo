@@ -399,6 +399,7 @@ export const GetCreditosResponseItem = zod.object({
   valorCredito: zod.number(),
   valorAbonado: zod.number(),
   valorRestante: zod.number(),
+  ordenImpresion: zod.number().nullable(),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
   lineas: zod.array(
@@ -504,6 +505,7 @@ export const AbonarCreditoResponse = zod.object({
   valorCredito: zod.number(),
   valorAbonado: zod.number(),
   valorRestante: zod.number(),
+  ordenImpresion: zod.number().nullable(),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
   lineas: zod.array(
@@ -555,6 +557,7 @@ export const EliminarAbonoCreditoResponse = zod.object({
   valorCredito: zod.number(),
   valorAbonado: zod.number(),
   valorRestante: zod.number(),
+  ordenImpresion: zod.number().nullable(),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
   lineas: zod.array(
@@ -616,6 +619,7 @@ export const EditarAbonoCreditoResponse = zod.object({
   valorCredito: zod.number(),
   valorAbonado: zod.number(),
   valorRestante: zod.number(),
+  ordenImpresion: zod.number().nullable(),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
   lineas: zod.array(
@@ -709,6 +713,7 @@ export const ActualizarCreditoResponse = zod.object({
   valorCredito: zod.number(),
   valorAbonado: zod.number(),
   valorRestante: zod.number(),
+  ordenImpresion: zod.number().nullable(),
   creadoEn: zod.coerce.date().optional(),
   actualizadoEn: zod.coerce.date().optional(),
   lineas: zod.array(

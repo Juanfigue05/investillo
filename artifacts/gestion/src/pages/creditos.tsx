@@ -1,4 +1,4 @@
-import { Fragment, useState, useMemo, useRef } from "react";
+import { type CSSProperties, Fragment, useState, useMemo, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import {
   useGetCreditos,
@@ -11,6 +11,7 @@ import {
   useGetInventario,
   useGetTrabajadores,
   useGetClientes,
+  type Credito,
 } from "@workspace/api-client-react";
 import {
   diasVencidos,
@@ -21,7 +22,11 @@ import {
   parseNumberCO,
   formatTelefono,
   soloDigitos,
+  fechaColombia,
 } from "@/lib/utils";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, arrayMove, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   Plus,
   Trash2,
@@ -32,6 +37,7 @@ import {
   ChevronUp,
   Clock,
   Printer,
+  GripVertical,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -40,7 +46,6 @@ import {
 } from "@/components/ManoObraSelector";
 import { encolarOperacion, esFalloDeRed } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
-import { fechaColombia } from "@/lib/utils";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 import {
   SearchableSelect,
@@ -54,6 +59,57 @@ const TIPO = "credito";
 const MO_NOMBRE = "Mano de Obra";
 const IVA_NOMBRE = "IVA (19%)";
 const SPECIAL_EXTERNO = "__externo__";
+
+function obtenerFechaRegistro(credito: Credito): string | null {
+  const creditoPendiente = credito as Credito & { _pendiente?: boolean };
+  if (!credito.creadoEn) return creditoPendiente._pendiente ? fechaHoyColombia() : null;
+  const timestamp = Date.parse(String(credito.creadoEn));
+  return Number.isNaN(timestamp) ? null : fechaColombia(new Date(timestamp));
+}
+
+function FilaCreditoSortable({ credito }: { credito: Credito }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: credito.id });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: "relative",
+    zIndex: isDragging ? 10 : "auto",
+  };
+  const ultimoAbono = credito.abonos?.[0];
+  const fechaAbono = ultimoAbono
+    ? new Date(`${String(ultimoAbono.fecha).slice(0, 10)}T12:00:00`).toLocaleDateString("es-CO")
+    : "—";
+
+  return (
+    <tr ref={setNodeRef} style={style} className="border-b border-border">
+      <td className="whitespace-nowrap p-2">
+        <span className="inline-flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="Arrastrar para cambiar el orden"
+            className="cursor-grab touch-none text-muted-foreground active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+          {new Date(`${String(credito.fechaFactura).slice(0, 10)}T12:00:00`).toLocaleDateString("es-CO")}
+        </span>
+      </td>
+      <td className="p-2">{credito.placaVehiculo || "—"}</td>
+      <td className="p-2">{credito.nombreCliente}</td>
+      <td className="p-2">{formatTelefono(credito.telefonoCliente) || "—"}</td>
+      <td className="p-2">{credito.concepto || "—"}</td>
+      <td className="whitespace-nowrap p-2 text-right">$ {credito.valorCredito.toLocaleString("es-CO")}</td>
+      <td className="whitespace-nowrap p-2 text-right">
+        {credito.valorAbonado > 0 ? `$ ${credito.valorAbonado.toLocaleString("es-CO")}` : "—"}
+      </td>
+      <td className="whitespace-nowrap p-2">{fechaAbono}</td>
+      <td className="whitespace-nowrap p-2 text-right">$ {credito.valorRestante.toLocaleString("es-CO")}</td>
+    </tr>
+  );
+}
 
 function agregarFilaOptimista(
   queryClient: any,
@@ -121,6 +177,11 @@ export default function Creditos() {
 
   const printMenuRef = useRef<HTMLDivElement>(null);
   const [printMenu, setPrintMenu] = useState(false);
+  const [fechaTabla, setFechaTabla] = useState(fechaHoyColombia());
+  const [ordenLocal, setOrdenLocal] = useState<Credito[] | null>(null);
+  const sensores = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
 
   const handlePrintWithOrientation = (
     orientation: "portrait" | "landscape",
@@ -896,20 +957,39 @@ export default function Creditos() {
   const pagados = allCreditos.filter((c) => c.valorRestante <= 0);
   const totalDeben = pendientes.reduce((s, c) => s + c.valorRestante, 0);
 
-  // Print follows the active filters, including an exact creation date.
-  const creditosParaImprimir = useMemo(() => {
-    return allCreditos
-      .filter((c) => c.valorRestante > 0)
-      .sort((a, b) => a.fechaFactura.localeCompare(b.fechaFactura));
-  }, [allCreditos]);
+  const creditosDelDia = useMemo(() => {
+    return [...(creditos ?? [])]
+      .filter(
+        (credito) =>
+          credito.valorRestante > 0 && obtenerFechaRegistro(credito) === fechaTabla,
+      )
+      .sort((a, b) => {
+        const orden =
+          (a.ordenImpresion ?? Number.MAX_SAFE_INTEGER) -
+          (b.ordenImpresion ?? Number.MAX_SAFE_INTEGER);
+        const fechaA = Date.parse(String(a.creadoEn ?? ""));
+        const fechaB = Date.parse(String(b.creadoEn ?? ""));
+        const creacion =
+          Number.isNaN(fechaA) || Number.isNaN(fechaB) ? 0 : fechaA - fechaB;
+        return orden || creacion || a.id - b.id;
+      });
+  }, [creditos, fechaTabla]);
 
-  const hoyStr = new Date().toLocaleDateString("es-CO", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-  const hoyLabel = hoyStr.charAt(0).toUpperCase() + hoyStr.slice(1);
+  const creditosParaTabla = useMemo(() => {
+    if (!ordenLocal) return creditosDelDia;
+    const idsActuales = new Set(creditosDelDia.map((credito) => credito.id));
+    const idsLocales = new Set(ordenLocal.map((credito) => credito.id));
+    return [
+      ...ordenLocal.filter((credito) => idsActuales.has(credito.id)),
+      ...creditosDelDia.filter((credito) => !idsLocales.has(credito.id)),
+    ];
+  }, [creditosDelDia, ordenLocal]);
+
+  const creditosParaImprimir = creditosParaTabla;
+  const fechaSeleccionadaLabel = new Date(`${fechaTabla}T12:00:00`).toLocaleDateString(
+    "es-CO",
+    { year: "numeric", month: "long", day: "numeric" },
+  );
 
   // Group pendientes by month
   const porMes = useMemo(() => {
@@ -933,22 +1013,58 @@ export default function Creditos() {
       }));
   }, [pendientes]);
 
+  const handleReordenarCreditos = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = creditosParaTabla.findIndex((credito) => credito.id === active.id);
+    const newIndex = creditosParaTabla.findIndex((credito) => credito.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const nuevoOrden = arrayMove(creditosParaTabla, oldIndex, newIndex);
+    setOrdenLocal(nuevoOrden);
+    const ids = nuevoOrden
+      .map((credito) => credito.id)
+      .filter((id) => Number.isInteger(id) && id > 0);
+
+    try {
+      const response = await fetch(`${API}/creditos/reordenar`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, fecha: fechaTabla }),
+      });
+      if (!response.ok) {
+        throw new Error(
+          (await response.json().catch(() => null))?.error || `Error ${response.status}`,
+        );
+      }
+      await queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
+    } catch (error) {
+      setOrdenLocal(null);
+      toast({
+        title: "No se pudo guardar el orden",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <Layout>
       {/* ===== PRINT ZONE — only visible when printing ===== */}
       <div className="print-zone print-only">
         {/* Date header */}
         <div className="print-date-header">
-          Créditos Pendientes{filtroFechaExacta ? ` del ${new Date(filtroFechaExacta + "T12:00:00").toLocaleDateString("es-CO")}` : ""} — {hoyLabel}
+          Créditos Pendientes del {fechaSeleccionadaLabel}
         </div>
         <table className="creditos-print-table">
           <thead>
             <tr>
-              <th style={{ width: "7%" }}>Fecha</th>
+              <th style={{ width: "12%" }}>Fecha</th>
               <th style={{ width: "9%" }}>Vehículo</th>
               <th style={{ width: "18%" }}>Cliente</th>
-              <th style={{ width: "11%" }}>Teléfono</th>
-              <th style={{ width: "16%" }}>Factura / Concepto</th>
+              <th style={{ width: "16%" }}>Teléfono</th>
+              <th style={{ width: "6%" }}>Factura</th>
               <th style={{ width: "10%", textAlign: "right" }}>Total Deuda</th>
               <th style={{ width: "10%", textAlign: "right" }}>Abono</th>
               <th style={{ width: "9%" }}>Fecha Abono</th>
@@ -1060,6 +1176,72 @@ export default function Creditos() {
             </button>
           </div>
         </div>
+
+        <section className="no-print overflow-hidden rounded-2xl border border-border bg-card">
+          <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">
+                Créditos pendientes para organizar
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {creditosParaTabla.length} crédito{creditosParaTabla.length === 1 ? "" : "s"}
+              </p>
+            </div>
+            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              Fecha de registro
+              <input
+                type="date"
+                value={fechaTabla}
+                onChange={(event) => {
+                  if (!event.target.value) return;
+                  setFechaTabla(event.target.value);
+                  setOrdenLocal(null);
+                }}
+                className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary"
+              />
+            </label>
+          </div>
+          <DndContext
+            sensors={sensores}
+            collisionDetection={closestCenter}
+            onDragEnd={handleReordenarCreditos}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1120px] text-sm">
+                <thead className="bg-muted/60 text-left text-xs text-muted-foreground">
+                  <tr>
+                    <th className="p-2">Fecha</th>
+                    <th className="p-2">Vehículo</th>
+                    <th className="p-2">Cliente</th>
+                    <th className="p-2">Teléfono</th>
+                    <th className="p-2">Factura</th>
+                    <th className="p-2 text-right">Total Deuda</th>
+                    <th className="p-2 text-right">Abono</th>
+                    <th className="p-2">Fecha Abono</th>
+                    <th className="p-2 text-right">Restante</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <SortableContext
+                    items={creditosParaTabla.map((credito) => credito.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {creditosParaTabla.map((credito) => (
+                      <FilaCreditoSortable key={credito.id} credito={credito} />
+                    ))}
+                  </SortableContext>
+                  {creditosParaTabla.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="p-6 text-center text-sm text-muted-foreground">
+                        No hay créditos pendientes en la fecha seleccionada.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </DndContext>
+        </section>
 
         {totalDeben > 0 && (
           <div className="bg-destructive/10 border border-destructive/20 rounded-2xl px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
