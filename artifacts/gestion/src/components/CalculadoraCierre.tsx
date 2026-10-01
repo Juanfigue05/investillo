@@ -33,9 +33,11 @@ interface RemachadaRow {
 
 export function CalculadoraCierre({
   open,
+  requestsEnabled = true,
   onClose,
 }: {
   open: boolean;
+  requestsEnabled?: boolean;
   onClose: () => void;
 }) {
   const [suma, setSuma] = useState<CampoManual[]>(
@@ -69,7 +71,7 @@ export function CalculadoraCierre({
   };
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !requestsEnabled) return;
     setBorradorCargado(false);
     Promise.all([
       fetch(`${API}/calculadora-cierre`).then((r) => r.json()),
@@ -85,15 +87,15 @@ export function CalculadoraCierre({
       setCaja(String(conteo.caja || 0));
       setBorradorCargado(true);
     }).catch(() => setBorradorCargado(true));
-  }, [open]);
+  }, [open, requestsEnabled]);
 
   useEffect(() => {
-    if (!open || !borradorCargado) return;
+    if (!open || !requestsEnabled || !borradorCargado) return;
     const temporizador = window.setTimeout(() => {
       void guardarBorrador();
     }, 500);
     return () => window.clearTimeout(temporizador);
-  }, [open, borradorCargado, suma, resta, manoObra, monedas, billetes, bandaBuscada]);
+  }, [open, requestsEnabled, borradorCargado, suma, resta, manoObra, monedas, billetes, bandaBuscada]);
 
   const datosBorrador = () => ({ suma, resta, manoObra, monedas, billetes, bandaBuscada });
 
@@ -137,8 +139,8 @@ export function CalculadoraCierre({
   const totalBolsaCaja = (parseFloat(bolsa) || 0) + (parseFloat(caja) || 0);
 
   useEffect(() => {
-    if (open && remachadas.length === 0) cargarRemachadas();
-  }, [open]);
+    if (open && requestsEnabled && remachadas.length === 0) cargarRemachadas();
+  }, [open, requestsEnabled]);
 
   // "resultadosBanda" depende de "remachadas" y "bandaBuscada" — por eso va DESPUÉS de que ambas ya existan arriba.
   const resultadosBanda = useMemo(

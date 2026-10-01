@@ -10,12 +10,12 @@ interface LineaConsulta {
   cantidad: string;
 }
 
-export function FloatingPriceCheck({ topbar }: { topbar?: boolean }) {
+export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?: boolean; requestsEnabled?: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
   const [lineas, setLineas] = useState<LineaConsulta[]>([{ productoId: "", cantidad: "1" }]);
   const [busquedas, setBusquedas] = useState<string[]>([""]);
   const [dropdownOpen, setDropdownOpen] = useState<number | null>(null);
-  const { data: productos } = useGetInventario({ query: { queryKey: getGetInventarioQueryKey(), enabled: isOpen } });
+  const { data: productos } = useGetInventario({ query: { queryKey: getGetInventarioQueryKey(), enabled: isOpen && requestsEnabled } });
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const portalRef = useRef<HTMLDivElement | null>(null);

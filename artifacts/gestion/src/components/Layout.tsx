@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useLocation } from "wouter";
 import { Sidebar } from "./Sidebar";
 import { FloatingNotepad } from "./FloatingNotepad";
 import { FloatingPriceCheck } from "./FloatingPriceCheck";
@@ -13,6 +14,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { RelojColombia } from "./RelojColombia";
 import { fechaHoyColombia } from "@/lib/utils";
 import { hayGetsApiActivos, suscribirGetsApi } from "@/lib/api-request-tracker";
+import { queryClient } from "@/lib/queryClient";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 function loadSet(key: string): Set<number> {
@@ -26,8 +28,10 @@ function saveSet(key: string, s: Set<number>) {
 const KEYS = { read: "alertas_read", dismissed: "alertas_dismissed", pinned: "alertas_pinned" };
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
   const [calcCierreOpen, setCalcCierreOpen] = useState(false);
-  const [alertasHabilitadas, setAlertasHabilitadas] = useState(false);
+  const [rutaLista, setRutaLista] = useState<string | null>(null);
+  const alertasHabilitadas = rutaLista === location;
   const { data: alertas } = useGetAlertasStock({
     query: {
       queryKey: getGetAlertasStockQueryKey(),
@@ -39,6 +43,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let timer: number | undefined;
+    setRutaLista(null);
+    if (location !== "/") {
+      void queryClient.cancelQueries({ queryKey: getGetAlertasStockQueryKey() });
+    }
     const habilitarCuandoEsteLibre = () => {
       if (hayGetsApiActivos()) {
         if (timer !== undefined) window.clearTimeout(timer);
@@ -48,7 +56,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       if (timer !== undefined) return;
       timer = window.setTimeout(() => {
         timer = undefined;
-        if (!hayGetsApiActivos()) setAlertasHabilitadas(true);
+        if (!hayGetsApiActivos()) setRutaLista(location);
       }, 150);
     };
     const unsubscribe = suscribirGetsApi(habilitarCuandoEsteLibre);
@@ -57,7 +65,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       unsubscribe();
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, []);
+  }, [location]);
 
   const [showTensionada, setShowTensionada] = useState(false);
   const [tensionadaFecha, setTensionadaFecha] = useState("");
@@ -73,12 +81,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [obraError, setObraError] = useState("");
 
   useEffect(() => {
-    if (!showObraElectronica) return;
+    if (!showObraElectronica || !alertasHabilitadas) return;
     fetch(`${import.meta.env.BASE_URL}api/trabajadores`.replace(/\/+/g, "/"))
       .then((res) => res.json())
       .then(setTrabajadores)
       .catch(() => setTrabajadores([]));
-  }, [showObraElectronica]);
+  }, [showObraElectronica, alertasHabilitadas]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [read, setRead] = useState<Set<number>>(() => loadSet(KEYS.read));
@@ -222,8 +230,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Hand className="w-5 h-5 lg:w-6 lg:h-6 text-amber-400" />
               <span className="text-[10px] lg:text-[11px] text-muted-foreground leading-none">Obra elec.</span>
             </button>
-            <FloatingPriceCheck topbar />   
-            <FloatingNotepad topbar />
+            <FloatingPriceCheck topbar requestsEnabled={alertasHabilitadas} />
+            <FloatingNotepad topbar requestsEnabled={alertasHabilitadas} />
             <BackupLocal topbar />
 
             <button onClick={() => setCalcCierreOpen(true)} className="flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors shrink-0" aria-label="Calculadora de cierre">
@@ -432,7 +440,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <CalculadoraCierre open={calcCierreOpen} onClose={() => setCalcCierreOpen(false)} />
+        <CalculadoraCierre open={calcCierreOpen} requestsEnabled={alertasHabilitadas} onClose={() => setCalcCierreOpen(false)} />
 
         {/* Main Content */}
         <main className="p-4 lg:p-8 flex-1 overflow-x-hidden">
