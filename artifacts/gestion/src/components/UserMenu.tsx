@@ -52,6 +52,21 @@ const DEFAULT_SETTINGS: Settings = {
   },
 };
 
+function getRequestFailureMessage(status?: number, detail?: string) {
+  const suffix = "Los cambios siguen guardados en este equipo.";
+  if (!navigator.onLine) return `El equipo indica que no hay conexión de red. ${suffix}`;
+  if (status !== undefined) {
+    const description = detail ? ` ${detail}` : "";
+    return `El servidor respondió con error (${status}).${description} ${suffix}`;
+  }
+  return `No se pudo contactar el servidor de preferencias; esto no confirma que falte Internet. ${suffix}`;
+}
+
+async function getResponseError(response: Response) {
+  const body = await response.json().catch(() => null);
+  return typeof body?.error === "string" ? body.error : "";
+}
+
 function loadLocalSettings(profile: string): Settings {
   try {
     const saved = JSON.parse(localStorage.getItem(`investillo-preferencias-${profile}`) || "null");
@@ -131,7 +146,14 @@ export function UserMenu() {
     setProfileName(PROFILE_NAMES[profile as keyof typeof PROFILE_NAMES] || "Administrador");
     localStorage.setItem("investillo-perfil", profile);
     fetch(`${import.meta.env.BASE_URL}api/preferencias?perfil=${encodeURIComponent(profile)}`.replace(/\/+/g, "/"))
-      .then((response) => response.ok ? response.json() : null)
+      .then(async (response) => {
+        if (!response.ok) {
+          const detail = await getResponseError(response);
+          setSaveState(getRequestFailureMessage(response.status, detail));
+          return null;
+        }
+        return response.json();
+      })
       .then((record) => {
         if (!active || !record) return;
         if (record.preferencias) {
@@ -139,7 +161,7 @@ export function UserMenu() {
           setSettings({ ...DEFAULT_SETTINGS, ...record.preferencias });
         }
       })
-      .catch(() => setSaveState("Sin conexión: se usan las preferencias guardadas en este equipo."));
+      .catch(() => setSaveState(getRequestFailureMessage()));
     return () => { active = false; };
   }, [profile]);
 
@@ -152,10 +174,14 @@ export function UserMenu() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ perfil: profile, nombre: name, preferencias: preferences }),
       });
-      if (!response.ok) throw new Error("No se pudieron guardar los cambios en el servidor.");
+      if (!response.ok) {
+        const detail = await getResponseError(response);
+        setSaveState(getRequestFailureMessage(response.status, detail));
+        return;
+      }
       setSaveState("Preferencias sincronizadas.");
     } catch {
-      setSaveState("Sin conexión: se guardaron solo en este equipo.");
+      setSaveState(getRequestFailureMessage());
     }
   };
 
