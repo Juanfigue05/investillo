@@ -23,6 +23,7 @@ import obraElectronicaRouter from "./obra-electronica";
 import calculadoraCierreRouter from "./calculadora-cierre";
 import syncRouter from "./sync";
 import descuentosInventarioRouter from "./descuentos-inventario";
+import preferenciasRouter from "./preferencias";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use("/obra-electronica", obraElectronicaRouter);
 router.use("/calculadora-cierre", calculadoraCierreRouter);
 router.use("/sync", syncRouter);
 router.use("/descuentos-inventario", descuentosInventarioRouter);
+router.use("/preferencias", preferenciasRouter);
 
 export default router;

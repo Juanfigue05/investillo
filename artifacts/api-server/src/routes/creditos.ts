@@ -12,7 +12,7 @@ import {
   eventosSincronizacionTable,
   operacionesSincronizadasTable,
 } from "@workspace/db/schema";
-import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
 
 const router: IRouter = Router();
@@ -248,7 +248,8 @@ async function mapCredito(c: typeof creditosTable.$inferSelect) {
   const lineas = await db
     .select()
     .from(creditoLineasTable)
-    .where(eq(creditoLineasTable.creditoId, c.id));
+    .where(eq(creditoLineasTable.creditoId, c.id))
+    .orderBy(asc(creditoLineasTable.id));
   const abonos = await db
     .select()
     .from(abonosCreditosTable)
@@ -289,6 +290,14 @@ async function mapCredito(c: typeof creditosTable.$inferSelect) {
       valorTotal: toNum(a.valorTotal),
       notas: a.notas ?? null,
       creadoEn: a.creadoEn,
+      lineas: (() => {
+        try {
+          const detalle = JSON.parse(a.lineaDetalle || "null");
+          return Array.isArray(detalle) ? detalle : (detalle?.lineas ?? []);
+        } catch {
+          return [];
+        }
+      })(),
     })),
     creadoEn: c.creadoEn,
     actualizadoEn: c.actualizadoEn,
@@ -622,7 +631,8 @@ router.put("/:id", async (req, res) => {
       const oldLineas = await tx
         .select()
         .from(creditoLineasTable)
-        .where(eq(creditoLineasTable.creditoId, id));
+        .where(eq(creditoLineasTable.creditoId, id))
+        .orderBy(asc(creditoLineasTable.id));
 
       for (const linea of oldLineas) {
         if (!linea.productoId) continue;
@@ -666,7 +676,7 @@ router.put("/:id", async (req, res) => {
         }
       }
 
-      const nuevasLineas = await tx.select().from(creditoLineasTable).where(eq(creditoLineasTable.creditoId, id));
+      const nuevasLineas = await tx.select().from(creditoLineasTable).where(eq(creditoLineasTable.creditoId, id)).orderBy(asc(creditoLineasTable.id));
       for (const linea of nuevasLineas) {
         if (!linea.productoId) continue;
         const distribucion = await descontarStockCredito(tx, linea.productoId, toNum(linea.cantidad));
@@ -706,7 +716,7 @@ router.post("/:id/abono", async (req, res) => {
     if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   }
   const creditoId = parseInt(req.params.id);
-  const { valor, lineas, customRef, formaPago, fechaAbono, fechaVentaDiaria } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string; formaPago?: string; fechaAbono?: string; fechaVentaDiaria?: string };
+  const { valor, lineas, customRef, formaPago, fechaAbono, fechaVentaDiaria, registrarIvaVentasDiarias } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string; formaPago?: string; fechaAbono?: string; fechaVentaDiaria?: string; registrarIvaVentasDiarias?: boolean };
   const abonoTotal = parseFloat(String(valor));
 
   if (!Number.isFinite(abonoTotal) || abonoTotal <= 0 || !Array.isArray(lineas) || lineas.length === 0) {
@@ -724,7 +734,8 @@ router.post("/:id/abono", async (req, res) => {
   const creditLines = await db
     .select()
     .from(creditoLineasTable)
-    .where(and(eq(creditoLineasTable.creditoId, creditoId), inArray(creditoLineasTable.id, lineIds)));
+    .where(and(eq(creditoLineasTable.creditoId, creditoId), inArray(creditoLineasTable.id, lineIds)))
+    .orderBy(asc(creditoLineasTable.id));
   const byId = new Map(creditLines.map((linea) => [linea.id, linea]));
 
   let appliedTotal = 0;
@@ -742,6 +753,8 @@ router.post("/:id/abono", async (req, res) => {
     appliedTotal += requestedValue;
     applied.push({ linea, valor: requestedValue });
   }
+  const creditLineOrder = new Map(creditLines.map((linea, index) => [linea.id, index]));
+  applied.sort((left, right) => (creditLineOrder.get(left.linea.id) ?? 0) - (creditLineOrder.get(right.linea.id) ?? 0));
 
   if (applied.length === 0 || appliedTotal > toNum(credito.valorCredito) - toNum(credito.valorAbonado) + 0.01 || Math.abs(appliedTotal - abonoTotal) > 0.01) {
     res.status(400).json({ error: "El abono supera el saldo de los productos seleccionados" });
@@ -776,6 +789,7 @@ router.post("/:id/abono", async (req, res) => {
       ref: customRef || undefined,
       formaPago: formaPago || undefined,
       ventaFecha: fechaVenta,
+      registrarIvaVentasDiarias: registrarIvaVentasDiarias !== false,
       lineas: applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })),
     });
     const [newAbono] = await tx
@@ -789,7 +803,7 @@ router.post("/:id/abono", async (req, res) => {
       const antes = toNum(linea.valorAbonado); // valor antes de este abono
       const restante = Math.max(0, total - antes);
       const pagaCompleto = Math.abs(av - restante) < 1;
-      await crearFilaVentaPago(tx, updatedCredito, linea, av, pagaCompleto, newAbono.id, fechaVenta, customRef, formaPago);
+      await crearFilaVentaPago(tx, updatedCredito, linea, av, pagaCompleto, newAbono.id, fechaVenta, customRef, formaPago, registrarIvaVentasDiarias !== false);
     }
 
     if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "abono_credito", entidadId: String(newAbono.id), tipo: "abono_crear", metodo: "POST", endpoint: `/creditos/{creditoId}/abono`, referenciasEndpoint: [{ marcador: "{creditoId}", entidad: "credito", valorLocal: String(creditoId) }], payload: req.body, origen: "local" });
@@ -887,7 +901,7 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
   }
   const creditoId = parseInt(req.params.id);
   const abonoId = parseInt(req.params.abonoId);
-  const { valor, lineas, customRef, formaPago, fechaAbono, fechaVentaDiaria } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string; formaPago?: string; fechaAbono?: string; fechaVentaDiaria?: string };
+  const { valor, lineas, customRef, formaPago, fechaAbono, fechaVentaDiaria, registrarIvaVentasDiarias } = req.body as { valor: number; lineas: { lineaId: number; valor: number }[]; customRef?: string; formaPago?: string; fechaAbono?: string; fechaVentaDiaria?: string; registrarIvaVentasDiarias?: boolean };
   const abonoTotal = parseFloat(String(valor));
 
   if (!Number.isFinite(abonoTotal) || abonoTotal <= 0 || !Array.isArray(lineas) || lineas.length === 0) {
@@ -914,7 +928,8 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
     const creditLines = await tx
       .select()
       .from(creditoLineasTable)
-      .where(and(eq(creditoLineasTable.creditoId, creditoId), inArray(creditoLineasTable.id, lineIds)));
+      .where(and(eq(creditoLineasTable.creditoId, creditoId), inArray(creditoLineasTable.id, lineIds)))
+      .orderBy(asc(creditoLineasTable.id));
     const byId = new Map(creditLines.map((l) => [l.id, l]));
 
     let appliedTotal = 0;
@@ -930,6 +945,8 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
       appliedTotal += requestedValue;
       applied.push({ linea, valor: requestedValue });
     }
+    const creditLineOrder = new Map(creditLines.map((linea, index) => [linea.id, index]));
+    applied.sort((left, right) => (creditLineOrder.get(left.linea.id) ?? 0) - (creditLineOrder.get(right.linea.id) ?? 0));
     if (applied.length === 0 || appliedTotal > toNum(credito.valorCredito) - (toNum(credito.valorAbonado) - toNum(abono.valorTotal)) + 0.01 || Math.abs(appliedTotal - abonoTotal) > 0.01) {
       throw new Error("El abono supera el saldo disponible");
     }
@@ -959,6 +976,7 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
       ref: customRef || undefined,
       formaPago: formaPago || undefined,
       ventaFecha: fechaVenta,
+      registrarIvaVentasDiarias: registrarIvaVentasDiarias !== false,
       lineas: applied.map((a) => ({ lineaId: a.linea.id, valor: a.valor })),
     });
     await tx
@@ -1061,9 +1079,12 @@ async function crearFilaVentaPago(
   fecha: string,
   customRef?: string,
   formaPago?: string,
+  registrarIvaVentasDiarias = true,
 ) {
   const referencia = refCredito(credito, customRef);
   const etiqueta = credito.tipo === "nosdebe" ? "Nos Debe" : "crédito";
+
+  if (linea.productoNombre === IVA_NOMBRE && !registrarIvaVentasDiarias) return;
 
   if (pagaCompleto && linea.productoNombre === MO_NOMBRE) {
     const { nombres, detalle } = await trabajadoresManoObra(tx, credito.id);
@@ -1176,7 +1197,7 @@ async function rebuildVentasCredito(tx: Tx, credito: typeof creditosTable.$infer
     );
   }
 
-  const lineas = await tx.select().from(creditoLineasTable).where(eq(creditoLineasTable.creditoId, credito.id));
+  const lineas = await tx.select().from(creditoLineasTable).where(eq(creditoLineasTable.creditoId, credito.id)).orderBy(asc(creditoLineasTable.id));
   const byId = new Map(lineas.map((l) => [l.id, l]));
 
   // Punto de partida por línea: lo abonado que NO proviene de estos abonos (p.ej. abono inicial)
@@ -1196,6 +1217,7 @@ async function rebuildVentasCredito(tx: Tx, credito: typeof creditosTable.$infer
     const det: { lineaId: number; valor: number }[] = Array.isArray(_raw) ? _raw : (_raw.lineas ?? []);
     const abonoCustomRef: string | undefined = Array.isArray(_raw) ? undefined : (_raw.ref ?? undefined);
     const abonoFormaPago: string | undefined = Array.isArray(_raw) ? undefined : (_raw.formaPago ?? undefined);
+    const registrarIva = Array.isArray(_raw) ? true : _raw.registrarIvaVentasDiarias !== false;
     for (const { lineaId, valor } of det) {
       const linea = byId.get(lineaId);
       if (!linea || valor <= 0) continue;
@@ -1204,7 +1226,7 @@ async function rebuildVentasCredito(tx: Tx, credito: typeof creditosTable.$infer
       const restante = Math.max(0, total - antes);
       const pagaCompleto = Math.abs(valor - restante) < 1;
       const fechaVenta = Array.isArray(_raw) ? abono.fecha : (_raw.ventaFecha || abono.fecha);
-      await crearFilaVentaPago(tx, credito, linea, valor, pagaCompleto, abono.id, fechaVenta, abonoCustomRef, abonoFormaPago);
+      await crearFilaVentaPago(tx, credito, linea, valor, pagaCompleto, abono.id, fechaVenta, abonoCustomRef, abonoFormaPago, registrarIva);
       running.set(lineaId, antes + valor);
     }
   }

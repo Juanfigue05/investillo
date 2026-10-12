@@ -92,7 +92,13 @@ ${colorConfig
 }
 `
           )
-          .join("\n"),
+          .join("\n") + `
+html.custom-chart-colors [data-chart=${id}] {
+${colorConfig
+  .map(([key], index) => `  --color-${key}: var(--custom-chart-${(index % 8) + 1}) !important;`)
+  .join("\n")}
+}
+`,
       }}
     />
   )

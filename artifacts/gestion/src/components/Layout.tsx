@@ -10,7 +10,7 @@ import { BackupLocal } from "./BackupLocal";
 import { ConnectionStatus } from "./ConnectionStatus";
 import { CalculadoraCierre } from "./CalculadoraCierre";
 import { Calculator as CalcIcon } from "lucide-react";
-import { ThemeToggle } from "./ThemeToggle";
+import { UserMenu } from "./UserMenu";
 import { RelojColombia } from "./RelojColombia";
 import { fechaHoyColombia } from "@/lib/utils";
 import { hayGetsApiActivos, suscribirGetsApi } from "@/lib/api-request-tracker";
@@ -254,6 +254,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </span>
               )}
             </button>
+            <UserMenu />
 
             {showTensionada && createPortal(
               <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 90 }}>
@@ -337,7 +338,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   >
                     <X className="h-4 w-4" />
                   </button>
-                  <ThemeToggle />
                 </div>
 
                 {/* Global action buttons */}

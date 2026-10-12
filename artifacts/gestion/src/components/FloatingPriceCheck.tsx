@@ -138,7 +138,7 @@ export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?
       </div>
 
       {/* Column headers */}
-      <div className="px-4 pt-3 pb-1.5 grid grid-cols-[1fr_52px_168px_20px] gap-x-3 flex-shrink-0">
+      <div className="px-4 pt-3 pb-1.5 grid grid-cols-[minmax(0,1fr)_40px_176px_16px] sm:grid-cols-[minmax(0,1fr)_68px_280px_20px] gap-x-1.5 sm:gap-x-3 flex-shrink-0">
         <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Producto</span>
         <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-center">Cant.</span>
         <div className="grid grid-cols-3 gap-x-1">
@@ -159,7 +159,7 @@ export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?
 
           return (
             <div key={i} className="space-y-1">
-              <div className="grid grid-cols-[1fr_52px_168px_20px] gap-x-3 items-center">
+              <div className="grid grid-cols-[minmax(0,1fr)_40px_176px_16px] sm:grid-cols-[minmax(0,1fr)_68px_280px_20px] gap-x-1.5 sm:gap-x-3 items-center">
                 <div className="relative">
                   <input
                     ref={(el) => { inputRefs.current[i] = el; }}
@@ -199,7 +199,7 @@ export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?
               </div>
 
               {calc && cant > 1 && (
-                <div className="grid grid-cols-[1fr_52px_168px_20px] gap-x-3">
+                <div className="grid grid-cols-[minmax(0,1fr)_40px_176px_16px] sm:grid-cols-[minmax(0,1fr)_68px_280px_20px] gap-x-1.5 sm:gap-x-3">
                   <div className="text-[10px] text-muted-foreground pl-1">× {cant} unidades</div>
                   <span />
                   <div className="grid grid-cols-3 gap-x-1 text-[10px]">
@@ -249,7 +249,7 @@ export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?
       {/* Grand total */}
       {calcLines.length > 0 && (
         <div className="border-t-2 border-border bg-muted/50 px-4 py-3 flex-shrink-0 rounded-b-2xl">
-          <div className="grid grid-cols-[1fr_52px_168px_20px] gap-x-3 items-center">
+          <div className="grid grid-cols-[minmax(0,1fr)_40px_176px_16px] sm:grid-cols-[minmax(0,1fr)_68px_280px_20px] gap-x-1.5 sm:gap-x-3 items-center">
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Gran Total</p>
             <span />
             <div className="grid grid-cols-3 gap-x-1">
@@ -285,7 +285,7 @@ export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?
               initial={{ opacity: 0, y: -10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -10, scale: 0.95 }}
-              className="absolute right-0 top-full mt-2 w-[min(780px,calc(100vw-2rem))] bg-card border border-border shadow-2xl rounded-2xl flex flex-col z-50"
+              className="absolute right-0 top-full mt-2 w-[min(960px,calc(100vw-2rem))] bg-card border border-border shadow-2xl rounded-2xl flex flex-col z-50"
               style={{ maxHeight: "min(600px, calc(100vh - 120px))" }}
             >
               {panelContent}
@@ -304,7 +304,7 @@ export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            className="mb-4 w-[780px] max-w-[calc(100vw-2rem)] bg-card border border-border shadow-2xl rounded-2xl flex flex-col"
+            className="mb-4 w-[960px] max-w-[calc(100vw-2rem)] bg-card border border-border shadow-2xl rounded-2xl flex flex-col"
             style={{ maxHeight: "min(600px, calc(100vh - 120px))" }}
           >
             {panelContent}

@@ -85,10 +85,10 @@ function GraficaPagos({ titulo, data, dataKey = "etiqueta" }: { titulo: string; 
           <YAxis tick={{ fontSize: 10, fill: "hsl(215 15% 65%)" }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} width={50} />
           <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ background: "hsl(222 25% 12%)", border: "1px solid hsl(217 20% 25%)", borderRadius: 8, color: "#fff" }} />
           <Legend wrapperStyle={{ fontSize: "11px" }} />
-          <Bar dataKey="Efectivo" stackId="a" fill="#34d399" />
-          <Bar dataKey="Cta. Ernesto" stackId="a" fill="#60a5fa" />
-          <Bar dataKey="Cta. Olga" stackId="a" fill="#f472b6" />
-          <Bar dataKey="Cta. Juan" stackId="a" fill="#fbbf24" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="Efectivo" stackId="a" fill="var(--graph-color-1, #34d399)" />
+          <Bar dataKey="Cta. Ernesto" stackId="a" fill="var(--graph-color-2, #60a5fa)" />
+          <Bar dataKey="Cta. Olga" stackId="a" fill="var(--graph-color-3, #f472b6)" />
+          <Bar dataKey="Cta. Juan" stackId="a" fill="var(--graph-color-4, #fbbf24)" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
