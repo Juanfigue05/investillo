@@ -141,7 +141,6 @@ export function UserMenu() {
 
   useEffect(() => {
     applySettings(settings);
-    localStorage.setItem(`investillo-preferencias-${profile}`, JSON.stringify(settings));
   }, [settings, profile]);
 
   useEffect(() => {
@@ -160,11 +159,21 @@ export function UserMenu() {
         return response.json();
       })
       .then((record) => {
-        if (!active || !record) return;
-        if (record.preferencias) {
-          if (record.nombre) setProfileName(record.nombre);
-          setSettings({ ...DEFAULT_SETTINGS, ...record.preferencias });
-        }
+        if (!active || !record || !record.preferencias) return;
+        const remoteSettings: Settings = {
+          ...localSettings,
+          ...record.preferencias,
+          colores: {
+            ...localSettings.colores,
+            ...record.preferencias.colores,
+          },
+          activas: {
+            ...localSettings.activas,
+            ...record.preferencias.activas,
+          },
+        };
+        if (record.nombre) setProfileName(record.nombre);
+        setSettings(remoteSettings);
       })
       .catch(() => setSaveState(getRequestFailureMessage()));
     return () => { active = false; };

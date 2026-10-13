@@ -5,7 +5,21 @@ import { preferenciasUsuarioTable } from "@workspace/db/schema";
 
 const router: IRouter = Router();
 const PERFILES = ["administrador", "secretaria", "propietario"] as const;
-const COLORES = ["verde", "turquesa", "azul", "cian", "ambar", "naranja", "rosa", "rojo"] as const;
+const COLORES = [
+  "verde",
+  "turquesa",
+  "azul",
+  "cian",
+  "ambar",
+  "naranja",
+  "rosa",
+  "rojo",
+  "violeta",
+  "indigo",
+  "verde-claro",
+  "gris",
+  "blanco",
+] as const;
 const CATEGORIAS = ["principal", "graficas", "botones"] as const;
 type Perfil = (typeof PERFILES)[number];
 type Color = (typeof COLORES)[number];
