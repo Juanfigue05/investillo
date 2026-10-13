@@ -4,7 +4,7 @@ import { CircleUserRound, Settings2, LockKeyhole, Sun, Moon, X, Check } from "lu
 
 type Mode = "light" | "dark";
 type Category = "principal" | "graficas" | "botones";
-type Palette = "verde" | "turquesa" | "azul" | "cian" | "ambar" | "naranja" | "rosa" | "rojo";
+type Palette = "verde" | "turquesa" | "azul" | "cian" | "ambar" | "naranja" | "rosa" | "rojo" | "violeta" | "indigo" | "verde-claro" | "gris" | "blanco";
 type Settings = {
   tema: Mode;
   tamanoLetra: number;
@@ -30,6 +30,11 @@ const PALETTES: { key: Palette; label: string; hue: number; saturation: number }
   { key: "naranja", label: "Naranja", hue: 25, saturation: 58 },
   { key: "rosa", label: "Rosa", hue: 340, saturation: 58 },
   { key: "rojo", label: "Rojo", hue: 4, saturation: 58 },
+  { key: "violeta", label: "Violeta", hue: 264, saturation: 58 },
+  { key: "indigo", label: "Índigo", hue: 234, saturation: 58 },
+  { key: "verde-claro", label: "Verde claro", hue: 156, saturation: 52 },
+  { key: "gris", label: "Gris", hue: 210, saturation: 12 },
+  { key: "blanco", label: "Blanco", hue: 0, saturation: 0 },
 ];
 const CATEGORY_NAMES: Record<Category, string> = {
   principal: "Color principal",
