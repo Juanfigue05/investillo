@@ -1,4 +1,5 @@
 import { type CSSProperties, Fragment, useState, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Layout } from "@/components/Layout";
 import {
   getGetInventarioQueryKey,
@@ -30,6 +31,7 @@ import {
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { calculatePaymentAllocations, getMaximumPayment, orderAllocationsByCreditLines, readDailyIvaPreference } from "@workspace/api-zod";
 import {
   Plus,
   Trash2,
@@ -192,6 +194,12 @@ export default function Creditos() {
     s.id = "__print_page_size";
     s.textContent = `@page { size: ${orientation}; }`;
     document.head.appendChild(s);
+    document.documentElement.classList.add("printing-creditos");
+    const limpiarImpresion = () => {
+      document.documentElement.classList.remove("printing-creditos");
+      s.remove();
+    };
+    window.addEventListener("afterprint", limpiarImpresion, { once: true });
     setPrintMenu(false);
     requestAnimationFrame(() => window.print());
   };
@@ -222,7 +230,6 @@ export default function Creditos() {
   const [showPay, setShowPay] = useState<number | null>(null);
   const [abono, setAbono] = useState("");
   const [abonoFecha, setAbonoFecha] = useState(fechaHoyColombia());
-  const [abonoVentaFecha, setAbonoVentaFecha] = useState(fechaHoyColombia());
   const [abonoRef, setAbonoRef] = useState("");
   const [abonoFormaPago, setAbonoFormaPago] = useState("efectivo");
   const [lineasSeleccionadas, setLineasSeleccionadas] = useState<number[]>([]);
@@ -582,15 +589,6 @@ export default function Creditos() {
         `Ventas Diarias para el abono inicial (${formatCurrency(initialAbono)}):\n\n${detalle}\n\n¿Confirmas registrar estos productos en Ventas Diarias?`,
       );
       if (!confirmado) return;
-      const fechaVenta = window.prompt(
-        "¿En qué fecha se descargan estos productos en Ventas Diarias?\nDeja la fecha de hoy o escribe otra fecha (AAAA-MM-DD).",
-        fechaHoyColombia(),
-      );
-      if (!fechaVenta || !/^\d{4}-\d{2}-\d{2}$/.test(fechaVenta)) {
-        alert("La fecha de Ventas Diarias no es válida");
-        return;
-      }
-      (form as any).abonoInicialVentaFecha = fechaVenta;
     }
 
     const data = {
@@ -608,7 +606,7 @@ export default function Creditos() {
       ...( !editingId && initialAbono > 0
         ? {
             abonoInicialFecha: form.abonoInicialFecha,
-            abonoInicialVentaFecha: (form as any).abonoInicialVentaFecha,
+            abonoInicialVentaFecha: form.abonoInicialFecha,
             abonoInicialRef: form.abonoInicialRef.trim() || undefined,
             abonoInicialFormaPago: form.abonoInicialFormaPago,
           }
@@ -745,11 +743,29 @@ export default function Creditos() {
     setShowPay(null);
     setAbono("");
     setAbonoFecha(fechaHoyColombia());
-    setAbonoVentaFecha(fechaHoyColombia());
     setAbonoRef("");
     setLineasSeleccionadas([]);
     setEditingAbonoId(null);
     setAbonoFormaPago("efectivo");
+  };
+
+  const balancesPago = (credito: any) => {
+    const pagoEditado = credito.abonos?.find((pago: any) => pago.id === editingAbonoId);
+    return credito.lineas.map((linea: any) => ({
+      lineId: linea.id,
+      remaining: linea.valorRestante + Number(pagoEditado?.lineas?.find((detalle: any) => detalle.lineaId === linea.id)?.valor || 0),
+    }));
+  };
+
+  const cambiarMontoAbono = (credito: any, value: string) => {
+    setAbono(value);
+    const pagoEditado = credito.abonos?.find((pago: any) => pago.id === editingAbonoId);
+    const maximo = getMaximumPayment(credito.valorCredito, credito.valorAbonado, pagoEditado?.valorTotal || 0);
+    if (Math.abs(Number(value) - maximo) < 0.01) {
+      setLineasSeleccionadas(balancesPago(credito).filter((linea: any) => linea.remaining > 0).map((linea: any) => linea.lineId));
+    } else {
+      setLineasSeleccionadas([]);
+    }
   };
 
   const handleAbono = (c: any) => {
@@ -762,44 +778,38 @@ export default function Creditos() {
       alert("Selecciona al menos un producto");
       return;
     }
-    const maxDisponible =
-      editingAbonoId !== null ? c.valorCredito : c.valorRestante;
+    const pagoEditado = c.abonos?.find((pago: any) => pago.id === editingAbonoId);
+    const maxDisponible = getMaximumPayment(c.valorCredito, c.valorAbonado, pagoEditado?.valorTotal || 0);
     if (abonoNum > maxDisponible + 1) {
       alert(`El abono no puede superar ${formatCurrency(maxDisponible)}`);
       return;
     }
-    const lineasUsadas =
-      editingAbonoId !== null
-        ? c.lineas
-        : c.lineas.filter((l: any) => l.valorRestante > 0);
-    const selected = lineasUsadas.filter((l: any) =>
-      lineasSeleccionadas.includes(l.id),
-    );
-    let rem = abonoNum;
-    const lineasAbono = selected
-      .map((l: any) => {
-        const tope =
-          editingAbonoId !== null
-            ? parseFloat(l.cantidad) * parseNumberCO(l.precioVenta)
-            : l.valorRestante;
-        const v = Math.min(tope, rem);
-        rem -= v;
-        return { lineaId: l.id, valor: v };
-      })
-      .filter((la: any) => la.valor > 0);
+    const selected = lineasSeleccionadas
+      .map((lineId) => c.lineas.find((linea: any) => linea.id === lineId))
+      .filter(Boolean);
+    const allocations = calculatePaymentAllocations(abonoNum, lineasSeleccionadas, balancesPago(c));
+    const lineasAbono = orderAllocationsByCreditLines(allocations.map((allocation) => ({ lineaId: allocation.lineId, valor: allocation.value })), c.lineas.map((linea: any) => linea.id));
     const sumaLineas = lineasAbono.reduce((suma: number, linea: any) => suma + linea.valor, 0);
     if (Math.abs(sumaLineas - abonoNum) > 0.01) {
       alert("La suma de los productos seleccionados no coincide con el valor del abono");
       return;
     }
+    const balances = balancesPago(c);
     const detalle = lineasAbono
       .map((linea: any) => {
         const producto = selected.find((item: any) => item.id === linea.lineaId);
-        const total = producto ? parseFloat(producto.cantidad) * parseNumberCO(producto.precioVenta) : 0;
-        return `${linea.valor >= total - 0.01 ? "PAGO COMPLETO" : "ABONO PARCIAL"}: ${producto?.productoNombre || "Producto"} - ${formatCurrency(linea.valor)}`;
+        const restante = balances.find((balance: any) => balance.lineId === linea.lineaId)?.remaining || 0;
+        return `${linea.valor >= restante - 0.01 ? "PAGO COMPLETO" : "ABONO PARCIAL"}: ${producto?.productoNombre || "Producto"} - ${formatCurrency(linea.valor)}`;
       })
       .join("\n");
-    if (!window.confirm(`Ventas Diarias para el abono (${formatCurrency(abonoNum)}):\n\n${detalle}\n\n¿Confirmas registrar estos productos?`)) return;
+    const parcial = lineasAbono.find((linea: any) => linea.valor < (balances.find((balance: any) => balance.lineId === linea.lineaId)?.remaining || 0) - 0.01);
+    const productoParcial = parcial && selected.find((producto: any) => producto.id === parcial.lineaId);
+    const avisoParcial = productoParcial ? `\n\n⚠️ ABONO PARCIAL: ${productoParcial.productoNombre}. Será el único producto que quede parcialmente pagado.` : "";
+    const tieneIva = selected.some((producto: any) => producto.productoNombre === "IVA (19%)");
+    const incluirIvaVentasDiarias = tieneIva && readDailyIvaPreference(localStorage)
+      ? window.confirm("Este crédito tiene una línea de IVA. ¿Deseas incluirla también en Ventas Diarias?")
+      : false;
+    if (!window.confirm(`Ventas Diarias para el abono (${formatCurrency(abonoNum)}):\n\n${detalle}${avisoParcial}\n\n¿Confirmas registrar estos productos?`)) return;
 
     const onSuccess = () => {
       queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
@@ -811,7 +821,8 @@ export default function Creditos() {
       valor: abonoNum,
       lineas: lineasAbono,
       fechaAbono: abonoFecha,
-      fechaVentaDiaria: abonoVentaFecha,
+      fechaVentaDiaria: abonoFecha,
+      registrarIvaVentasDiarias: incluirIvaVentasDiarias,
       customRef: abonoRef.trim() || undefined,
       formaPago: abonoFormaPago,
     };
@@ -1055,7 +1066,7 @@ export default function Creditos() {
   return (
     <Layout>
       {/* ===== PRINT ZONE — only visible when printing ===== */}
-      <div className="print-zone print-only">
+      {createPortal(<div className="print-zone print-only">
         {/* Date header */}
         <div className="print-date-header">
           Créditos Pendientes del {fechaSeleccionadaLabel}
@@ -1132,7 +1143,7 @@ export default function Creditos() {
             )}
           </tbody>
         </table>
-      </div>
+      </div>, document.body)}
       {/* ===== END PRINT ZONE ===== */}
 
       <div className="space-y-6">
@@ -1840,13 +1851,17 @@ export default function Creditos() {
                 />
                 {!editingId && (parseFloat(form.valorAbonado) || 0) > 0 && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 max-w-2xl">
-                    <input
-                      type="date"
-                      value={form.abonoInicialFecha}
-                      onChange={(e) => setForm({ ...form, abonoInicialFecha: e.target.value })}
-                      className="bg-background border border-border px-3 py-2 rounded-xl text-sm"
-                      aria-label="Fecha del abono inicial"
-                    />
+                    <label className="block text-xs font-medium text-muted-foreground">
+                      Seleccione fecha de pago <span className="text-destructive">*</span>
+                      <input
+                        type="date"
+                        value={form.abonoInicialFecha}
+                        onChange={(e) => setForm({ ...form, abonoInicialFecha: e.target.value })}
+                        className="w-full mt-1 bg-background border border-border px-3 py-2 rounded-xl text-sm"
+                        aria-label="Seleccione fecha de pago, obligatoria"
+                        required
+                      />
+                    </label>
                     <input
                       type="text"
                       placeholder="No. Remisión / REF"
@@ -2146,7 +2161,7 @@ export default function Creditos() {
                                 : `Máx ${formatCurrency(c.valorRestante)}`
                             }
                             value={abono}
-                            onChange={(e) => setAbono(e.target.value)}
+                                      onChange={(e) => cambiarMontoAbono(c, e.target.value)}
                             className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm mb-2 focus:ring-1 focus:ring-primary outline-none"
                           />
                           <select
@@ -2162,20 +2177,17 @@ export default function Creditos() {
                             <option value="cuenta_juan">Cuenta Juan</option>
                           </select>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-                            <input
-                              type="date"
-                              value={abonoFecha}
-                              onChange={(e) => setAbonoFecha(e.target.value)}
-                              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
-                              aria-label="Fecha del abono"
-                            />
-                            <input
-                              type="date"
-                              value={abonoVentaFecha}
-                              onChange={(e) => setAbonoVentaFecha(e.target.value)}
-                              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
-                              aria-label="Fecha de Ventas Diarias"
-                            />
+                            <label className="block text-xs font-medium text-muted-foreground">
+                              Seleccione fecha de pago
+                              <input
+                                type="date"
+                                value={abonoFecha}
+                                onChange={(e) => setAbonoFecha(e.target.value)}
+                                className="w-full mt-1 bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                                aria-label="Seleccione fecha de pago"
+                                required
+                              />
+                            </label>
                             <input
                               type="text"
                               placeholder="No. Remisión / REF"
@@ -2205,13 +2217,9 @@ export default function Creditos() {
                                       checked={lineasSeleccionadas.includes(
                                         l.id,
                                       )}
-                                      disabled={disponible <= 0}
+                                      disabled={balancesPago(c).find((balance: any) => balance.lineId === l.id)?.remaining <= 0}
                                       onChange={() =>
-                                        setLineasSeleccionadas((prev) =>
-                                          prev.includes(l.id)
-                                            ? prev.filter((id) => id !== l.id)
-                                            : [...prev, l.id],
-                                        )
+                                        setLineasSeleccionadas((prev) => prev.includes(l.id) ? prev.filter((id) => id !== l.id) : [...prev, l.id])
                                       }
                                       className="w-3.5 h-3.5 accent-primary"
                                     />
@@ -2463,7 +2471,7 @@ export default function Creditos() {
                           editingAbonoId !== null ? "Nuevo valor" : "Valor"
                         }
                         value={abono}
-                        onChange={(e) => setAbono(e.target.value)}
+                        onChange={(e) => cambiarMontoAbono(c, e.target.value)}
                         className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm mb-2 focus:ring-1 focus:ring-primary outline-none"
                       />
                       <select
@@ -2491,13 +2499,8 @@ export default function Creditos() {
                               <input
                                 type="checkbox"
                                 checked={lineasSeleccionadas.includes(l.id)}
-                                onChange={() =>
-                                  setLineasSeleccionadas((prev) =>
-                                    prev.includes(l.id)
-                                      ? prev.filter((id) => id !== l.id)
-                                      : [...prev, l.id],
-                                  )
-                                }
+                                disabled={balancesPago(c).find((balance: any) => balance.lineId === l.id)?.remaining <= 0}
+                                onChange={() => setLineasSeleccionadas((prev) => prev.includes(l.id) ? prev.filter((id) => id !== l.id) : [...prev, l.id])}
                                 className="w-3.5 h-3.5 accent-primary"
                               />
                               <span className="truncate">

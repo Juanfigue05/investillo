@@ -37,6 +37,12 @@ const HTML_FORMULARIO = (error?: string) => `<!DOCTYPE html>
 export function bloqueoAccesoRemoto(req: Request, res: Response, next: NextFunction) {
   if (!CLAVE_ACCESO) { next(); return; } // si no se configuró la clave, no bloquea nada (útil en local)
 
+  if (req.path === "/bloquear" && req.method === "POST") {
+    res.clearCookie(NOMBRE_COOKIE, { path: "/", httpOnly: true, sameSite: "lax" });
+    res.redirect(303, "/");
+    return;
+  }
+
   // Deja pasar libre el chequeo de "sigo vivo" que usa el robot de GitHub —
   // no muestra ningún dato del negocio, solo confirma que el servidor responde.
   if (req.path === "/api/healthz" || req.path === "/api/healthz-db") { next(); return; }
