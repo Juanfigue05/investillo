@@ -3,6 +3,7 @@ import { db, pool } from "@workspace/db";
 import { eventosSincronizacionTable, ventasDiariasTable, productosTable } from "@workspace/db/schema";
 import { eq, sql, and, gte, lte } from "drizzle-orm";
 import { manoObraTable, distribucionesTable, trabajadoresTable, operacionesSincronizadasTable } from "@workspace/db/schema";
+import { esLineaManoObra } from "../lib/conceptos-mano-obra";
 
 const router: IRouter = Router();
 
@@ -175,7 +176,9 @@ router.post("/", async (req, res) => {
       const [creada] = await tx.insert(ventasDiariasTable).values({
         fecha,
         referencia,
-        tipoLinea: tipoLinea || "venta",
+        tipoLinea: esLineaManoObra(productoNombre, productoId) && (!tipoLinea || tipoLinea === "venta")
+          ? "manoobra"
+          : tipoLinea || "venta",
         productoId: productoId || null,
         productoNombre: productoNombre || null,
         productoCodigo: productoCodigo || null,
@@ -230,16 +233,28 @@ router.post("/lote-pago-antiguo", async (req, res) => {
         .where(eq(operacionesSincronizadasTable.operationId, operationId));
       if (procesadaDuranteLaTransaccion) return [];
 
-      const valores = items.map((item) => ({
-        fecha: String(item.fecha), referencia: String(item.referencia || ""), tipoLinea: item.tipoLinea === "manoobra" ? "manoobra" : "venta",
-        productoId: item.productoId ? Number(item.productoId) : null,
-        productoNombre: String(item.productoNombre || ""), productoCodigo: item.productoCodigo ? String(item.productoCodigo) : null,
-        productoMarca: item.productoMarca ? String(item.productoMarca) : null,
-        cantidad: String(parseFloat(String(item.cantidad))), precioCompraUnidad: String(parseFloat(String(item.precioCompraUnidad || 0))),
-        precioVentaUnidad: String(parseFloat(String(item.precioVentaUnidad))), precioVentaTotal: String(parseFloat(String(item.precioVentaTotal))),
-        beneficio: String(parseFloat(String(item.beneficio || 0))), descripcion: item.descripcion ? String(item.descripcion) : "Pago de crédito antiguo",
-        formaPago: item.formaPago ? String(item.formaPago) : null, origen: "pago_credito_antiguo", afectaInventario: false,
-      }));
+      const valores = items.map((item) => {
+        const productoId = item.productoId ? Number(item.productoId) : null;
+        const productoNombre = String(item.productoNombre || "");
+        return {
+          fecha: String(item.fecha),
+          referencia: String(item.referencia || ""),
+          tipoLinea: item.tipoLinea === "manoobra" || esLineaManoObra(productoNombre, productoId) ? "manoobra" : "venta",
+          productoId,
+          productoNombre,
+          productoCodigo: item.productoCodigo ? String(item.productoCodigo) : null,
+          productoMarca: item.productoMarca ? String(item.productoMarca) : null,
+          cantidad: String(parseFloat(String(item.cantidad))),
+          precioCompraUnidad: String(parseFloat(String(item.precioCompraUnidad || 0))),
+          precioVentaUnidad: String(parseFloat(String(item.precioVentaUnidad))),
+          precioVentaTotal: String(parseFloat(String(item.precioVentaTotal))),
+          beneficio: String(parseFloat(String(item.beneficio || 0))),
+          descripcion: item.descripcion ? String(item.descripcion) : "Pago de crédito antiguo",
+          formaPago: item.formaPago ? String(item.formaPago) : null,
+          origen: "pago_credito_antiguo",
+          afectaInventario: false,
+        };
+      });
       if (valores.some((item) => !item.fecha || !item.referencia || !item.productoNombre || !Number.isFinite(Number(item.precioVentaUnidad)))) throw new Error("Todas las filas deben tener fecha, referencia, concepto y precio de venta válidos");
       const insertadas = await tx.insert(ventasDiariasTable).values(valores).returning();
       if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "venta", entidadId: operationId, tipo: "crear_lote_pago_antiguo", metodo: "POST", endpoint: "/ventas/lote-pago-antiguo", payload: req.body, origen: "local" });
@@ -355,6 +370,9 @@ router.put("/:id", async (req, res) => {
     cantidad, precioCompraUnidad, precioVentaUnidad,
     precioVentaTotal, beneficio, descripcion, formaPago, origen, afectaInventario
   } = req.body;
+  const tipoLineaActualizada = esLineaManoObra(productoNombre, productoId) && (!tipoLinea || tipoLinea === "venta")
+    ? "manoobra"
+    : tipoLinea || "venta";
 
   // Leer fila actual antes de modificar — necesario para el delta de stock y preservar descripción
   const [existing] = await db.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.id, id));
@@ -370,7 +388,7 @@ router.put("/:id", async (req, res) => {
   const setData: Partial<typeof ventasDiariasTable.$inferInsert> = {
     fecha,
     referencia,
-    tipoLinea: tipoLinea || "venta",
+    tipoLinea: tipoLineaActualizada,
     productoId: productoId || null,
     productoNombre: productoNombre || null,
     productoCodigo: productoCodigo || null,
@@ -418,7 +436,7 @@ router.put("/:id", async (req, res) => {
       }
 
       const oldEsVenta = existing.tipoLinea === "venta" || !existing.tipoLinea;
-      const newEsVenta = tipoLinea === "venta" || !tipoLinea;
+      const newEsVenta = tipoLineaActualizada === "venta";
       const oldProdId = existing.productoId;
       const newProdId = productoId ? parseInt(String(productoId)) : null;
       const esFilaManual = !existing.creditoAbonoId;

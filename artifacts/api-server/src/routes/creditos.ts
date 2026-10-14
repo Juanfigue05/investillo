@@ -14,6 +14,7 @@ import {
 } from "@workspace/db/schema";
 import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
+import { esLineaManoObra } from "../lib/conceptos-mano-obra";
 
 const router: IRouter = Router();
 
@@ -210,7 +211,6 @@ async function syncManoObraCredito(
   }
 }
 
-const MO_NOMBRE = "Mano de Obra";
 type CreditoLineaInput = {
   id?: number | null;
   productoId?: number | null;
@@ -1047,7 +1047,7 @@ function refCredito(credito: typeof creditosTable.$inferSelect, customRef?: stri
 /**
  * Crea la fila de ventas_diarias correspondiente al pago (total o parcial) de una línea.
  * - Pago completo de producto → fila "venta" (suma al total).
- * - Pago completo de mano de obra → fila "manoobra" con trabajadores (no suma al total).
+ * - Pago completo de un servicio → fila "manoobra" (no suma al total).
  * - Pago parcial → fila "credito" tipo Abono (no suma al total).
  * En todos los casos la referencia lleva el concepto/nombre del crédito.
  */
@@ -1065,14 +1065,14 @@ async function crearFilaVentaPago(
   const referencia = refCredito(credito, customRef);
   const etiqueta = credito.tipo === "nosdebe" ? "Nos Debe" : "crédito";
 
-  if (pagaCompleto && linea.productoNombre === MO_NOMBRE) {
+  if (pagaCompleto && esLineaManoObra(linea.productoNombre, linea.productoId)) {
     const { nombres, detalle } = await trabajadoresManoObra(tx, credito.id);
     const valor = toNum(linea.cantidad) * toNum(linea.precioVenta);
     await tx.insert(ventasDiariasTable).values({
       fecha,
       referencia,
       tipoLinea: "manoobra",
-      productoNombre: MO_NOMBRE,
+      productoNombre: linea.productoNombre,
       productoMarca: nombres || linea.productoMarca || null,
       cantidad: "1",
       precioCompraUnidad: "0",
