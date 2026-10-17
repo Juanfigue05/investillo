@@ -20,21 +20,21 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/cierre-diario", label: "Cierre Diario", icon: Calculator },
   { href: "/inventario", label: "Inventario", icon: Package },
   { href: "/ventas", label: "Ventas Diarias", icon: ShoppingCart },
   { href: "/creditos", label: "Créditos", icon: CreditCard },
   { href: "/nos-debe", label: "Nos Debe", icon: HandCoins },
+  { href: "/cierre-diario", label: "Cierre Diario", icon: Calculator },
   { href: "/compras", label: "Compras", icon: Truck },
   { href: "/clientes", label: "Clientes", icon: Users },
-  { href: "/historial", label: "Historial de Ventas", icon: BookOpen },  
-  { href: "/reporte-pagos", label: "Reporte de Pagos", icon: Wallet },
   { href: "/mano-obra", label: "Trabajadores", icon: Wrench },
-  { href: "/historial-cierres", label: "Historial Cierres", icon: History },
-  { href: "/historial-precios", label: "Historial de Precios", icon: TrendingUp },
-  { href: "/reporte-nomina", label: "Reporte de Nómina", icon: Wallet },
   { href: "/obra-electronica", label: "Obra Electrónica", icon: Hand },
-  { href: "/descuentos-inventario", label: "Descontar inventario", icon: MinusCircle },
+  { href: "/reporte-nomina", label: "Nómina", icon: Wallet },
+  { href: "/historial", label: "Historial Ventas", icon: BookOpen },
+  { href: "/historial-cierres", label: "Historial Cierres", icon: History },
+  { href: "/historial-precios", label: "Historial Precios", icon: TrendingUp },
+  { href: "/reporte-pagos", label: "Reporte Pago", icon: Wallet },
+  { href: "/descuentos-inventario", label: "Descontar", icon: MinusCircle },
 ];
 
 export function Sidebar({

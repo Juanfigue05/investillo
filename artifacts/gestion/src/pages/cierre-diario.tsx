@@ -467,13 +467,24 @@ export default function CierreDiario() {
 
   useEffect(() => {
     if (!cierreInicialCargado || editFecha || items.length === 0) return;
-    const datos = { trabajadores: items, gruposTrabajo: gruposDia };
+    const trabajadoresConCalculo = items.map((trabajador) => ({
+      ...trabajador,
+      calc: calcTrabajador(trabajador, gruposDia, trabajadores || []),
+    }));
+    const datos = {
+      trabajadores: trabajadoresConCalculo,
+      gruposTrabajo: gruposDia,
+      totalPagar: trabajadoresConCalculo.reduce(
+        (total, trabajador) => total + trabajador.calc.total,
+        0,
+      ),
+    };
     const timer = window.setTimeout(() => {
       guardarBorrador(fechaCierre, datos).catch(() => undefined);
       try { sessionStorage.setItem(CIERRE_ACTIVO_KEY, fechaCierre); } catch { /* almacenamiento de sesión no es la fuente de datos */ }
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [cierreInicialCargado, editFecha, fechaCierre, gruposDia, items]);
+  }, [cierreInicialCargado, editFecha, fechaCierre, gruposDia, items, trabajadores]);
 
   useEffect(() => {
     if (!cierreInicialCargado || editFecha || items.length > 0 || !trabajadores) return;

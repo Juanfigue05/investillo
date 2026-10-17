@@ -144,6 +144,7 @@ export default function Inventario() {
   const actualizarMutation = useActualizarProducto();
   const eliminarMutation = useEliminarProducto();
   const [showTrasladar, setShowTrasladar] = useState(false);
+  const [showMoreActions, setShowMoreActions] = useState(false);
   const [trasladarProductoId, setTrasladarProductoId] = useState("");
   const [trasladarCantidad, setTrasladarCantidad] = useState("");
   const [trasladando, setTrasladando] = useState(false);
@@ -246,15 +247,24 @@ export default function Inventario() {
 
   const handleTrasladar = async () => {
     if (!trasladarProductoId || !trasladarCantidad) return;
+    const cantidad = Number(trasladarCantidad);
+    if (!Number.isFinite(cantidad) || cantidad <= 0) {
+      alert("Ingresa una cantidad mayor que cero.");
+      return;
+    }
+    if (cantidad > stockOrigenTraslado) {
+      alert(`La cantidad supera el stock disponible (${stockOrigenTraslado}).`);
+      return;
+    }
     setTrasladando(true);
     try {
       const res = await fetch(
-        `${API}/inventario/${trasladarProductoId}/trasladar`,
+        `${API}/ventas/${trasladarProductoId}/trasladar`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            cantidad: parseFloat(trasladarCantidad),
+            cantidad,
             direccion: direccionTraslado,
           }),
         },
@@ -275,6 +285,11 @@ export default function Inventario() {
 
   const productoTrasladar = productos?.find(
     (p) => String(p.id) === trasladarProductoId,
+  );
+  const stockOrigenTraslado = Number(
+    (productoTrasladar as any)?.[
+      direccionTraslado === "local-bodega" ? "stockLocal" : "stockBodega"
+    ] ?? 0,
   );
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -726,25 +741,6 @@ export default function Inventario() {
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            {/* Download template */}
-            <a
-              href={`${API}/inventario-import/template-completa`}
-              download="plantilla_inventario_completa.xlsx"
-              className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm"
-            >
-              <FileDown className="w-4 h-4 text-green-400" />
-              Descargar Plantilla
-            </a>
-
-            <a
-              href={`${API}/inventario-import/exportar-completo`}
-              download="inventario_completo.xlsx"
-              className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm"
-            >
-              <FileDown className="w-4 h-4 text-primary" />
-              Exportar Inventario
-            </a>
-
             {/* Import Excel button */}
             <input
               ref={fileInputRef}
@@ -753,43 +749,13 @@ export default function Inventario() {
               className="hidden"
               onChange={handleImport}
             />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={importando}
-              className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm disabled:opacity-60"
-            >
-              {importando ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Importando...
-                </>
-              ) : (
-                <>
-                  <Upload className="w-4 h-4 text-primary" /> Importar Excel
-                </>
-              )}
-            </button>
-                        <input
+            <input
               ref={fileInputCompletoRef}
               type="file"
               accept=".xlsx,.xls"
               className="hidden"
               onChange={handlePrevisualizar}
             />
-            <button
-              onClick={() => fileInputCompletoRef.current?.click()}
-              disabled={previsualizando}
-              className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 border border-primary/40 text-primary rounded-xl font-medium hover:bg-primary/20 transition-all shadow-md whitespace-nowrap text-sm disabled:opacity-60"
-            >
-              {previsualizando ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Comparando...
-                </>
-              ) : (
-                <>
-                  <Upload className="w-4 h-4" /> Importar y Revisar Cambios
-                </>
-              )}
-            </button>
             <button
               onClick={() => setShowTrasladar(true)}
               className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm"
@@ -830,6 +796,83 @@ export default function Inventario() {
               <Plus className="w-4 h-4" />
               Nuevo Producto
             </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowMoreActions((open) => !open)}
+                aria-expanded={showMoreActions}
+                className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm"
+              >
+                Más acciones
+                <ChevDown
+                  className={`w-4 h-4 transition-transform ${showMoreActions ? "rotate-180" : ""}`}
+                />
+              </button>
+              {showMoreActions && (
+                <div className="absolute right-0 top-full z-30 mt-2 flex min-w-56 flex-col gap-1 rounded-xl border border-border bg-card p-2 shadow-xl">
+                  <a
+                    href={`${API}/inventario-import/template-completa`}
+                    download="plantilla_inventario_completa.xlsx"
+                    onClick={() => setShowMoreActions(false)}
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+                  >
+                    <FileDown className="w-4 h-4 text-green-400" />
+                    Descargar plantilla
+                  </a>
+                  <a
+                    href={`${API}/inventario-import/exportar-completo`}
+                    download="inventario_completo.xlsx"
+                    onClick={() => setShowMoreActions(false)}
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+                  >
+                    <FileDown className="w-4 h-4 text-primary" />
+                    Exportar inventario
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMoreActions(false);
+                      fileInputRef.current?.click();
+                    }}
+                    disabled={importando}
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-60"
+                  >
+                    {importando ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Importando...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4 text-primary" />
+                        Importar Excel
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMoreActions(false);
+                      fileInputCompletoRef.current?.click();
+                    }}
+                    disabled={previsualizando}
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-60"
+                  >
+                    {previsualizando ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Comparando...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4 text-primary" />
+                        Importar y revisar cambios
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex gap-2 border-b border-border">
             <button
@@ -975,11 +1018,25 @@ export default function Inventario() {
                     ? "Trasladar de Local a Bodega"
                     : "Trasladar de Bodega a Local"}
                 </h3>
-                <select value={direccionTraslado} onChange={(e) => setDireccionTraslado(e.target.value as any)}
-                  className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm mb-3">
-                  <option value="bodega-local">📦 Bodega → 🏪 Local</option>
-                  <option value="local-bodega">🏪 Local → 📦 Bodega</option>
-                </select>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    Dirección del traslado
+                  </label>
+                  <select
+                    value={direccionTraslado}
+                    onChange={(e) =>
+                      setDireccionTraslado(
+                        e.target.value === "local-bodega"
+                          ? "local-bodega"
+                          : "bodega-local",
+                      )
+                    }
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="bodega-local">📦 Bodega → 🏪 Local</option>
+                    <option value="local-bodega">🏪 Local → 📦 Bodega</option>
+                  </select>
+                </div>
                 <div>
                   <label className="block text-xs font-medium text-muted-foreground mb-1">
                     Producto
@@ -991,7 +1048,12 @@ export default function Inventario() {
                         nombre: p.nombre,
                         codigo: p.codigo,
                         marca: p.marca || undefined,
-                        stockActual: (p as any).stockBodega,
+                        stockActual:
+                          (p as any)[
+                            direccionTraslado === "local-bodega"
+                              ? "stockLocal"
+                              : "stockBodega"
+                          ],
                         stockMinimo: 0,
                       }),
                     )}
@@ -1024,10 +1086,16 @@ export default function Inventario() {
                   </label>
                   <input
                     type="number"
+                    min="0"
+                    max={stockOrigenTraslado}
+                    step="any"
                     value={trasladarCantidad}
                     onChange={(e) => setTrasladarCantidad(e.target.value)}
                     className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
                   />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Disponible en el origen: {stockOrigenTraslado}
+                  </p>
                 </div>
 
                 <div className="flex gap-2 pt-2">
@@ -1565,7 +1633,7 @@ export default function Inventario() {
           )}
 
           {/* Search + Filter bar */}
-          <div className="flex flex-col sm:flex-row gap-3">
+          {vista === "productos" && <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
@@ -1610,13 +1678,13 @@ export default function Inventario() {
                 </option>
               ))}
             </select>
-          </div>
+          </div>}
 
           {vista === "productos" && (
             <>
               {/* Filter Panel */}
               {showFilters && (
-                <div className="bg-card border border-border rounded-2xl p-4 shadow-lg animate-in fade-in slide-in-from-top-2">
+                <div className="rounded-2xl border border-border/80 bg-gradient-to-br from-card to-card/80 p-4 shadow-xl shadow-black/10 animate-in fade-in slide-in-from-top-2 sm:p-5">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-sm font-bold text-foreground">
                       Filtros de Inventario
@@ -1631,10 +1699,10 @@ export default function Inventario() {
                       </button>
                     )}
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {/* Marca filter */}
-                    <div>
-                      <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    <div className="rounded-xl border border-border/70 bg-background/50 p-3">
+                      <label className="mb-2 block text-xs font-semibold tracking-wide text-foreground">
                         Marca
                       </label>
                       <input
@@ -1647,28 +1715,26 @@ export default function Inventario() {
                             marcaBusqueda: e.target.value,
                           }))
                         }
-                        className="w-full bg-background border border-border px-3 py-1.5 rounded-lg text-xs mb-2 focus:ring-1 focus:ring-primary outline-none"
+                        className="mb-3 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                       />
-                      <div className="max-h-40 overflow-y-auto space-y-1">
+                      <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
                         {filteredMarcas.length === 0 ? (
-                          <p className="text-xs text-muted-foreground italic">
+                          <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
                             Sin marcas disponibles
                           </p>
                         ) : (
                           filteredMarcas.map((m) => (
                             <label
                               key={m}
-                              className="flex items-center gap-2 cursor-pointer group"
+                              className={`flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 transition-colors ${filters.marcas.includes(m) ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted/70"}`}
                             >
                               <input
                                 type="checkbox"
                                 checked={filters.marcas.includes(m)}
                                 onChange={() => toggleMarca(m)}
-                                className="w-4 h-4 rounded accent-primary"
+                                className="h-4 w-4 rounded accent-primary"
                               />
-                              <span
-                                className={`text-xs transition-colors ${filters.marcas.includes(m) ? "text-primary font-medium" : "text-foreground group-hover:text-primary"}`}
-                              >
+                              <span className="text-sm">
                                 {m}
                               </span>
                             </label>
@@ -1678,8 +1744,8 @@ export default function Inventario() {
                     </div>
 
                     {/* Tipo filter */}
-                    <div>
-                      <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    <div className="rounded-xl border border-border/70 bg-background/50 p-3">
+                      <label className="mb-2 block text-xs font-semibold tracking-wide text-foreground">
                         Tipo
                       </label>
                       <input
@@ -1692,28 +1758,26 @@ export default function Inventario() {
                             tipoBusqueda: e.target.value,
                           }))
                         }
-                        className="w-full bg-background border border-border px-3 py-1.5 rounded-lg text-xs mb-2 focus:ring-1 focus:ring-primary outline-none"
+                        className="mb-3 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                       />
-                      <div className="max-h-40 overflow-y-auto space-y-1">
+                      <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
                         {filteredTipos.length === 0 ? (
-                          <p className="text-xs text-muted-foreground italic">
+                          <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
                             Sin tipos disponibles
                           </p>
                         ) : (
                           filteredTipos.map((t) => (
                             <label
                               key={t}
-                              className="flex items-center gap-2 cursor-pointer group"
+                              className={`flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 transition-colors ${filters.tipos.includes(t) ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted/70"}`}
                             >
                               <input
                                 type="checkbox"
                                 checked={filters.tipos.includes(t)}
                                 onChange={() => toggleTipo(t)}
-                                className="w-4 h-4 rounded accent-primary"
+                                className="h-4 w-4 rounded accent-primary"
                               />
-                              <span
-                                className={`text-xs transition-colors ${filters.tipos.includes(t) ? "text-primary font-medium" : "text-foreground group-hover:text-primary"}`}
-                              >
+                              <span className="text-sm">
                                 {t}
                               </span>
                             </label>
@@ -1721,8 +1785,8 @@ export default function Inventario() {
                         )}
                       </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    <div className="rounded-xl border border-border/70 bg-background/50 p-3">
+                      <label className="mb-2 block text-xs font-semibold tracking-wide text-foreground">
                         Estado de stock
                       </label>
                       <div className="space-y-1">
@@ -1735,7 +1799,7 @@ export default function Inventario() {
                         ].map((opt) => (
                           <label
                             key={opt.value}
-                            className="flex items-center gap-2 cursor-pointer group"
+                            className={`flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 transition-colors ${filters.estadoStock === opt.value ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted/70"}`}
                           >
                             <input
                               type="radio"
@@ -1747,11 +1811,9 @@ export default function Inventario() {
                                   estadoStock: opt.value as any,
                                 }))
                               }
-                              className="w-4 h-4 accent-primary"
+                              className="h-4 w-4 accent-primary"
                             />
-                            <span
-                              className={`text-xs transition-colors ${filters.estadoStock === opt.value ? "text-primary font-medium" : "text-foreground group-hover:text-primary"}`}
-                            >
+                            <span className="text-sm">
                               {opt.label}
                             </span>
                           </label>

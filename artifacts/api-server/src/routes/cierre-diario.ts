@@ -7,7 +7,7 @@ import { operacionesSincronizadasTable } from "@workspace/db/schema";
 const router = Router();
 let tablaBorradoresLista: Promise<void> | null = null;
 
-function asegurarTablaBorradores() {
+export function asegurarTablaBorradores() {
   if (!tablaBorradoresLista) {
     tablaBorradoresLista = db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS cierre_diario_borradores (
@@ -74,7 +74,7 @@ function parseMiles(raw: unknown): number {
 }
 
 /** Suma el seguro (en pesos) por trabajadorId dentro de un snapshot del día */
-function seguroPorTrabajador(datosCrudos: unknown): Map<number, number> {
+export function seguroPorTrabajador(datosCrudos: unknown): Map<number, number> {
   const mapa = new Map<number, number>();
   // Formato nuevo: { trabajadores: [...], gruposTrabajo: [...] }. Formato viejo: array directo.
   const datos = Array.isArray(datosCrudos) ? datosCrudos : (datosCrudos as any)?.trabajadores;

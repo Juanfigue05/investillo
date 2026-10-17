@@ -109,12 +109,12 @@ export default function ObraElectronica() {
                   <section key={nombre} className="obra-electronica-grupo">
                     <h2 className="bg-amber-400 text-black font-bold text-center py-2">{nombre.toUpperCase()}</h2>
                     <table className="w-full obra-electronica-table">
-                      <thead><tr><th>FECHA</th><th>NUMERO FACTURA</th><th>PLACA / VEHÍCULO</th><th className="text-right">VALOR</th><th className="no-print">ACCIONES</th></tr></thead>
+                      <thead><tr><th>FECHA</th><th>NUMERO FACTURA</th><th className="text-center">PLACA / VEHÍCULO</th><th className="text-right">VALOR</th><th className="no-print"></th></tr></thead>
                       <tbody>
                         {items.map((registro) => <tr key={registro.id}>
                           <td>{new Date(`${registro.fecha}T12:00:00`).toLocaleDateString("es-CO")}</td>
                           <td>{registro.numeroFactura || "-"}</td>
-                          <td>{registro.vehiculo || "-"}</td>
+                          <td className="text-center">{registro.vehiculo || "-"}</td>
                           <td className="text-right">{formatCurrency(registro.valor)}</td>
                           <td className="no-print text-center whitespace-nowrap">
                             <button title="Editar" onClick={() => iniciarEdicion(registro)} className="mr-2 text-primary"><Pencil className="inline w-4 h-4" /></button>

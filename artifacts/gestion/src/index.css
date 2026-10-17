@@ -374,9 +374,9 @@ html.light::-webkit-scrollbar-thumb:hover {
 .obra-electronica-table th:nth-child(1),
 .obra-electronica-table td:nth-child(1) { width: 20%; }
 .obra-electronica-table th:nth-child(2),
-.obra-electronica-table td:nth-child(2) { width: 25%; }
+.obra-electronica-table td:nth-child(2) { width: 20%; }
 .obra-electronica-table th:nth-child(3),
-.obra-electronica-table td:nth-child(3) { width: 27%; }
+.obra-electronica-table td:nth-child(3) { width: 32%; }
 .obra-electronica-table th:nth-child(4),
 .obra-electronica-table td:nth-child(4) { width: 16%; }
 .obra-electronica-table th:nth-child(5),

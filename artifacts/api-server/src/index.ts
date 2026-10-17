@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { iniciarGuardadoDiario } from "./lib/guardado-diario";
 
 
 process.on("uncaughtException", (err) => {
@@ -31,4 +32,5 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  iniciarGuardadoDiario();
 });
