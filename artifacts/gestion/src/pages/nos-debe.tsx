@@ -1308,21 +1308,21 @@ export default function NosDebePage() {
                     </tfoot>
                   </table>
                 </div>
-                <div className="mt-2 flex items-center gap-4">
+                <div className="mt-2 flex flex-wrap items-center gap-3">
                   <button
                     type="button"
                     onClick={addLinea}
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
+                    className="flex items-center gap-2 rounded-lg border border-primary/40 px-3 py-2 text-sm font-medium text-primary transition-colors hover:border-primary hover:bg-primary/10"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus className="w-4 h-4" />
                     Agregar producto
                   </button>
                   <button
                     type="button"
                     onClick={addProductoExterno}
-                    className="flex items-center gap-1.5 text-xs text-amber-500 hover:text-amber-400 transition-colors"
+                    className="flex items-center gap-2 rounded-lg border border-amber-500/40 px-3 py-2 text-sm font-medium text-amber-500 transition-colors hover:border-amber-400 hover:bg-amber-500/10"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus className="w-4 h-4" />
                     Producto externo
                   </button>
                   {!manoObra.activo && (
@@ -1331,9 +1331,9 @@ export default function NosDebePage() {
                       onClick={() =>
                         setManoObra((p) => ({ ...p, activo: true }))
                       }
-                      className="flex items-center gap-1.5 text-xs text-yellow-500 hover:text-yellow-400 transition-colors"
+                      className="flex items-center gap-2 rounded-lg border border-yellow-500/40 px-3 py-2 text-sm font-medium text-yellow-500 transition-colors hover:border-yellow-400 hover:bg-yellow-500/10"
                     >
-                      <Plus className="w-3.5 h-3.5" />
+                      <Plus className="w-4 h-4" />
                       Mano de Obra
                     </button>
                   )}

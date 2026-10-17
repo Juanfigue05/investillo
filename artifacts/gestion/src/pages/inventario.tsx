@@ -1816,7 +1816,7 @@ export default function Inventario() {
                           </span>
                         </th>
                         <th
-                          className={thClass}
+                          className={`${thClass} w-[30%]`}
                           onClick={() => handleSort("nombre")}
                         >
                           <span className="flex items-center gap-1">
@@ -1899,7 +1899,7 @@ export default function Inventario() {
                             />
                           </span>
                         </th>
-                        <th className="px-3 py-3 font-medium text-right text-xs lg:text-sm">
+                        <th className="w-[10%] px-3 py-3 text-right font-medium text-xs lg:text-sm">
                           Acciones
                         </th>
                       </tr>
@@ -1932,7 +1932,7 @@ export default function Inventario() {
                             <td className="px-3 py-3 text-foreground font-mono text-xs">
                               {prod.codigo}
                             </td>
-                            <td className="px-3 py-3 text-foreground font-medium max-w-[180px] truncate">
+                            <td className="w-[30%] max-w-[420px] truncate px-3 py-3 font-medium text-foreground">
                               {prod.nombre}
                             </td>
                             <td className="px-3 py-3 text-muted-foreground">
@@ -1989,7 +1989,7 @@ export default function Inventario() {
                             <td className="px-3 py-3 text-primary font-bold">
                               {formatCurrencyDecimal(prod.precioVentaConIva)}
                             </td>
-                            <td className="px-3 py-3 text-right">
+                            <td className="w-[10%] px-3 py-3 text-right">
                               {(prod as any)._pendiente ? (
                                 <span
                                   className="text-[10px] text-amber-400 font-medium whitespace-nowrap"
