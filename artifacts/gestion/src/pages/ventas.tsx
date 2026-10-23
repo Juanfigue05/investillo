@@ -163,7 +163,48 @@ export default function VentasDiarias() {
 
   const [printMenu, setPrintMenu] = useState(false);
   const [pagoCreditoAntiguoOpen, setPagoCreditoAntiguoOpen] = useState(false);
+  const ventasConDatosIncompletos = () =>
+    ventasOrdenadas
+      .filter((venta) => venta.tipoLinea === "venta")
+      .flatMap((venta) => {
+        const camposFaltantes = [
+          { nombre: "cantidad", valor: venta.cantidad },
+          { nombre: "precio de compra", valor: venta.precioCompraUnidad },
+          { nombre: "precio de venta", valor: venta.precioVentaUnidad },
+        ]
+          .filter(({ valor }) => {
+            const numero = Number(valor);
+            return !Number.isFinite(numero) || numero <= 0;
+          })
+          .map(({ nombre }) => nombre);
+        return camposFaltantes.length > 0
+          ? [{ venta, camposFaltantes }]
+          : [];
+      });
+  const validarAntesDeImprimir = () => {
+    if (isLoading) {
+      alert("Espera a que termine de cargar la información antes de imprimir.");
+      return false;
+    }
+    if (!ventas) {
+      alert("No se pudieron cargar las ventas. Intenta nuevamente antes de imprimir.");
+      return false;
+    }
+
+    const filasIncompletas = ventasConDatosIncompletos();
+    if (filasIncompletas.length === 0) return true;
+
+    const detalle = filasIncompletas
+      .map(({ venta, camposFaltantes }) => {
+        const identificador = venta.referencia || venta.productoNombre || `Fila ${venta.id}`;
+        return `• ${identificador}: ${camposFaltantes.join(", ")}`;
+      })
+      .join("\n");
+    alert(`No se puede imprimir. Corrige estos datos de productos (deben ser mayores que 0):\n${detalle}`);
+    return false;
+  };
   const handlePrintWithOrientation = (orientation: "portrait" | "landscape") => {
+    if (!validarAntesDeImprimir()) return;
     const prev = document.getElementById("__print_page_size");
     if (prev) prev.remove();
     const s = document.createElement("style");
@@ -415,6 +456,10 @@ export default function VentasDiarias() {
     const cantNumNueva = parseFloat(newRow.cantidad.replace(",", "."));
     if (isNaN(cantNumNueva) || cantNumNueva <= 0) { alert("Cantidad inválida. Usa coma para decimales, ej: 1,5"); return; }
     const precioCompra = parseNumberCO(newRow.precioCompra);
+    if (!Number.isFinite(precioCompra) || precioCompra <= 0) {
+      alert("El precio de compra del producto debe ser mayor que cero");
+      return;
+    }
     const precioVenta = parseNumberCO(newRow.precioVenta);
     const totalEditado = parseNumberCO(newRow.precioVentaTotal);
     const total = totalEditado > 0 ? totalEditado : precioVenta * cantNumNueva;
@@ -533,7 +578,9 @@ export default function VentasDiarias() {
             </button>
             <div className="relative">
               <button
-                onClick={() => setPrintMenu((p) => !p)}
+                onClick={() => {
+                  if (validarAntesDeImprimir()) setPrintMenu((p) => !p);
+                }}
                 className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-all border border-border text-sm"
               >
                 <Printer className="w-4 h-4" />

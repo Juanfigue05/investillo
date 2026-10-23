@@ -170,6 +170,13 @@ router.post("/", async (req, res) => {
     res.status(400).json({ error: "La cantidad debe ser mayor que cero" });
     return;
   }
+  const esLineaVentaProducto = (tipoLinea === "venta" || !tipoLinea)
+    && !esLineaManoObra(productoNombre, productoId);
+  const precioCompraNum = parseFloat(String(precioCompraUnidad ?? ""));
+  if (esLineaVentaProducto && (!Number.isFinite(precioCompraNum) || precioCompraNum <= 0)) {
+    res.status(400).json({ error: "El precio de compra del producto debe ser mayor que cero" });
+    return;
+  }
 
   try {
     const venta = await db.transaction(async (tx) => {
