@@ -71,7 +71,7 @@ export function FilaVentaSortable({
     const editBen = venta.tipoLinea === "venta" ? (editPvFinal - editPcU) * editCant : 0;
     const distribuciones = editValues.distribuciones || [];
     const seleccionados = distribuciones.map((d: any) => d.trabajadorId);
-    const fijados = Object.fromEntries(distribuciones.map((d: any) => [d.trabajadorId, d.valor]));
+    const fijados = editValues.valoresFijados || {};
 
     return (
       <tr ref={setNodeRef} style={style} className={`${rowCls} ring-2 ring-inset ring-primary/40`}>
@@ -82,8 +82,16 @@ export function FilaVentaSortable({
           total={editTotal}
           seleccionados={seleccionados}
           fijados={fijados}
-          onChangeSeleccionados={(ids) => setEditValues((v: any) => ({ ...v, distribuciones: ids.map((id) => ({ trabajadorId: id, trabajadorNombre: trabajadores.find((t) => t.id === id)?.nombre || `Trabajador ${id}`, valor: Number(v.distribuciones?.find((d: any) => d.trabajadorId === id)?.valor || 0) })) }))}
-          onChangeFijados={(values) => setEditValues((v: any) => ({ ...v, distribuciones: (v.distribuciones || []).map((d: any) => ({ ...d, valor: values[d.trabajadorId] ?? d.valor })) }))}
+          onChangeSeleccionados={(ids) => setEditValues((v: any) => ({
+            ...v,
+            distribuciones: ids.map((id) => ({
+              trabajadorId: id,
+              trabajadorNombre: trabajadores.find((t) => t.id === id)?.nombre || `Trabajador ${id}`,
+              valor: Number(v.distribuciones?.find((d: any) => d.trabajadorId === id)?.valor || 0),
+            })),
+            valoresFijados: Object.fromEntries(ids.filter((id) => v.valoresFijados?.[id] !== undefined).map((id) => [id, v.valoresFijados[id]])),
+          }))}
+          onChangeFijados={(values) => setEditValues((v: any) => ({ ...v, valoresFijados: values }))}
         /> : <SearchableSelect
           opciones={opcionesProducto}
           value={editValues.productoId ? String(editValues.productoId) : ""}

@@ -58,6 +58,7 @@ interface EditValues {
   beneficio: string;
   formaPago: string;
   distribuciones?: { trabajadorId: number; trabajadorNombre: string; valor: number }[];
+  valoresFijados?: Record<number, number>;
 }
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
@@ -287,6 +288,9 @@ export default function VentasDiarias() {
       beneficio: String(venta.beneficio),
       formaPago: (venta as { formaPago?: string }).formaPago || "efectivo",
       distribuciones: (venta as any).distribuciones || [],
+      valoresFijados: Object.fromEntries(
+        ((venta as any).distribuciones || []).map((d: { trabajadorId: number; valor: number }) => [d.trabajadorId, d.valor]),
+      ),
     });
   };
 
@@ -298,17 +302,38 @@ export default function VentasDiarias() {
     const total = editValues.precioVentaTotalManual ? totalEditado : pvU * cant;
     const precioVentaFinal = editValues.precioVentaTotalManual ? (cant > 0 ? total / cant : 0) : pvU;
     const beneficio = venta.tipoLinea === "venta" ? (precioVentaFinal - pcU) * cant : parseFloat(editValues.beneficio) || 0;
+    const trabajadoresSeleccionados = editValues.distribuciones || [];
+    const distribuciones = venta.tipoLinea === "manoobra"
+      ? calcularDistribucion(
+          total,
+          trabajadoresSeleccionados.map((d) => d.trabajadorId),
+          editValues.valoresFijados || {},
+        ).map((d) => ({
+          ...d,
+          trabajadorNombre: trabajadoresSeleccionados.find((seleccionado) => seleccionado.trabajadorId === d.trabajadorId)?.trabajadorNombre
+            || trabajadores?.find((trabajador) => trabajador.id === d.trabajadorId)?.nombre
+            || `Trabajador ${d.trabajadorId}`,
+        }))
+      : [];
+    const productoMarca = venta.tipoLinea === "manoobra"
+      ? distribuciones.map((d) => `${d.trabajadorNombre.toUpperCase()}(${Math.round(d.valor / 1000)})`).join("")
+      : editValues.productoMarca;
+    const descripcion = venta.tipoLinea === "manoobra"
+      ? distribuciones.map((d) => `${d.trabajadorNombre}: ${formatCurrency(d.valor)}`).join(" | ")
+      : venta.descripcion;
     const ventaActualizada = {
       ...venta,
       referencia: editValues.referencia,
       productoNombre: editValues.productoNombre || undefined,
-      productoMarca: editValues.productoMarca || undefined,
+      productoMarca: productoMarca || undefined,
+      descripcion,
       cantidad: cant,
       precioCompraUnidad: pcU,
       precioVentaUnidad: precioVentaFinal,
       precioVentaTotal: total,
       beneficio,
       formaPago: editValues.formaPago,
+      ...(venta.tipoLinea === "manoobra" ? { distribuciones } : {}),
     };
     queryClient.setQueryData(["/api/ventas", { fecha }], (actuales: any[] = []) =>
       actuales.map((actual) => actual.id === venta.id ? ventaActualizada : actual),
@@ -326,14 +351,14 @@ export default function VentasDiarias() {
           productoId: editValues.productoId ? Number(editValues.productoId) : undefined,
           productoNombre: editValues.productoNombre || undefined,
           productoCodigo: venta.productoCodigo || undefined,
-          productoMarca: editValues.productoMarca || undefined,
+          productoMarca: productoMarca || undefined,
+          ...(venta.tipoLinea === "manoobra" ? { descripcion, distribuciones } : {}),
           cantidad: cant,
           precioCompraUnidad: pcU,
           precioVentaUnidad: precioVentaFinal,
           precioVentaTotal: total,
           beneficio,
           formaPago: editValues.formaPago,
-          ...(venta.tipoLinea === "manoobra" ? { distribuciones: editValues.distribuciones || [] } : {}),
         },
       },
       {

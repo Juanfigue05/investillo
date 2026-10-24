@@ -25,6 +25,21 @@ interface CampoManual {
   valor: string;
 }
 
+function parseValorEnMiles(valor: string): number {
+  const numero = Number.parseFloat(valor.trim().replace(",", "."));
+  return Number.isFinite(numero) ? numero * 1000 : 0;
+}
+
+function convertirValoresAntiguosAMiles(campos: CampoManual[]): CampoManual[] {
+  return campos.map((campo) => {
+    const valor = Number.parseFloat(String(campo.valor).replace(",", "."));
+    return {
+      ...campo,
+      valor: campo.valor === "" || !Number.isFinite(valor) ? "" : String(valor / 1000),
+    };
+  });
+}
+
 interface RemachadaRow {
   id: number;
   numeroBanda: string;
@@ -77,8 +92,13 @@ export function CalculadoraCierre({
       fetch(`${API}/calculadora-cierre`).then((r) => r.json()),
       fetch(`${API}/conteo-monedas`).then((r) => r.json()),
     ]).then(([datos, conteo]) => {
-      if (Array.isArray(datos.suma)) setSuma(datos.suma);
-      if (Array.isArray(datos.resta)) setResta(datos.resta);
+      const valoresYaEnMiles = datos.unidadValores === "miles";
+      if (Array.isArray(datos.suma)) {
+        setSuma(valoresYaEnMiles ? datos.suma : convertirValoresAntiguosAMiles(datos.suma));
+      }
+      if (Array.isArray(datos.resta)) {
+        setResta(valoresYaEnMiles ? datos.resta : convertirValoresAntiguosAMiles(datos.resta));
+      }
       if (typeof datos.manoObra === "string") setManoObra(datos.manoObra);
       if (datos.monedas && typeof datos.monedas === "object") setMonedas(datos.monedas);
       if (datos.billetes && typeof datos.billetes === "object") setBilletes(datos.billetes);
@@ -97,7 +117,7 @@ export function CalculadoraCierre({
     return () => window.clearTimeout(temporizador);
   }, [open, requestsEnabled, borradorCargado, suma, resta, manoObra, monedas, billetes, bandaBuscada]);
 
-  const datosBorrador = () => ({ suma, resta, manoObra, monedas, billetes, bandaBuscada });
+  const datosBorrador = () => ({ suma, resta, manoObra, monedas, billetes, bandaBuscada, unidadValores: "miles" });
 
   const guardarBorrador = async () => {
     setGuardandoBorrador(true);
@@ -154,11 +174,11 @@ export function CalculadoraCierre({
   );
 
   const totalSuma = useMemo(
-    () => suma.reduce((s, c) => s + (parseFloat(c.valor) || 0), 0),
+    () => suma.reduce((s, c) => s + parseValorEnMiles(c.valor), 0),
     [suma],
   );
   const totalResta = useMemo(
-    () => resta.reduce((s, c) => s + (parseFloat(c.valor) || 0), 0),
+    () => resta.reduce((s, c) => s + parseValorEnMiles(c.valor), 0),
     [resta],
   );
   const manoObraNum = parseFloat(manoObra) || 0;
@@ -259,8 +279,10 @@ export function CalculadoraCierre({
                       className="flex-1 bg-background border border-border px-2.5 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"
                     />
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       placeholder="0"
+                      title="Ingresa el valor en miles: 12,5 equivale a $12.500"
                       value={c.valor}
                       onChange={(e) =>
                         setSuma((p) =>
@@ -274,6 +296,7 @@ export function CalculadoraCierre({
                   </div>
                 ))}
               </div>
+              <p className="mt-1 text-[10px] text-muted-foreground">Valores en miles: 12,5 = $12.500</p>
               <p className="text-sm font-bold text-emerald-400 mt-2">
                 Total suma: {formatCurrency(totalSuma)}
               </p>
@@ -306,8 +329,10 @@ export function CalculadoraCierre({
                       className="flex-1 bg-background border border-border px-2.5 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-primary outline-none"
                     />
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       placeholder="0"
+                      title="Ingresa el valor en miles: 12,5 equivale a $12.500"
                       value={c.valor}
                       onChange={(e) =>
                         setResta((p) =>
@@ -321,6 +346,7 @@ export function CalculadoraCierre({
                   </div>
                 ))}
               </div>
+              <p className="mt-1 text-[10px] text-muted-foreground">Valores en miles: 12,5 = $12.500</p>
               <p className="text-sm font-bold text-destructive mt-2">
                 Total resta: {formatCurrency(totalResta)}
               </p>
