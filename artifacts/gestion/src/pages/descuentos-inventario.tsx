@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/Layout";
-import { formatCurrency, formatCurrencyDecimal, formatNumberCO, parseNumberCO } from "@/lib/utils";
+import { coincideBusqueda, formatCurrency, formatCurrencyDecimal, formatNumberCO, parseNumberCO } from "@/lib/utils";
 import { Pencil, Search, Trash2, X } from "lucide-react";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 const MOTIVOS = ["Producto dañado", "Arreglo para trabajador", "Pérdida", "Consumo interno", "Producto vencido", "Otro"];
-type Producto = { id: number; nombre: string; codigo: string; stockLocal: number; stockBodega: number; precioCompra: number; precioVentaSinIva: number };
+type Producto = { id: number; nombre: string; codigo: string; marca?: string | null; tipo?: string | null; referencia?: string | null; adicional?: string | null; stockLocal: number; stockBodega: number; precioCompra: number; precioVentaSinIva: number };
 type Registro = { id: number; operacionId: string; motivo: string; motivoOtro?: string | null; observacion?: string | null; productoId: number; productoNombre: string; cantidad: number; precioCompra: number; precioVenta: number; creadoEn: string };
 
 function necesitaConfirmacion(texto: string) { const limpio = texto.replace(/[\s'$]/g, ""); const partes = limpio.split("."); return !limpio.includes(",") && partes.length === 2 && partes[1].length === 3; }
@@ -15,7 +15,7 @@ export default function DescuentosInventario() {
   const [cantidades, setCantidades] = useState<Record<number, string>>({}); const [confirmados, setConfirmados] = useState<Record<number, boolean>>({}); const [motivo, setMotivo] = useState(MOTIVOS[0]); const [motivoOtro, setMotivoOtro] = useState(""); const [observacion, setObservacion] = useState(""); const [mensaje, setMensaje] = useState(""); const [guardando, setGuardando] = useState(false); const [editando, setEditando] = useState<Registro | null>(null); const [editCantidad, setEditCantidad] = useState(""); const [editMotivo, setEditMotivo] = useState(MOTIVOS[0]); const [editOtro, setEditOtro] = useState(""); const [editObservacion, setEditObservacion] = useState("");
   const cargar = async () => { const [p, h] = await Promise.all([fetch(`${API}/inventario`).then((r) => r.json()), fetch(`${API}/descuentos-inventario`).then((r) => r.json())]); setProductos(p); setRegistros(h); };
   useEffect(() => { void cargar(); }, []);
-  const visibles = useMemo(() => productos.filter((p) => `${p.nombre} ${p.codigo}`.toLowerCase().includes(busqueda.toLowerCase())), [productos, busqueda]);
+  const visibles = useMemo(() => productos.filter((p) => coincideBusqueda(busqueda, p.nombre, p.codigo, p.marca, p.tipo, p.referencia, p.adicional)), [productos, busqueda]);
   const grupos = useMemo(() => [...registros.reduce((m, r) => m.set(r.operacionId, [...(m.get(r.operacionId) || []), r]), new Map<string, Registro[]>()).values()], [registros]);
   const guardar = async () => {
     setMensaje(""); const items = Object.entries(cantidades).filter(([, cantidad]) => cantidad.trim());

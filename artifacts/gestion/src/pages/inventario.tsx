@@ -6,7 +6,7 @@ import {
   useActualizarProducto,
   useEliminarProducto,
 } from "@workspace/api-client-react";
-import { formatCurrency, formatCurrencyDecimal, calcularPrecioConIva } from "@/lib/utils";
+import { coincideBusqueda, formatCurrency, formatCurrencyDecimal, calcularPrecioConIva } from "@/lib/utils";
 import {
   Plus,
   Search,
@@ -536,14 +536,8 @@ export default function Inventario() {
   const filteredProductos = useMemo(() => {
     return (productosTodos.length ? productosTodos : productos || [])
       .filter((p) => {
-        const q = search.toLowerCase();
         const matchSearch =
-          !q ||
-          p.nombre.toLowerCase().includes(q) ||
-          p.codigo.toLowerCase().includes(q) ||
-          (p.marca || "").toLowerCase().includes(q) ||
-          ((p as any).tipo || "").toLowerCase().includes(q) ||
-          (p.referencia || "").toLowerCase().includes(q);
+          coincideBusqueda(search, p.nombre, p.codigo, p.marca, p.tipo, p.referencia, p.adicional);
         const matchMarca =
           filters.marcas.length === 0 || filters.marcas.includes(p.marca || "");
         const matchTipo =
@@ -1048,6 +1042,9 @@ export default function Inventario() {
                         nombre: p.nombre,
                         codigo: p.codigo,
                         marca: p.marca || undefined,
+                        tipo: p.tipo || undefined,
+                        referencia: p.referencia || undefined,
+                        adicional: p.adicional || undefined,
                         stockActual:
                           (p as any)[
                             direccionTraslado === "local-bodega"

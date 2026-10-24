@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetHistorialPrecios } from "@workspace/api-client-react";
-import { formatCurrencyDecimal } from "@/lib/utils";
+import { coincideBusqueda, formatCurrencyDecimal } from "@/lib/utils";
 import { Eye, Search, Trash2, TrendingDown, TrendingUp, X, Minus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -30,7 +30,7 @@ export default function HistorialPreciosPage() {
   const porProducto = useMemo(() => {
     const mapa = new Map<number, Registro[]>();
     for (const registro of (registros || []) as Registro[]) {
-      if (busqueda && !`${registro.productoNombre} ${registro.productoCodigo || ""} ${registro.marca || ""}`.toLowerCase().includes(busqueda.toLowerCase())) continue;
+      if (!coincideBusqueda(busqueda, registro.productoNombre, registro.productoCodigo, registro.marca)) continue;
       if (!mapa.has(registro.productoId)) mapa.set(registro.productoId, []);
       mapa.get(registro.productoId)!.push(registro);
     }

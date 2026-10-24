@@ -226,7 +226,11 @@ export default function VentasDiarias() {
     ...(productos || []).map((p) => ({
       id: String(p.id),
       nombre: p.nombre,
+      codigo: p.codigo,
       marca: p.marca || undefined,
+      tipo: p.tipo || undefined,
+      referencia: p.referencia || undefined,
+      adicional: p.adicional || undefined,
       precioCompra: p.precioCompra,
       precioVenta: p.precioVentaSinIva,
     })),

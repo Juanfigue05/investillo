@@ -5,6 +5,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function coincideBusqueda(
+  consulta: string,
+  ...valores: (string | null | undefined)[]
+): boolean {
+  const normalizar = (texto: string) =>
+    texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const terminos = normalizar(consulta).trim().split(/\s+/).filter(Boolean);
+  if (terminos.length === 0) return true;
+
+  const contenido = normalizar(valores.filter(Boolean).join(" "));
+  return terminos.every((termino) => contenido.includes(termino));
+}
+
 export function fechaColombia(fecha: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Bogota",

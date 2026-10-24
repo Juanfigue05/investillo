@@ -4,7 +4,7 @@ import { formatCurrency, parseNumberCO } from "@/lib/utils";
 import { SearchableSelect, type ProductoOpcion } from "@/components/SearchableSelect";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+$/g, "").replace(/\/+/g, "/");
-type Producto = { id: number; nombre: string; codigo: string; marca?: string | null; precioCompra: number; precioVentaSinIva: number };
+type Producto = { id: number; nombre: string; codigo: string; marca?: string | null; tipo?: string | null; referencia?: string | null; adicional?: string | null; precioCompra: number; precioVentaSinIva: number };
 type Trabajador = { id: number; nombre: string };
 type TipoServicio = "Mano de Obra" | "Soldadura" | "Chispeada" | "Pulida";
 type Fila = { id: number; tipoServicio: TipoServicio | null; productoId: string; nombre: string; marca: string; cantidad: string; precioCompra: string; precioVenta: string; trabajadores: number[] };
@@ -24,6 +24,9 @@ export function PagoCreditoAntiguoModal({ fecha, productos, trabajadores, onClos
     nombre: producto.nombre,
     codigo: producto.codigo,
     marca: producto.marca || undefined,
+    tipo: producto.tipo || undefined,
+    referencia: producto.referencia || undefined,
+    adicional: producto.adicional || undefined,
     precioCompra: producto.precioCompra,
     precioVenta: producto.precioVentaSinIva,
   }));

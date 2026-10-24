@@ -1,13 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
-import { formatCurrencyDecimal } from "@/lib/utils";
+import { coincideBusqueda, formatCurrencyDecimal } from "@/lib/utils";
 
 export interface ProductoOpcion {
   id: string;
   nombre: string;
   codigo?: string;
   marca?: string;
+  tipo?: string;
+  referencia?: string;
+  adicional?: string;
   precioCompra?: number;
   precioVenta?: number;
   stockActual?: number;
@@ -41,16 +44,9 @@ export function SearchableSelect({
     if (triggerRef.current) setDropdownRect(triggerRef.current.getBoundingClientRect());
   };
 
-  const filtered = busqueda.trim()
-    ? opciones.filter((o) => {
-        const q = busqueda.toLowerCase();
-        return (
-          o.nombre.toLowerCase().includes(q) ||
-          (o.marca || "").toLowerCase().includes(q) ||
-          (o.codigo || "").toLowerCase().includes(q)
-        );
-      })
-    : opciones;
+  const filtered = opciones.filter((o) =>
+    coincideBusqueda(busqueda, o.nombre, o.codigo, o.marca, o.tipo, o.referencia, o.adicional),
+  );
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -125,13 +121,13 @@ export function SearchableSelect({
             <input
               autoFocus
               type="text"
-              placeholder="Buscar por nombre, código o marca..."
+              placeholder="Buscar por nombre, código, referencia, tipo o marca..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               className="w-full bg-background border border-border px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
             />
           </div>
-          <div className="max-h-80 overflow-y-auto">
+          <div className="max-h-[60vh] overflow-y-auto">
             {filtered.length === 0 ? (
               allowCustom && busqueda.trim() ? (
                 <button type="button" onClick={() => handleSelect(busqueda.trim())} className="w-full text-left px-3 py-3 text-sm text-primary hover:bg-muted">
@@ -139,7 +135,11 @@ export function SearchableSelect({
                 </button>
               ) : <p className="text-center py-4 text-muted-foreground text-sm">Sin resultados</p>
             ) : (
-              filtered.map((o) => {
+              <>
+              <p className="sticky top-0 z-10 bg-card px-3 py-1 text-[10px] text-muted-foreground border-b border-border">
+                {filtered.length} resultado{filtered.length === 1 ? "" : "s"}
+              </p>
+              {filtered.map((o) => {
                 const sinStock = o.stockActual === 0;
                 const pocoStock = !sinStock && o.stockActual !== undefined && o.stockMinimo !== undefined && o.stockActual <= o.stockMinimo;
                 return (
@@ -158,10 +158,13 @@ export function SearchableSelect({
                         <span className="text-sm font-bold text-primary flex-shrink-0">{formatCurrencyDecimal(o.precioVenta)}</span>
                       )}
                     </div>
-                    {(o.codigo || o.marca || o.stockActual !== undefined) && (
+                    {(o.codigo || o.marca || o.tipo || o.referencia || o.adicional || o.stockActual !== undefined) && (
                       <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground flex-wrap">
                         {o.codigo && <span className="font-mono">{o.codigo}</span>}
                         {o.marca && <span>· {o.marca}</span>}
+                        {o.referencia && <span>· Ref: {o.referencia}</span>}
+                        {o.tipo && <span>· {o.tipo}</span>}
+                        {o.adicional && <span>· {o.adicional}</span>}
                         {o.stockActual !== undefined && (
                           <span className={sinStock ? "text-destructive font-medium" : pocoStock ? "text-amber-400 font-medium" : ""}>
                             · Stock: {o.stockActual}{sinStock ? " ⚠ Sin existencias" : pocoStock ? " ⚠ Poco stock" : ""}
@@ -171,7 +174,8 @@ export function SearchableSelect({
                     )}
                   </button>
                 );
-              })
+              })}
+              </>
             )}
             {allowCustom && busqueda.trim() && filtered.length > 0 && !selected && (
               <button type="button" onClick={() => handleSelect(busqueda.trim())} className="w-full text-left px-3 py-3 text-sm text-primary hover:bg-muted border-t border-border">

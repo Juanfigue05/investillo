@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Calculator, Minus, X, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getGetInventarioQueryKey, useGetInventario } from "@workspace/api-client-react";
-import { formatCurrency, formatCurrencyDecimal } from "@/lib/utils";
+import { coincideBusqueda, formatCurrency, formatCurrencyDecimal } from "@/lib/utils";
 
 interface LineaConsulta {
   productoId: string;
@@ -19,7 +19,7 @@ export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const portalRef = useRef<HTMLDivElement | null>(null);
-  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ top?: number; bottom?: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
     const closeWhenOtherPanelOpens = (event: Event) => {
@@ -57,7 +57,15 @@ export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?
     const el = inputRefs.current[i];
     if (el) {
       const rect = el.getBoundingClientRect();
-      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+      const espacioAbajo = window.innerHeight - rect.bottom;
+      const altoMaximo = Math.min(window.innerHeight * 0.6, 480);
+      const abrirArriba = espacioAbajo < altoMaximo && rect.top > espacioAbajo;
+      setDropdownPos({
+        top: abrirArriba ? undefined : rect.bottom + 4,
+        bottom: abrirArriba ? window.innerHeight - rect.top + 4 : undefined,
+        left: rect.left,
+        width: rect.width,
+      });
     }
     setDropdownOpen(i);
   };
@@ -91,15 +99,10 @@ export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?
   };
 
   const filteredProductos = (i: number) => {
-    const q = busquedas[i]?.toLowerCase() || "";
-    return (productos || [])
-      .filter(
-        (p) =>
-          p.nombre.toLowerCase().includes(q) ||
-          p.codigo.toLowerCase().includes(q) ||
-          (p.marca || "").toLowerCase().includes(q)
-      )
-      .slice(0, 10);
+    const q = busquedas[i] || "";
+    return (productos || []).filter((p) =>
+      coincideBusqueda(q, p.nombre, p.codigo, p.marca, p.tipo, p.referencia, p.adicional),
+    );
   };
 
   const calcLine = (linea: LineaConsulta) => {
@@ -154,7 +157,7 @@ export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?
         {lineas.map((linea, i) => {
           const calc = calcLine(linea);
           const opts = filteredProductos(i);
-          const hasQ = busquedas[i]?.length > 0;
+          const hasQ = Boolean(busquedas[i]?.trim());
           const cant = parseFloat(linea.cantidad) || 1;
 
           return (
@@ -211,13 +214,16 @@ export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?
                 </div>
               )}
 
-              {dropdownOpen === i && hasQ && opts.length > 0 && dropdownPos && createPortal(
+              {dropdownOpen === i && hasQ && dropdownPos && createPortal(
                 <div
                   ref={(el) => { portalRef.current = el; }}
-                  style={{ position: "fixed", top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width, zIndex: 9999 }}
-                  className="bg-card border border-border rounded-lg shadow-2xl overflow-hidden max-h-52 overflow-y-auto"
+                  style={{ position: "fixed", top: dropdownPos.top, bottom: dropdownPos.bottom, left: dropdownPos.left, width: dropdownPos.width, zIndex: 9999 }}
+                  className="bg-card border border-border rounded-lg shadow-2xl overflow-hidden max-h-[60vh] overflow-y-auto"
                 >
-                  {opts.map((p) => (
+                  <p className="sticky top-0 z-10 bg-card px-3 py-1 text-[10px] text-muted-foreground border-b border-border">
+                    {opts.length} resultado{opts.length === 1 ? "" : "s"}
+                  </p>
+                  {opts.length === 0 ? <p className="px-3 py-3 text-sm text-muted-foreground">Sin resultados</p> : opts.map((p) => (
                     <button
                       key={p.id}
                       type="button"
@@ -226,6 +232,7 @@ export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?
                     >
                       <span className="font-medium text-foreground">{p.nombre}</span>
                       {p.marca && <span className="text-muted-foreground ml-1.5 text-xs">— {p.marca}</span>}
+                      {(p.codigo || p.referencia) && <span className="block text-xs text-muted-foreground">{p.codigo}{p.referencia ? ` · Ref: ${p.referencia}` : ""}</span>}
                     </button>
                   ))}
                 </div>,

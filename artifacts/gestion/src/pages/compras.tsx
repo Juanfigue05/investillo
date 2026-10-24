@@ -7,7 +7,7 @@ import {
   useEliminarCompra,
   useGetInventario,
 } from "@workspace/api-client-react";
-import { fechaHoyColombia, formatCurrency, formatCurrencyDecimal, parseNumberCO } from "@/lib/utils";
+import { coincideBusqueda, fechaHoyColombia, formatCurrency, formatCurrencyDecimal, parseNumberCO } from "@/lib/utils";
 import {
   PackageCheck,
   Truck,
@@ -144,14 +144,9 @@ function ProductoAutocomplete({
       ),
   );
 
-  const filtered = query.trim()
-    ? disponibles.filter(
-        (p) =>
-          p.nombre.toLowerCase().includes(query.toLowerCase()) ||
-          p.codigo.toLowerCase().includes(query.toLowerCase()) ||
-          (p.marca || "").toLowerCase().includes(query.toLowerCase()),
-      )
-    : disponibles.slice(0, 10);
+  const filtered = disponibles.filter((p) =>
+    coincideBusqueda(query, p.nombre, p.codigo, p.marca, p.tipo, p.referencia, p.adicional),
+  );
 
   const handleSelect = (p: any) => {
     setSelected(p);
@@ -171,7 +166,7 @@ function ProductoAutocomplete({
       <div className="relative">
         <input
           type="text"
-          placeholder="Buscar producto por nombre, código o marca..."
+          placeholder="Buscar por nombre, código, referencia, tipo o marca..."
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -191,14 +186,18 @@ function ProductoAutocomplete({
           </button>
         )}
       </div>
-      {open && query.length > 0 && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-2xl overflow-hidden max-h-52 overflow-y-auto">
+      {open && query.trim().length > 0 && (
+        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-2xl overflow-hidden max-h-[60vh] overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="text-center py-4 text-muted-foreground text-sm">
               Sin resultados para "{query}"
             </p>
           ) : (
-            filtered.map((p) => (
+            <>
+            <p className="sticky top-0 z-10 bg-card px-4 py-1 text-[10px] text-muted-foreground border-b border-border">
+              {filtered.length} resultado{filtered.length === 1 ? "" : "s"}
+            </p>
+            {filtered.map((p) => (
               <button
                 key={p.id}
                 type="button"
@@ -214,7 +213,7 @@ function ProductoAutocomplete({
                       {p.nombre}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      [{p.codigo}]{p.marca ? ` · ${p.marca}` : ""}
+                      [{p.codigo}]{p.marca ? ` · ${p.marca}` : ""}{p.referencia ? ` · Ref: ${p.referencia}` : ""}{p.tipo ? ` · ${p.tipo}` : ""}
                     </p>
                   </div>
                   <span className="text-xs text-muted-foreground shrink-0">
@@ -222,7 +221,8 @@ function ProductoAutocomplete({
                   </span>
                 </div>
               </button>
-            ))
+            ))}
+            </>
           )}
         </div>
       )}
