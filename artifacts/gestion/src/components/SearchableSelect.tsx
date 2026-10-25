@@ -18,18 +18,22 @@ export interface ProductoOpcion {
   special?: "manoobra" | "abono";
 }
 
+type CampoDetalle = "codigo" | "marca" | "tipo" | "referencia" | "adicional" | "stock";
+
 export function SearchableSelect({
   opciones,
   value,
   onChange,
   placeholder,
   allowCustom = false,
+  camposDetalle = ["codigo", "marca", "referencia", "tipo", "adicional", "stock"],
 }: {
   opciones: ProductoOpcion[];
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   allowCustom?: boolean;
+  camposDetalle?: CampoDetalle[];
 }) {
   const [open, setOpen] = useState(false);
   const [busqueda, setBusqueda] = useState("");
@@ -142,6 +146,20 @@ export function SearchableSelect({
               {filtered.map((o) => {
                 const sinStock = o.stockActual === 0;
                 const pocoStock = !sinStock && o.stockActual !== undefined && o.stockMinimo !== undefined && o.stockActual <= o.stockMinimo;
+                const detalles = camposDetalle.flatMap((campo) => {
+                  if (campo === "stock") {
+                    return o.stockActual === undefined ? [] : [{
+                      valor: `Stock: ${o.stockActual}${sinStock ? " ⚠ Sin existencias" : pocoStock ? " ⚠ Poco stock" : ""}`,
+                      className: sinStock ? "text-destructive font-medium" : pocoStock ? "text-amber-400 font-medium" : "",
+                    }];
+                  }
+                  const valor = o[campo];
+                  if (!valor) return [];
+                  return [{
+                    valor: campo === "referencia" ? `Ref: ${valor}` : valor,
+                    className: campo === "codigo" ? "font-mono" : "",
+                  }];
+                });
                 return (
                   <button
                     key={o.id}
@@ -158,18 +176,14 @@ export function SearchableSelect({
                         <span className="text-sm font-bold text-primary flex-shrink-0">{formatCurrencyDecimal(o.precioVenta)}</span>
                       )}
                     </div>
-                    {(o.codigo || o.marca || o.tipo || o.referencia || o.adicional || o.stockActual !== undefined) && (
+                    {detalles.length > 0 && (
                       <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground flex-wrap">
-                        {o.codigo && <span className="font-mono">{o.codigo}</span>}
-                        {o.marca && <span>· {o.marca}</span>}
-                        {o.referencia && <span>· Ref: {o.referencia}</span>}
-                        {o.tipo && <span>· {o.tipo}</span>}
-                        {o.adicional && <span>· {o.adicional}</span>}
-                        {o.stockActual !== undefined && (
-                          <span className={sinStock ? "text-destructive font-medium" : pocoStock ? "text-amber-400 font-medium" : ""}>
-                            · Stock: {o.stockActual}{sinStock ? " ⚠ Sin existencias" : pocoStock ? " ⚠ Poco stock" : ""}
+                        {detalles.map((detalle, indice) => (
+                          <span key={indice}>
+                            {indice > 0 && " · "}
+                            <span className={detalle.className}>{detalle.valor}</span>
                           </span>
-                        )}
+                        ))}
                       </div>
                     )}
                   </button>

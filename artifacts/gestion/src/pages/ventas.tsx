@@ -689,7 +689,7 @@ export default function VentasDiarias() {
                     <input type="text" placeholder="R 1234 24-ENE" value={newRow.referencia} onChange={(e) => setNewRow({ ...newRow, referencia: e.target.value })} className="w-full bg-background border border-border px-3 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" />
                   </td>
                   <td className="p-2 min-w-[180px]">
-                    <SearchableSelect opciones={opcionesProducto} value={newRow.productoSeleccionado} onChange={handleProductoSelect} placeholder="Seleccionar producto..." />
+                    <SearchableSelect opciones={opcionesProducto} value={newRow.productoSeleccionado} onChange={handleProductoSelect} placeholder="Seleccionar producto..." camposDetalle={["tipo", "marca", "referencia"]} />
                     {modoActual === "normal" && stockAlerta !== null && (
                       stockAlerta.stock === 0 ? <p className="text-red-500 text-[11px] mt-1 leading-tight font-medium">⚠ Sin existencias — stock en 0</p> : stockAlerta.stock <= stockAlerta.minimo ? <p className="text-yellow-500 text-[11px] mt-1 leading-tight font-medium">⚠ Pocas existencias ({stockAlerta.stock} en stock)</p> : null
                     )}

@@ -197,31 +197,36 @@ function ProductoAutocomplete({
             <p className="sticky top-0 z-10 bg-card px-4 py-1 text-[10px] text-muted-foreground border-b border-border">
               {filtered.length} resultado{filtered.length === 1 ? "" : "s"}
             </p>
-            {filtered.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  handleSelect(p);
-                }}
-                className="w-full text-left px-4 py-2.5 hover:bg-muted transition-colors border-b border-border/50 last:border-0"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-medium text-foreground text-sm truncate">
-                      {p.nombre}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      [{p.codigo}]{p.marca ? ` · ${p.marca}` : ""}{p.referencia ? ` · Ref: ${p.referencia}` : ""}{p.tipo ? ` · ${p.tipo}` : ""}
-                    </p>
+            {filtered.map((p) => {
+              const detalle = [p.tipo, p.marca, p.referencia ? `Ref: ${p.referencia}` : ""]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleSelect(p);
+                  }}
+                  className="w-full text-left px-4 py-2.5 hover:bg-muted transition-colors border-b border-border/50 last:border-0"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground text-sm truncate">
+                        {p.nombre}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {detalle ? `${detalle} / ` : ""}{p.codigo}
+                      </p>
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      Stock: {p.stockActual}
+                    </span>
                   </div>
-                  <span className="text-xs text-muted-foreground shrink-0">
-                    Stock: {p.stockActual}
-                  </span>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
             </>
           )}
         </div>

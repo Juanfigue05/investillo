@@ -231,8 +231,6 @@ export function FloatingPriceCheck({ topbar, requestsEnabled = true }: { topbar?
                       className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted transition-colors border-b border-border/40 last:border-0"
                     >
                       <span className="font-medium text-foreground">{p.nombre}</span>
-                      {p.marca && <span className="text-muted-foreground ml-1.5 text-xs">— {p.marca}</span>}
-                      {(p.codigo || p.referencia) && <span className="block text-xs text-muted-foreground">{p.codigo}{p.referencia ? ` · Ref: ${p.referencia}` : ""}</span>}
                     </button>
                   ))}
                 </div>,

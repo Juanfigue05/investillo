@@ -95,6 +95,7 @@ export function FilaVentaSortable({
         /> : <SearchableSelect
           opciones={opcionesProducto}
           value={editValues.productoId ? String(editValues.productoId) : ""}
+          camposDetalle={["tipo", "marca", "referencia"]}
           onChange={(id) => {
             const producto = opcionesProducto.find((opcion) => opcion.id === id);
             if (!producto || producto.special) return;
