@@ -4,6 +4,15 @@ import { eventosSincronizacionTable, ventasDiariasTable, productosTable } from "
 import { eq, sql, and, gte, lte } from "drizzle-orm";
 import { manoObraTable, distribucionesTable, trabajadoresTable, operacionesSincronizadasTable } from "@workspace/db/schema";
 import { esLineaManoObra } from "../lib/conceptos-mano-obra";
+import {
+  actualizarVentaRequest,
+  crearLotePagoAntiguoRequest,
+  crearManoObraRequest,
+  crearVentaRequest,
+  reordenarVentasRequest,
+  trasladarInventarioRequest,
+} from "@workspace/api-zod/write-requests";
+import { validarBody } from "../lib/validar-body";
 
 const router: IRouter = Router();
 
@@ -150,6 +159,7 @@ router.get("/", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  if (!validarBody(crearVentaRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
 
   if (operationId) {
@@ -221,6 +231,7 @@ router.post("/", async (req, res) => {
 });
 
 router.post("/lote-pago-antiguo", async (req, res) => {
+  if (!validarBody(crearLotePagoAntiguoRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const { items } = req.body as { items?: Array<Record<string, unknown>> };
   if (!Array.isArray(items) || items.length === 0) {
@@ -273,6 +284,7 @@ router.post("/lote-pago-antiguo", async (req, res) => {
 });
 
 router.post("/manoobra", async (req, res) => {
+  if (!validarBody(crearManoObraRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
 
   if (operationId) {
@@ -335,6 +347,7 @@ router.post("/manoobra", async (req, res) => {
 // ─── PUT /reordenar — guarda el nuevo orden después de arrastrar filas ──
 // Debe declararse antes de PUT /:id para que "reordenar" no se interprete como un ID.
 router.put("/reordenar", async (req, res) => {
+  if (!validarBody(reordenarVentasRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
   if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
@@ -367,6 +380,7 @@ router.put("/reordenar", async (req, res) => {
 });
 
 router.put("/:id", async (req, res) => {
+  if (!validarBody(actualizarVentaRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = parseInt(req.params.id);
   const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
@@ -489,6 +503,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 router.post("/:id/trasladar", async (req, res) => {
+  if (!validarBody(trasladarInventarioRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = parseInt(req.params.id);
   const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));

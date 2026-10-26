@@ -1,10 +1,15 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { db, pool } from "@workspace/db";
 import { eventosSincronizacionTable, operacionesSincronizadasTable } from "@workspace/db/schema";
-import { parseNumeroColombia } from "@workspace/api-zod";
 import { eq } from "drizzle-orm";
+import {
+  parseInventarioBasico,
+  parseInventarioCompleto,
+  type FilaCompleta,
+  type ParsedRow,
+} from "../lib/excel-import-parsers";
 
 const router: IRouter = Router();
 const upload = multer({
@@ -13,39 +18,6 @@ const upload = multer({
 });
 
 // ─── helpers ───────────────────────────────────────────────────────────────
-
-function calcPrecioConIva(v: number): number {
-  return Math.ceil((v * 1.19) / 1000) * 1000;
-}
-
-function parsePrecio(raw: unknown): number {
-  if (raw === null || raw === undefined || raw === "") return 0;
-  return parseNumeroColombia(raw);
-}
-
-function cleanStr(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  return String(v).trim();
-}
-
-interface ParsedRow {
-  codigo: string;
-  nombre: string;
-  referencia: string | null;
-  marca: string | null;
-  precioCompra: string;
-  precioVentaSinIva: string;
-  precioVentaConIva: string;
-  cantidad: number | null; // null = no se especificó en la plantilla
-}
-
-function parseCantidad(raw: unknown): number | null {
-  if (raw === null || raw === undefined || raw === "") return null;
-  const n =
-    typeof raw === "number" ? raw : parseFloat(String(raw).replace(",", "."));
-  return isNaN(n) ? null : n;
-}
-
 function rowsEqual(a: ParsedRow, b: ParsedRow): boolean {
   return (
     a.nombre === b.nombre &&
@@ -54,58 +26,6 @@ function rowsEqual(a: ParsedRow, b: ParsedRow): boolean {
     a.precioCompra === b.precioCompra &&
     a.precioVentaSinIva === b.precioVentaSinIva
   );
-}
-
-function parseExcel(buffer: Buffer): { rows: ParsedRow[]; skipped: number[] } {
-  const wb = XLSX.read(buffer, { type: "buffer" });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  const raw: unknown[][] = XLSX.utils.sheet_to_json(sheet, {
-    header: 1,
-    raw: true,
-    defval: "",
-  });
-  const dataRows = raw
-    .slice(1)
-    .filter((r) => Array.isArray(r) && cleanStr(r[0]) !== "");
-
-  if (dataRows.length > 10_000) {
-    throw new Error("El archivo supera el máximo de 10000 filas");
-  }
-
-  const rows: ParsedRow[] = [];
-  const skipped: number[] = [];
-
-  for (let i = 0; i < dataRows.length; i++) {
-    const r = dataRows[i] as unknown[];
-    const codigo = cleanStr(r[0]);
-    const nombre = cleanStr(r[1]);
-    if (!codigo || !nombre) {
-      skipped.push(i + 2);
-      continue;
-    }
-
-    const ref1 = cleanStr(r[2]);
-    const ref2 = cleanStr(r[3]);
-    const refParts = [ref1, ref2].filter((s) => s && s !== "0");
-    const referencia = refParts.length ? refParts.join(" ").trim() : null;
-
-    const marca = cleanStr(r[4]) || null;
-    const pc = parsePrecio(r[5]);
-    const pvs = parsePrecio(r[6]);
-    const cantidad = parseCantidad(r[7]);
-
-    rows.push({
-      codigo,
-      nombre,
-      referencia,
-      marca,
-      precioCompra: String(pc),
-      precioVentaSinIva: String(pvs),
-      precioVentaConIva: String(calcPrecioConIva(pvs)),
-      cantidad,
-    });
-  }
-  return { rows, skipped };
 }
 
 interface ConflictoCantidad {
@@ -209,23 +129,23 @@ async function upsertRows(
 
 // ─── GET /template ──────────────────────────────────────────────────────────
 
-router.get("/template", (_req, res) => {
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([
-    [
-      "CODIGO",
-      "REFERENCIA",
-      "REFERENCIA",
-      "REFERENCIA 2",
-      "MARCA",
-      "SE COMPRA",
-      "SE VENDE A",
-      "CANTIDAD (opcional)",
-    ],
+router.get("/template", async (_req, res) => {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Productos");
+  ws.addRow([
+    "CODIGO",
+    "REFERENCIA",
+    "REFERENCIA",
+    "REFERENCIA 2",
+    "MARCA",
+    "SE COMPRA",
+    "SE VENDE A",
+    "CANTIDAD (opcional)",
   ]);
-  ws["!cols"] = [16, 40, 30, 20, 20, 14, 14, 20].map((w) => ({ wch: w }));
-  XLSX.utils.book_append_sheet(wb, ws, "Productos");
-  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  [16, 40, 30, 20, 20, 14, 14, 20].forEach(
+    (width, index) => (ws.getColumn(index + 1).width = width),
+  );
+  const buf = Buffer.from(await wb.xlsx.writeBuffer());
   res.setHeader(
     "Content-Type",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -247,7 +167,7 @@ router.get("/export", async (_req, res) => {
       WHERE activo = true
       ORDER BY nombre, codigo
     `);
-    const wb = XLSX.utils.book_new();
+    const wb = new ExcelJS.Workbook();
     const rows = [
       [
         "CODIGO",
@@ -270,10 +190,12 @@ router.get("/export", async (_req, res) => {
         "",
       ]),
     ];
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws["!cols"] = [16, 40, 30, 20, 20, 14, 14, 20].map((w) => ({ wch: w }));
-    XLSX.utils.book_append_sheet(wb, ws, "Productos");
-    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    const ws = wb.addWorksheet("Productos");
+    ws.addRows(rows);
+    [16, 40, 30, 20, 20, 14, 14, 20].forEach(
+      (width, index) => (ws.getColumn(index + 1).width = width),
+    );
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
     res.setHeader(
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -310,7 +232,7 @@ router.post("/", upload.single("archivo"), async (req, res) => {
   }
 
   try {
-    const { rows, skipped } = parseExcel(req.file.buffer);
+    const { rows, skipped } = await parseInventarioBasico(req.file.buffer);
     if (!rows.length) {
       res.status(400).json({ error: "No se encontraron filas válidas" });
       return;
@@ -499,65 +421,15 @@ const COLUMNAS_COMPLETAS = [
 ];
 const ANCHOS_COMPLETOS = [16, 35, 18, 16, 25, 30, 14, 16, 14, 12, 12, 14, 18];
 
-interface FilaCompleta {
-  codigo: string;
-  nombre: string | null;
-  marca: string | null;
-  tipo: string | null;
-  referencia: string | null;
-  adicional: string | null;
-  precioCompra: number | null;
-  precioVentaSinIva: number | null;
-  tieneIva: boolean | null;
-  stockLocal: number | null;
-  stockBodega: number | null;
-  stockMinimo: number | null;
-}
-
-function parseTextoOpcional(v: unknown): string | null {
-  const s = cleanStr(v);
-  return s === "" ? null : s;
-}
-function parseNumeroOpcional(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = typeof v === "number" ? v : parseFloat(String(v).replace(/[$\s,]/g, ""));
-  return isNaN(n) ? null : n;
-}
-function parseSiNoOpcional(v: unknown): boolean | null {
-  const s = cleanStr(v).toUpperCase();
-  if (s === "") return null;
-  return s === "SI" || s === "SÍ" || s === "S" || s === "1" || s === "TRUE";
-}
-
-function parseExcelCompleto(buffer: Buffer): FilaCompleta[] {
-  const wb = XLSX.read(buffer, { type: "buffer" });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  const raw: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
-  const dataRows = raw.slice(1).filter((r) => Array.isArray(r) && cleanStr(r[0]) !== "");
-
-  return dataRows.map((r) => ({
-    codigo: cleanStr(r[0]),
-    nombre: parseTextoOpcional(r[1]),
-    marca: parseTextoOpcional(r[2]),
-    tipo: parseTextoOpcional(r[3]),
-    referencia: parseTextoOpcional(r[4]),
-    adicional: parseTextoOpcional(r[5]),
-    precioCompra: parseNumeroOpcional(r[6]),
-    precioVentaSinIva: parseNumeroOpcional(r[7]),
-    tieneIva: parseSiNoOpcional(r[8]),
-    stockLocal: parseNumeroOpcional(r[9]),
-    stockBodega: parseNumeroOpcional(r[10]),
-    stockMinimo: parseNumeroOpcional(r[11]),
-  }));
-}
-
 // ─── GET /template-completa — plantilla con TODOS los campos ──
-router.get("/template-completa", (_req, res) => {
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([COLUMNAS_COMPLETAS]);
-  ws["!cols"] = ANCHOS_COMPLETOS.map((w) => ({ wch: w }));
-  XLSX.utils.book_append_sheet(wb, ws, "Productos");
-  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+router.get("/template-completa", async (_req, res) => {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Productos");
+  ws.addRow(COLUMNAS_COMPLETAS);
+  ANCHOS_COMPLETOS.forEach(
+    (width, index) => (ws.getColumn(index + 1).width = width),
+  );
+  const buf = Buffer.from(await wb.xlsx.writeBuffer());
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", 'attachment; filename="plantilla_inventario_completa.xlsx"');
   res.send(buf);
@@ -573,7 +445,7 @@ router.get("/exportar-completo", async (_req, res) => {
       FROM productos
       ORDER BY nombre, codigo
     `);
-    const wb = XLSX.utils.book_new();
+    const wb = new ExcelJS.Workbook();
     const rows = [
       COLUMNAS_COMPLETAS,
       ...result.rows.map((p) => [
@@ -583,10 +455,12 @@ router.get("/exportar-completo", async (_req, res) => {
         Number(p.precio_venta_con_iva),
       ]),
     ];
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws["!cols"] = ANCHOS_COMPLETOS.map((w) => ({ wch: w }));
-    XLSX.utils.book_append_sheet(wb, ws, "Productos");
-    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    const ws = wb.addWorksheet("Productos");
+    ws.addRows(rows);
+    ANCHOS_COMPLETOS.forEach(
+      (width, index) => (ws.getColumn(index + 1).width = width),
+    );
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", 'attachment; filename="inventario_completo.xlsx"');
     res.send(buf);
@@ -600,7 +474,7 @@ router.post("/previsualizar", upload.single("archivo"), async (req, res) => {
   if (!req.file) { res.status(400).json({ error: "No se recibió ningún archivo" }); return; }
 
   try {
-    const filas = parseExcelCompleto(req.file.buffer);
+    const filas = await parseInventarioCompleto(req.file.buffer);
     if (!filas.length) { res.status(400).json({ error: "No se encontraron filas válidas" }); return; }
 
     const codigos = filas.map((f) => f.codigo);

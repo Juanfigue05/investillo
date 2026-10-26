@@ -5,6 +5,13 @@ import { eq,sql,and, gte } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
 import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
 import { parseNumeroColombia } from "@workspace/api-zod";
+import {
+  actualizarCompraRequest,
+  corregirCompraRequest,
+  crearCompraRequest,
+  llegadaLoteComprasRequest,
+} from "@workspace/api-zod/write-requests";
+import { validarBody } from "../lib/validar-body";
 
 const router: IRouter = Router();
 
@@ -58,6 +65,7 @@ router.get("/", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  if (!validarBody(crearCompraRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
@@ -181,6 +189,7 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
 }
 
 router.put("/:id", async (req, res) => {
+  if (!validarBody(actualizarCompraRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
@@ -201,6 +210,7 @@ router.put("/:id", async (req, res) => {
 });
 
 router.post("/lote-llegada", async (req, res) => {
+  if (!validarBody(llegadaLoteComprasRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
   if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
@@ -277,6 +287,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 router.patch("/:id/corregir", async (req, res) => {
+  if (!validarBody(corregirCompraRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = parseInt(req.params.id);
   const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));

@@ -1,4 +1,5 @@
 import pg from "pg";
+import { getSyncHeaders } from "./sync-auth";
 
 const { Pool } = pg;
 const databaseUrl = process.env.DATABASE_URL;
@@ -7,18 +8,29 @@ const remoteApiUrl = process.env.SYNC_REMOTE_API_URL?.replace(/\/+$/, "");
 if (!databaseUrl) throw new Error("DATABASE_URL es obligatorio");
 if (!remoteApiUrl) throw new Error("SYNC_REMOTE_API_URL es obligatorio");
 if (!remoteApiUrl.startsWith("https://") || !remoteApiUrl.endsWith("/api")) {
-  throw new Error("SYNC_REMOTE_API_URL debe ser la URL HTTPS del API remoto y terminar en /api");
+  throw new Error(
+    "SYNC_REMOTE_API_URL debe ser la URL HTTPS del API remoto y terminar en /api",
+  );
 }
-if (remoteApiUrl.includes("TU-SERVICIO") || remoteApiUrl.includes("example.com")) {
-  throw new Error("Reemplace SYNC_REMOTE_API_URL por el dominio real de Render");
+if (
+  remoteApiUrl.includes("TU-SERVICIO") ||
+  remoteApiUrl.includes("example.com")
+) {
+  throw new Error(
+    "Reemplace SYNC_REMOTE_API_URL por el dominio real de Render",
+  );
 }
 
-const pool = new Pool({ connectionString: databaseUrl });
 const LIMIT = 50;
+const syncHeaders = getSyncHeaders();
+const pool = new Pool({ connectionString: databaseUrl });
 
 try {
-  const health = await fetch(`${remoteApiUrl}/healthz`, { signal: AbortSignal.timeout(15_000) });
-  if (!health.ok) throw new Error(`El API remoto respondió HTTP ${health.status}`);
+  const health = await fetch(`${remoteApiUrl}/healthz`, {
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!health.ok)
+    throw new Error(`El API remoto respondió HTTP ${health.status}`);
 
   const lock = await pool.query<{ bloqueado: boolean }>(
     "SELECT pg_try_advisory_lock(hashtext('investillo-sync-local')) AS bloqueado",
@@ -61,21 +73,32 @@ try {
       const idRemoto = referencia.rows[0]?.id_remoto;
       let endpoint = evento.endpoint;
 
-      if (Array.isArray(evento.referencias_endpoint) && evento.referencias_endpoint.length > 0) {
-        for (const ref of evento.referencias_endpoint as { marcador: string; entidad: string; valorLocal: string }[]) {
+      if (
+        Array.isArray(evento.referencias_endpoint) &&
+        evento.referencias_endpoint.length > 0
+      ) {
+        for (const ref of evento.referencias_endpoint as {
+          marcador: string;
+          entidad: string;
+          valorLocal: string;
+        }[]) {
           const refRemota = await pool.query<{ id_remoto: string }>(
             `SELECT id_remoto FROM referencias_sincronizacion WHERE entidad = $1 AND id_local = $2`,
             [ref.entidad, ref.valorLocal],
           );
           const valor = refRemota.rows[0]?.id_remoto;
           if (!valor) {
-            throw new Error(`Referencia sin resolver: ${ref.entidad} local=${ref.valorLocal}. El padre aún no se ha sincronizado; se reintentará.`);
+            throw new Error(
+              `Referencia sin resolver: ${ref.entidad} local=${ref.valorLocal}. El padre aún no se ha sincronizado; se reintentará.`,
+            );
           }
           endpoint = endpoint.replace(ref.marcador, valor);
         }
         if (idRemoto) endpoint = endpoint.replace("{id}", idRemoto);
         if (endpoint.includes("{")) {
-          throw new Error(`Endpoint sin resolver por completo: ${endpoint}. Se reintentará.`);
+          throw new Error(
+            `Endpoint sin resolver por completo: ${endpoint}. Se reintentará.`,
+          );
         }
       } else {
         endpoint = idRemoto
@@ -87,18 +110,31 @@ try {
       if (evento.metodo !== "POST") {
         const remoto = await fetch(`${remoteApiUrl}${endpoint}`, {
           method: "GET",
+          headers: syncHeaders,
+          redirect: "error",
           signal: AbortSignal.timeout(15_000),
         });
         if (remoto.ok) {
-          const registro = await remoto.json().catch(() => null) as { actualizadoEn?: string; actualizado_en?: string } | null;
-          const actualizado = registro?.actualizadoEn ?? registro?.actualizado_en;
-          if (actualizado && new Date(actualizado).getTime() > new Date(evento.creado_en).getTime()) {
+          const registro = (await remoto.json().catch(() => null)) as {
+            actualizadoEn?: string;
+            actualizado_en?: string;
+          } | null;
+          const actualizado =
+            registro?.actualizadoEn ?? registro?.actualizado_en;
+          if (
+            actualizado &&
+            new Date(actualizado).getTime() >
+              new Date(evento.creado_en).getTime()
+          ) {
             await pool.query(
               `UPDATE eventos_sincronizacion
                   SET estado = 'conflicto', intentos = intentos + 1,
                       ultimo_error = $2
                 WHERE operation_id = $1`,
-              [evento.operation_id, `El recurso remoto cambió después de crear esta operación local: ${actualizado}`],
+              [
+                evento.operation_id,
+                `El recurso remoto cambió después de crear esta operación local: ${actualizado}`,
+              ],
             );
             conflictos++;
             continue;
@@ -109,10 +145,12 @@ try {
       const response = await fetch(`${remoteApiUrl}${endpoint}`, {
         method: evento.metodo,
         headers: {
+          ...syncHeaders,
           "Content-Type": "application/json",
           "X-Operation-Id": evento.operation_id,
           "X-Sync-Apply": "true",
         },
+        redirect: "error",
         body: JSON.stringify(payload),
       });
 
@@ -138,11 +176,13 @@ try {
           WHERE operation_id = $1`,
         [evento.operation_id, JSON.stringify(respuestaRemota)],
       );
-      const idNuevo = respuestaRemota && typeof respuestaRemota === "object"
-        ? (respuestaRemota as { _syncNuevoAbonoId?: number | string })._syncNuevoAbonoId ??
-          (respuestaRemota as { id?: number | string }).id ??
-          (respuestaRemota as { recursoId?: number | string }).recursoId
-        : undefined;
+      const idNuevo =
+        respuestaRemota && typeof respuestaRemota === "object"
+          ? ((respuestaRemota as { _syncNuevoAbonoId?: number | string })
+              ._syncNuevoAbonoId ??
+            (respuestaRemota as { id?: number | string }).id ??
+            (respuestaRemota as { recursoId?: number | string }).recursoId)
+          : undefined;
       if (idNuevo !== undefined && !idRemoto) {
         await pool.query(
           `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
@@ -151,13 +191,23 @@ try {
           [evento.entidad, evento.entidad_id, String(idNuevo)],
         );
       }
-      if (Array.isArray(evento.referencias_respuesta) && evento.referencias_respuesta.length > 0) {
-        for (const ref of evento.referencias_respuesta as { campo: string; entidad: string; valorLocal: string }[]) {
-          const valorRemoto = respuestaRemota && typeof respuestaRemota === "object"
-            ? (respuestaRemota as Record<string, unknown>)[ref.campo]
-            : undefined;
+      if (
+        Array.isArray(evento.referencias_respuesta) &&
+        evento.referencias_respuesta.length > 0
+      ) {
+        for (const ref of evento.referencias_respuesta as {
+          campo: string;
+          entidad: string;
+          valorLocal: string;
+        }[]) {
+          const valorRemoto =
+            respuestaRemota && typeof respuestaRemota === "object"
+              ? (respuestaRemota as Record<string, unknown>)[ref.campo]
+              : undefined;
           if (valorRemoto === undefined || valorRemoto === null) {
-            throw new Error(`La respuesta remota no contiene ${ref.campo}; se reintentará.`);
+            throw new Error(
+              `La respuesta remota no contiene ${ref.campo}; se reintentará.`,
+            );
           }
           await pool.query(
             `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
@@ -173,16 +223,26 @@ try {
         `UPDATE eventos_sincronizacion
             SET estado = 'error', intentos = intentos + 1, ultimo_error = $2
           WHERE operation_id = $1`,
-        [evento.operation_id, error instanceof Error ? error.message : String(error)],
+        [
+          evento.operation_id,
+          error instanceof Error ? error.message : String(error),
+        ],
       );
       fallidas++;
     }
   }
 
-  console.log(`Sincronización local: ${sincronizadas}/${rows.length} operaciones procesadas.`);
-  if (conflictos > 0) console.error(`${conflictos} conflicto(s) quedaron retenidos sin sobrescribir datos remotos.`);
+  console.log(
+    `Sincronización local: ${sincronizadas}/${rows.length} operaciones procesadas.`,
+  );
+  if (conflictos > 0)
+    console.error(
+      `${conflictos} conflicto(s) quedaron retenidos sin sobrescribir datos remotos.`,
+    );
   if (fallidas > 0) {
-    console.error(`${fallidas} operación(es) quedaron con error y no se descargan cambios remotos.`);
+    console.error(
+      `${fallidas} operación(es) quedaron con error y no se descargan cambios remotos.`,
+    );
     process.exitCode = 1;
   }
   if (conflictos > 0) process.exitCode = 1;

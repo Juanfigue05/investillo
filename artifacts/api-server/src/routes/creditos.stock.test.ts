@@ -14,6 +14,7 @@
  * red de seguridad para tests que fallen antes del cleanup normal.
  */
 
+import "../lib/solo-base-de-pruebas";
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
 import app from "../app";

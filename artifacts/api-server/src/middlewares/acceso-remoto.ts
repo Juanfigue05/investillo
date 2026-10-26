@@ -1,12 +1,55 @@
 import type { Request, Response, NextFunction } from "express";
-import crypto from "crypto";
+import crypto from "node:crypto";
+import rateLimit from "express-rate-limit";
+import { and, eq, gt, lt } from "drizzle-orm";
+import { db, pool } from "@workspace/db";
+import { sesionesAccesoTable } from "@workspace/db/schema";
+import { logger } from "../lib/logger";
+import { compararSecretos } from "../lib/secretos";
 
-const CLAVE_ACCESO = process.env.CLAVE_ACCESO_REMOTO; // se define en Render, no en tu red local
-const NOMBRE_COOKIE = "investillo_acceso";
-const UN_ANIO_MS = 365 * 24 * 60 * 60 * 1000;
+const CLAVE_ACCESO = process.env.CLAVE_ACCESO_REMOTO;
+const SYNC_TOKEN = process.env.SYNC_TOKEN;
+const NOMBRE_COOKIE = "investillo_sesion";
+const COOKIE_ANTIGUA = "investillo_acceso";
+const DURACION_SESION_MS = 30 * 24 * 60 * 60 * 1000;
+const CACHE_SESION_MS = 60_000;
 
-function hashClave(clave: string): string {
-  return crypto.createHash("sha256").update(clave).digest("hex");
+if (SYNC_TOKEN && Buffer.byteLength(SYNC_TOKEN) < 32) {
+  throw new Error("SYNC_TOKEN debe tener al menos 32 bytes");
+}
+
+const sesionesValidas = new Map<string, number>();
+let asegurarTablaPromise: Promise<void> | undefined;
+
+function hashToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function asegurarTablaSesiones(): Promise<void> {
+  asegurarTablaPromise ??= pool
+    .query(
+      `
+      CREATE TABLE IF NOT EXISTS sesiones_acceso (
+        token_hash text PRIMARY KEY,
+        creado_en timestamptz NOT NULL DEFAULT now(),
+        expira_en timestamptz NOT NULL
+      )
+    `,
+    )
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      asegurarTablaPromise = undefined;
+      throw error;
+    });
+  return asegurarTablaPromise;
+}
+
+function esSolicitudSincronizacion(req: Request): boolean {
+  return (
+    req.path.startsWith("/api/sync/") ||
+    req.header("x-sync-apply") === "true" ||
+    (req.header("authorization") ?? "").startsWith("Bearer ")
+  );
 }
 
 const HTML_FORMULARIO = (error?: string) => `<!DOCTYPE html>
@@ -34,38 +77,189 @@ const HTML_FORMULARIO = (error?: string) => `<!DOCTYPE html>
 </body>
 </html>`;
 
-export function bloqueoAccesoRemoto(req: Request, res: Response, next: NextFunction) {
-  if (!CLAVE_ACCESO) { next(); return; } // si no se configuró la clave, no bloquea nada (útil en local)
+export function bloqueoAccesoRemoto(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (esSolicitudSincronizacion(req)) {
+    if (!SYNC_TOKEN) {
+      res.status(503).json({
+        error: "La autenticación de sincronización no está configurada",
+      });
+      return;
+    }
+    const autorizacion = req.header("authorization") ?? "";
+    const token = autorizacion.startsWith("Bearer ")
+      ? autorizacion.slice("Bearer ".length)
+      : "";
+    if (!token || !compararSecretos(token, SYNC_TOKEN)) {
+      res
+        .status(401)
+        .json({ error: "Autenticación de sincronización requerida" });
+      return;
+    }
+    next();
+    return;
+  }
+
+  if (!CLAVE_ACCESO) {
+    next();
+    return;
+  } // si no se configuró la clave, no bloquea nada (útil en local)
 
   if (req.path === "/bloquear" && req.method === "POST") {
-    res.clearCookie(NOMBRE_COOKIE, { path: "/", httpOnly: true, sameSite: "lax" });
-    res.redirect(303, "/");
+    void cerrarSesion(req, res).catch((error: unknown) => {
+      logger.error({ err: error }, "No se pudo revocar la sesión de acceso");
+      res.status(503).send("No se pudo cerrar la sesión. Inténtalo de nuevo.");
+    });
     return;
   }
 
   // Deja pasar libre el chequeo de "sigo vivo" que usa el robot de GitHub —
   // no muestra ningún dato del negocio, solo confirma que el servidor responde.
-  if (req.path === "/api/healthz" || req.path === "/api/healthz-db") { next(); return; }
-
-  if (req.path === "/acceso" && req.method === "POST") {
-    const clave = (req.body?.clave || "").toString();
-    if (clave === CLAVE_ACCESO) {
-      const protocolo = req.header("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol;
-      res.cookie(NOMBRE_COOKIE, hashClave(clave), {
-        maxAge: UN_ANIO_MS,
-        httpOnly: true,
-        secure: protocolo === "https",
-        sameSite: "lax",
-      });
-      res.redirect("/");
-      return;
-    }
-    res.status(401).send(HTML_FORMULARIO("Clave incorrecta, intenta de nuevo."));
+  if (req.path === "/api/healthz" || req.path === "/api/healthz-db") {
+    next();
     return;
   }
 
-  const cookie = req.cookies?.[NOMBRE_COOKIE];
-  if (cookie === hashClave(CLAVE_ACCESO)) { next(); return; }
+  if (req.path === "/acceso" && req.method === "POST") {
+    limitadorAcceso(req, res, (error?: unknown) => {
+      if (error) {
+        next(error);
+        return;
+      }
+      void iniciarSesion(req, res).catch((inicioError: unknown) => {
+        logger.error(
+          { err: inicioError },
+          "No se pudo iniciar una sesión de acceso",
+        );
+        res
+          .status(503)
+          .send(
+            HTML_FORMULARIO("No se pudo iniciar sesión. Inténtalo de nuevo."),
+          );
+      });
+    });
+    return;
+  }
 
-  res.status(401).send(HTML_FORMULARIO());
+  void validarSesion(req, res)
+    .then((valida) => {
+      if (valida) {
+        next();
+        return;
+      }
+      res.status(401).send(HTML_FORMULARIO());
+    })
+    .catch((error: unknown) => {
+      logger.error({ err: error }, "No se pudo verificar la sesión de acceso");
+      res
+        .status(503)
+        .send("No se pudo verificar el acceso. Inténtalo de nuevo.");
+    });
+}
+
+const limitadorAcceso = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  handler: (_req, res) => {
+    res
+      .status(429)
+      .send(HTML_FORMULARIO("Demasiados intentos. Espera 15 minutos."));
+  },
+});
+
+async function iniciarSesion(req: Request, res: Response): Promise<void> {
+  const clave = typeof req.body?.clave === "string" ? req.body.clave : "";
+  if (!CLAVE_ACCESO || !compararSecretos(clave, CLAVE_ACCESO)) {
+    res
+      .status(401)
+      .send(HTML_FORMULARIO("Clave incorrecta, intenta de nuevo."));
+    return;
+  }
+
+  await asegurarTablaSesiones();
+  const ahora = new Date();
+  await db
+    .delete(sesionesAccesoTable)
+    .where(lt(sesionesAccesoTable.expiraEn, ahora));
+
+  const token = crypto.randomBytes(32).toString("base64url");
+  const expiraEn = new Date(ahora.getTime() + DURACION_SESION_MS);
+  const tokenHash = hashToken(token);
+  await db.insert(sesionesAccesoTable).values({ tokenHash, expiraEn });
+  sesionesValidas.set(
+    tokenHash,
+    Math.min(expiraEn.getTime(), Date.now() + CACHE_SESION_MS),
+  );
+
+  res.cookie(NOMBRE_COOKIE, token, {
+    path: "/",
+    maxAge: DURACION_SESION_MS,
+    httpOnly: true,
+    secure: req.secure,
+    sameSite: "lax",
+  });
+  res.clearCookie(COOKIE_ANTIGUA, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+  });
+  res.redirect("/");
+}
+
+async function validarSesion(req: Request, _res: Response): Promise<boolean> {
+  const token = req.cookies?.[NOMBRE_COOKIE];
+  if (typeof token !== "string" || token.length === 0) return false;
+  const tokenHash = hashToken(token);
+  const ahora = Date.now();
+  const cacheExpiry = sesionesValidas.get(tokenHash);
+  if (cacheExpiry !== undefined && cacheExpiry > ahora) return true;
+  sesionesValidas.delete(tokenHash);
+
+  await asegurarTablaSesiones();
+  const [sesion] = await db
+    .select({ expiraEn: sesionesAccesoTable.expiraEn })
+    .from(sesionesAccesoTable)
+    .where(
+      and(
+        eq(sesionesAccesoTable.tokenHash, tokenHash),
+        gt(sesionesAccesoTable.expiraEn, new Date(ahora)),
+      ),
+    )
+    .limit(1);
+  if (!sesion) return false;
+
+  sesionesValidas.set(
+    tokenHash,
+    Math.min(sesion.expiraEn.getTime(), ahora + CACHE_SESION_MS),
+  );
+  return true;
+}
+
+async function cerrarSesion(req: Request, res: Response): Promise<void> {
+  const token = req.cookies?.[NOMBRE_COOKIE];
+  if (typeof token === "string" && token.length > 0) {
+    const tokenHash = hashToken(token);
+    await asegurarTablaSesiones();
+    await db
+      .delete(sesionesAccesoTable)
+      .where(eq(sesionesAccesoTable.tokenHash, tokenHash));
+    sesionesValidas.delete(tokenHash);
+  }
+  res.clearCookie(NOMBRE_COOKIE, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+  });
+  res.clearCookie(COOKIE_ANTIGUA, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+  });
+  res.redirect(303, "/");
 }

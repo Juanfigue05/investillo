@@ -450,6 +450,7 @@ La instalación local usa PostgreSQL en este computador. Esto evita que las oper
 
 - `DATABASE_URL` es una conexión de PostgreSQL. En `.env.local` apunta a la base instalada en este computador, por ejemplo `localhost:5432/investillo_local`.
 - `SYNC_REMOTE_API_URL` **no** es una conexión de PostgreSQL y **no** es una URL de Supabase. Es la dirección HTTP del sistema/API publicado en Render, normalmente con `/api` al final, por ejemplo `https://investillo.onrender.com/api`.
+- `SYNC_TOKEN` es un secreto aleatorio compartido por Render, `.env.local` y el servidor local. Los scripts lo envían como `Authorization: Bearer`; debe tener al menos 32 bytes.
 - La conexión de Supabase permanece en `.env.api` como `DATABASE_URL` para el servidor remoto y en `.env.backup` como `SOURCE_DATABASE_URL` para los respaldos.
 - Nunca pongas la contraseña de Supabase en `SYNC_REMOTE_API_URL`.
 
@@ -584,8 +585,13 @@ Ambas usan **la misma base de datos de Supabase de siempre** — nunca se crea u
    |---|---|
    | `DATABASE_URL` | el mismo de tu `.env.api` |
    | `NODE_ENV` | `production` |
-  | `SYNC_CAPTURE_REMOTE` | `true` |
+   | `SYNC_CAPTURE_REMOTE` | `true` |
+   | `CLAVE_ACCESO_REMOTO` | una clave privada para abrir la aplicación |
+   | `SYNC_TOKEN` | secreto aleatorio de al menos 32 bytes; también se configura en `.env.local` |
+   | `TRUST_PROXY_HOPS` | `1` para Render detrás de un proxy |
 5. Clic en **"Create Web Service"** y espera a que termine — te da una dirección como `https://investillo.onrender.com`.
+
+Genera el token con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Guarda el mismo valor en Render y en `.env.local`, y no lo publiques ni lo subas a Git. Los scripts `sync:local` y `sync:pull` lo envían como `Authorization: Bearer`; sin este token la sincronización se rechaza. El límite de intentos de acceso es de 5 fallos por IP cada 15 minutos y se guarda en memoria, por lo que está pensado para una sola instancia. `TRUST_PROXY_HOPS` debe corresponder al número real de proxies confiables; verifica esa configuración antes de usar el límite en producción.
 
 La dirección que Render entrega, seguida de `/api`, es la que se debe poner en `SYNC_REMOTE_API_URL` del computador local. Ejemplo: si Render entrega `https://investillo.onrender.com`, configura `SYNC_REMOTE_API_URL=https://investillo.onrender.com/api`. No pongas allí `DATABASE_URL`, la URL del pooler de Supabase, ni una URL de Cloudflare o Aiven.
 
@@ -597,6 +603,13 @@ https://TU-SERVICIO.onrender.com/api/healthz
 
 Debe responder con un estado correcto. Si no responde, no programes todavía `sync:local`.
 
+#### Acceso remoto y sincronización autenticada
+
+- Configura `CLAVE_ACCESO_REMOTO` en Render para proteger la aplicación. Tras iniciar sesión, el navegador recibe una cookie `investillo_sesion` aleatoria, `HttpOnly`, `SameSite=Lax` y con expiración de 30 días; el servidor guarda solo el hash en `sesiones_acceso`. Cerrar sesión revoca la sesión de ese navegador/perfil. La tabla se crea automáticamente al iniciar sesión y la limpieza periódica de operaciones elimina sesiones vencidas.
+- Configura `SYNC_TOKEN` con el mismo secreto aleatorio en Render y `.env.local`. Genéralo con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` y no lo compartas ni lo subas a Git. Se necesita para subir y descargar cambios; sin él, la API rechaza las solicitudes de sincronización.
+- En Render configura `TRUST_PROXY_HOPS` con el número real de proxies confiables. Para la configuración habitual de Render se usa `1`; verifica el recorrido de red antes de habilitar el servicio. Es obligatorio en producción cuando `CLAVE_ACCESO_REMOTO` está activa. El límite de acceso es de cinco fallos por IP en 15 minutos y se mantiene en memoria, adecuado para una sola instancia.
+- La política CSP de Helmet se mantiene desactivada para no interferir con los estilos, fuentes ni PWA; se habilitan las demás cabeceras de seguridad y `Referrer-Policy: same-origin`.
+
 ### 8.3 Desplegar en Railway
 
 1. Crea cuenta en **[railway.com](https://railway.com)**.
@@ -604,7 +617,7 @@ Debe responder con un estado correcto. Si no responde, no programes todavía `sy
 3. En **"Settings"**, configura:
    - **Build Command:** `pnpm install && pnpm run build`
    - **Start Command:** `pnpm --filter @workspace/api-server run start`
-4. En **"Variables"**, agrega las mismas 2 variables que en Render.
+4. En **"Variables"**, agrega las variables requeridas para tu despliegue, incluyendo `CLAVE_ACCESO_REMOTO`, `SYNC_TOKEN` y `TRUST_PROXY_HOPS` con el salto correcto de Railway.
 5. En **"Networking"**, clic en **"Generate Domain"** para obtener tu dirección pública.
 
 > Alternativa sin usar tarjeta de crédito: **Koyeb** también ofrece un servicio web gratis "para siempre" (a diferencia de Railway, que ahora es una prueba de 30 días + $1 de crédito mensual) — pide verificar identidad con una tarjeta, pero no cobra nada mientras te quedes en el plan gratis. El proceso de desplegar es casi idéntico al de Render.

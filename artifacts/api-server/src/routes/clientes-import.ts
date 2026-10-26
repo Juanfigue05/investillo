@@ -1,68 +1,24 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { eventosSincronizacionTable, operacionesSincronizadasTable } from "@workspace/db/schema";
 import { pool, db } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import {
+  parseClientesExcel,
+  type ParsedCliente,
+} from "../lib/excel-import-parsers";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1, parts: 2 } });
-
-function cleanStr(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "number") return v.toLocaleString("fullwide", { useGrouping: false });
-  return String(v).trim();
-}
 
 function soloDigitos(v: string): string {
   return v.replace(/\D/g, "");
 }
 
-function parseTelefonos(raw: string): { telefono: string | null; telefono2: string | null } {
-  if (!raw.trim()) return { telefono: null, telefono2: null };
-  const partes = raw
-    .split(/\s*[-/,]\s*|\s+y\s+|\s+Y\s+/)
-    .map((p) => soloDigitos(p))
-    .filter((p) => p.length >= 7);
-  if (partes.length === 0) return { telefono: null, telefono2: null };
-  return { telefono: partes[0] || null, telefono2: partes[1] || null };
-}
-
-interface ParsedCliente {
-  nombre: string;
-  telefono: string | null;
-  telefono2: string | null;
-  correo: string | null;
-  notas: string | null;
-}
-
 interface ConflictoTelefono extends ParsedCliente {
   conflictoTelefono?: string; // cuál de los 2 números choca
   conflictoCon?: string;      // nombre del cliente (nuevo o existente) que ya lo tiene
-}
-
-function parseExcel(buffer: Buffer): { rows: ParsedCliente[]; omitidos: number[] } {
-  const wb = XLSX.read(buffer, { type: "buffer" });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  const raw: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
-  const dataRows = raw.slice(1);
-
-  if (dataRows.length > 10_000) {
-    throw new Error("El archivo supera el máximo de 10000 filas");
-  }
-
-  const rows: ParsedCliente[] = [];
-  const omitidos: number[] = [];
-
-  for (let i = 0; i < dataRows.length; i++) {
-    const r = dataRows[i] as unknown[];
-    const nombre = cleanStr(r[0]);
-    if (!nombre) { omitidos.push(i + 2); continue; }
-
-    const { telefono, telefono2 } = parseTelefonos(cleanStr(r[1]));
-    rows.push({ nombre, telefono, telefono2, correo: cleanStr(r[2]) || null, notas: cleanStr(r[3]) || null });
-  }
-  return { rows, omitidos };
 }
 
 function dedupeDentroDelArchivo(rows: ParsedCliente[]): { unicos: ParsedCliente[]; duplicadosArchivo: number } {
@@ -160,12 +116,14 @@ async function insertRows(items: ParsedCliente[]) {
   }
 }
 
-router.get("/template", (_req, res) => {
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([["NOMBRE", "TELEFONO (si son 2: 3145370182 - 3202501578)", "CORREO", "NOTAS"]]);
-  ws["!cols"] = [30, 40, 30, 40].map((w) => ({ wch: w }));
-  XLSX.utils.book_append_sheet(wb, ws, "Clientes");
-  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+router.get("/template", async (_req, res) => {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Clientes");
+  ws.addRow(["NOMBRE", "TELEFONO (si son 2: 3145370182 - 3202501578)", "CORREO", "NOTAS"]);
+  [30, 40, 30, 40].forEach(
+    (width, index) => (ws.getColumn(index + 1).width = width),
+  );
+  const buf = Buffer.from(await wb.xlsx.writeBuffer());
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", 'attachment; filename="plantilla_clientes.xlsx"');
   res.send(buf);
@@ -177,7 +135,7 @@ router.post("/", upload.single("archivo"), async (req, res) => {
   if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   if (!req.file) { res.status(400).json({ error: "No se recibió ningún archivo" }); return; }
   try {
-    const { rows, omitidos } = parseExcel(req.file.buffer);
+    const { rows, omitidos } = await parseClientesExcel(req.file.buffer);
     if (!rows.length) { res.status(400).json({ error: "No se encontraron filas válidas (falta NOMBRE)" }); return; }
 
     const { unicos, duplicadosArchivo } = dedupeDentroDelArchivo(rows);
