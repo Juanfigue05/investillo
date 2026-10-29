@@ -110,19 +110,34 @@ app.use((req, res, next) => {
   res.sendFile(path.join(frontendDist, "index.html"));
 });
 
-const errorHandler: ErrorRequestHandler = (error, req, res, next) => {
+export const errorHandler: ErrorRequestHandler = (error, req, res, next) => {
   if (res.headersSent) {
     next(error);
     return;
   }
 
-  const status =
-    error &&
-    typeof error === "object" &&
-    "status" in error &&
-    typeof error.status === "number" &&
-    error.status >= 400 &&
-    error.status < 500
+  const codigoError =
+    error && typeof error === "object" && "code" in error
+      ? error.code
+      : undefined;
+  const codigoCausa =
+    error && typeof error === "object" && "cause" in error
+      ? error.cause &&
+        typeof error.cause === "object" &&
+        "code" in error.cause
+        ? error.cause.code
+        : undefined
+      : undefined;
+  const esRegistroDuplicado =
+    codigoError === "23505" || codigoCausa === "23505";
+  const status = esRegistroDuplicado
+    ? 409
+    : error &&
+        typeof error === "object" &&
+        "status" in error &&
+        typeof error.status === "number" &&
+        error.status >= 400 &&
+        error.status < 500
       ? error.status
       : error &&
           typeof error === "object" &&
@@ -133,11 +148,13 @@ const errorHandler: ErrorRequestHandler = (error, req, res, next) => {
   req.log.error({ err: error, status }, "Request failed");
   res.status(status).json({
     error:
-      status === 413
-        ? "El archivo supera el tamaño permitido"
-        : status < 500
-          ? "Solicitud inválida"
-          : "Error interno del servidor",
+      status === 409
+        ? "Ya existe un registro con ese dato"
+        : status === 413
+          ? "El archivo supera el tamaño permitido"
+          : status < 500
+            ? "Solicitud inválida"
+            : "Error interno del servidor",
   });
 };
 

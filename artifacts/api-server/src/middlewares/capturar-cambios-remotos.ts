@@ -16,7 +16,12 @@ export const capturarCambiosRemotos: RequestHandler = (req, res, next) => {
   }
 
   res.once("finish", () => {
-    if (res.statusCode < 200 || res.statusCode >= 300 || req.path.startsWith("/sync/")) return;
+    const ruta = req.originalUrl.split("?")[0] ?? "";
+    if (
+      res.statusCode < 200 ||
+      res.statusCode >= 300 ||
+      ruta.startsWith("/api/sync/")
+    ) return;
     const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
     void db.insert(eventosSincronizacionTable).values({
       operationId,
