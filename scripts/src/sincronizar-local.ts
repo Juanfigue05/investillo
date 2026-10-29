@@ -8,6 +8,10 @@ import {
   endpointDeRecuperacion,
   traducirIdsLineaCredito,
 } from "./lib/credito-lineas-sync";
+import {
+  clasificarRespuesta,
+  type DecisionRespuesta,
+} from "./lib/clasificar-respuesta";
 
 const { Pool } = pg;
 const databaseUrl = process.env.DATABASE_URL;
@@ -19,12 +23,59 @@ const LIMIT = 50;
 const syncHeaders = getSyncHeaders();
 const pool = new Pool({ connectionString: databaseUrl });
 
+class ErrorSincronizacion extends Error {
+  constructor(
+    readonly codigoSalida: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+function detenerPorRespuesta(decision: DecisionRespuesta): boolean {
+  const codigoSalida =
+    decision === "INTERRUMPIR"
+      ? 1
+      : decision === "LLAVE_RECHAZADA"
+        ? 2
+        : null;
+  if (codigoSalida === null) return false;
+  console.error(
+    decision === "LLAVE_RECHAZADA"
+      ? "Render rechazó la llave de sincronización; revisa SYNC_TOKEN"
+      : "Render no está disponible; se reintentará en la próxima corrida",
+  );
+  process.exitCode = Math.max(Number(process.exitCode ?? 0), codigoSalida);
+  return true;
+}
+
 try {
-  const health = await fetch(`${remoteApiUrl}/healthz`, {
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!health.ok)
-    throw new Error(`El API remoto respondió HTTP ${health.status}`);
+  let health: Response;
+  try {
+    health = await fetch(`${remoteApiUrl}/healthz`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (error) {
+    throw new ErrorSincronizacion(
+      1,
+      `Render no está disponible; se reintentará en la próxima corrida${
+        error instanceof Error ? ` (${error.message})` : ""
+      }`,
+    );
+  }
+  if (!health.ok) {
+    const decision = clasificarRespuesta(health.status, 0);
+    if (decision === "LLAVE_RECHAZADA") {
+      throw new ErrorSincronizacion(
+        2,
+        "Render rechazó la llave de sincronización; revisa SYNC_TOKEN",
+      );
+    }
+    throw new ErrorSincronizacion(
+      1,
+      "Render no está disponible; se reintentará en la próxima corrida",
+    );
+  }
 
   const lock = await pool.query<{ bloqueado: boolean }>(
     "SELECT pg_try_advisory_lock(hashtext('investillo-sync-local')) AS bloqueado",
@@ -42,10 +93,11 @@ try {
     metodo: string;
     payload: unknown;
     creado_en: Date;
+    intentos: number;
     referencias_endpoint: unknown;
     referencias_respuesta: unknown;
   }>(
-    `SELECT operation_id, entidad, entidad_id, endpoint, metodo, payload, creado_en, referencias_endpoint, referencias_respuesta
+    `SELECT operation_id, entidad, entidad_id, endpoint, metodo, payload, creado_en, intentos, referencias_endpoint, referencias_respuesta
        FROM eventos_sincronizacion
       WHERE estado IN ('pendiente', 'error')
       ORDER BY creado_en ASC
@@ -56,6 +108,34 @@ try {
   let sincronizadas = 0;
   let fallidas = 0;
   let conflictos = 0;
+  async function registrarRespuestaFallida(
+    evento: { operation_id: string; intentos: number | string },
+    response: Response,
+  ): Promise<DecisionRespuesta> {
+    const decision = clasificarRespuesta(
+      response.status,
+      Number(evento.intentos),
+    );
+    if (detenerPorRespuesta(decision)) return decision;
+    const detalle = await response.text().catch(() => "sin detalle");
+    const mensaje = `HTTP ${response.status}: ${detalle.slice(0, 500)}`;
+    const estado =
+      decision === "RECHAZO_DEFINITIVO"
+        ? "conflicto"
+        : decision === "REINTENTAR"
+          ? "pendiente"
+          : "error";
+    await pool.query(
+      `UPDATE eventos_sincronizacion
+          SET estado = $2, intentos = intentos + 1, ultimo_error = $3
+        WHERE operation_id = $1`,
+      [evento.operation_id, estado, mensaje],
+    );
+    if (decision === "RECHAZO_DEFINITIVO") conflictos++;
+    else if (decision === "ERROR") fallidas++;
+    return decision;
+  }
+
   for (const evento of rows) {
     try {
       const referencia = await pool.query<{ id_remoto: string }>(
@@ -141,12 +221,28 @@ try {
 
       // No sobrescribe una edición remota posterior sin revisión manual.
       if (evento.metodo !== "POST") {
-        const remoto = await fetch(`${remoteApiUrl}${endpoint}`, {
-          method: "GET",
-          headers: syncHeaders,
-          redirect: "error",
-          signal: AbortSignal.timeout(15_000),
-        });
+        let remoto: Response;
+        try {
+          remoto = await fetch(`${remoteApiUrl}${endpoint}`, {
+            method: "GET",
+            headers: syncHeaders,
+            redirect: "error",
+            signal: AbortSignal.timeout(15_000),
+          });
+        } catch {
+          detenerPorRespuesta(clasificarRespuesta(null, evento.intentos));
+          break;
+        }
+        if (!remoto.ok) {
+          const decision = await registrarRespuestaFallida(evento, remoto);
+          if (
+            decision === "INTERRUMPIR" ||
+            decision === "LLAVE_RECHAZADA"
+          ) {
+            break;
+          }
+          continue;
+        }
         if (remoto.ok) {
           const registro = (await remoto.json().catch(() => null)) as {
             actualizadoEn?: string;
@@ -175,29 +271,38 @@ try {
         }
       }
 
-      const response = await fetch(`${remoteApiUrl}${endpoint}`, {
-        method: evento.metodo,
-        headers: {
-          ...syncHeaders,
-          "Content-Type": "application/json",
-          "X-Operation-Id": evento.operation_id,
-          "X-Sync-Apply": "true",
-        },
-        redirect: "error",
-        body: JSON.stringify(payload),
-      });
+      let response: Response;
+      try {
+        response = await fetch(`${remoteApiUrl}${endpoint}`, {
+          method: evento.metodo,
+          headers: {
+            ...syncHeaders,
+            "Content-Type": "application/json",
+            "X-Operation-Id": evento.operation_id,
+            "X-Sync-Apply": "true",
+          },
+          redirect: "error",
+          body: JSON.stringify(payload),
+        });
+      } catch {
+        if (
+          detenerPorRespuesta(
+            clasificarRespuesta(null, Number(evento.intentos)),
+          )
+        ) {
+          break;
+        }
+        throw new Error("Falló la comunicación con el servidor remoto");
+      }
 
       if (!response.ok) {
-        const detalle = (await response.text()).slice(0, 500);
-        await pool.query(
-          `UPDATE eventos_sincronizacion
-              SET estado = 'error',
-                  intentos = intentos + 1,
-                  ultimo_error = $2
-            WHERE operation_id = $1`,
-          [evento.operation_id, `HTTP ${response.status}: ${detalle}`],
-        );
-        fallidas++;
+        const decision = await registrarRespuestaFallida(evento, response);
+        if (
+          decision === "INTERRUMPIR" ||
+          decision === "LLAVE_RECHAZADA"
+        ) {
+          break;
+        }
         continue;
       }
 
@@ -218,11 +323,33 @@ try {
           endpoint,
           recursoId,
         );
-        const recuperada = await fetch(`${remoteApiUrl}${endpointRecuperacion}`, {
-          headers: syncHeaders,
-          redirect: "error",
-          signal: AbortSignal.timeout(15_000),
-        });
+        let recuperada: Response;
+        try {
+          recuperada = await fetch(
+            `${remoteApiUrl}${endpointRecuperacion}`,
+            {
+              headers: syncHeaders,
+              redirect: "error",
+              signal: AbortSignal.timeout(15_000),
+            },
+          );
+        } catch {
+          detenerPorRespuesta(clasificarRespuesta(null, evento.intentos));
+          break;
+        }
+        if (!recuperada.ok) {
+          const decision = await registrarRespuestaFallida(
+            evento,
+            recuperada,
+          );
+          if (
+            decision === "INTERRUMPIR" ||
+            decision === "LLAVE_RECHAZADA"
+          ) {
+            break;
+          }
+          continue;
+        }
         if (recuperada.ok) respuestaParaMapear = await recuperada.json();
       }
       const idNuevo =
@@ -326,12 +453,25 @@ try {
       `${conflictos} conflicto(s) quedaron retenidos sin sobrescribir datos remotos.`,
     );
   if (fallidas > 0) {
-    console.error(
-      `${fallidas} operación(es) quedaron con error y no se descargan cambios remotos.`,
-    );
-    process.exitCode = 1;
+    console.error(`${fallidas} operación(es) quedaron con error.`);
   }
-  if (conflictos > 0) process.exitCode = 1;
+  const pendientesEstado = await pool.query<{ cantidad: string }>(
+    `SELECT count(*)::text AS cantidad FROM eventos_sincronizacion
+      WHERE origen = 'local' AND estado IN ('error', 'conflicto')`,
+  );
+  if (Number(pendientesEstado.rows[0]?.cantidad ?? 0) > 0) {
+    process.exitCode = Math.max(Number(process.exitCode ?? 0), 3);
+  }
+} catch (error) {
+  if (error instanceof ErrorSincronizacion) {
+    console.error(error.message);
+    process.exitCode = Math.max(
+      Number(process.exitCode ?? 0),
+      error.codigoSalida,
+    );
+  } else {
+    throw error;
+  }
 } finally {
   await pool.end();
 }
