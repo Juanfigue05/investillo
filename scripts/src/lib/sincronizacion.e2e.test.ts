@@ -24,6 +24,8 @@ const prefix = `SYNC-E2E-${randomUUID()}`;
 
 type CreditResponse = {
   id: number;
+  recursoId?: number;
+  yaProcesado?: boolean;
   lineas: Array<{
     id: number;
     productoNombre: string;
@@ -252,6 +254,108 @@ test(
       ).then((result) => result.rows);
       assert.ok(mapeoVehiculo);
 
+      const operationIdReintentoCredito = `${prefix}-retry-credit-create`;
+      const payloadReintentoCredito = {
+        tipo: "credito",
+        concepto: `${prefix}-retry-credit`,
+        fechaFactura: fecha,
+        nombreCliente: "Prueba de reintento de crédito",
+        valorCredito: 120,
+        lineas: [
+          {
+            productoNombre: "Línea de reintento A",
+            cantidad: 1,
+            precioVenta: 50,
+            precioCompra: 0,
+          },
+          {
+            productoNombre: "Línea de reintento B",
+            cantidad: 1,
+            precioVenta: 70,
+            precioCompra: 0,
+          },
+        ],
+      };
+      const creditoReintentoLocal = await api<CreditResponse>(
+        localBase(),
+        "/creditos",
+        "POST",
+        payloadReintentoCredito,
+        operationIdReintentoCredito,
+      );
+      const eventoPendienteReintento = await localPool.query<{
+        estado: string;
+        entidad_id: string;
+        referencias_respuesta: Array<{
+          entidad: string;
+          valorLocal: string;
+        }>;
+      }>(
+        `SELECT estado, entidad_id, referencias_respuesta
+           FROM eventos_sincronizacion WHERE operation_id = $1`,
+        [operationIdReintentoCredito],
+      );
+      assert.equal(eventoPendienteReintento.rows[0]?.estado, "pendiente");
+      assert.equal(eventoPendienteReintento.rows[0]?.referencias_respuesta.length, 2);
+
+      const creditoYaCreadoEnRemoto = await api<CreditResponse>(
+        remoteBase(),
+        "/creditos",
+        "POST",
+        payloadReintentoCredito,
+        operationIdReintentoCredito,
+        true,
+      );
+      assert.equal(creditoYaCreadoEnRemoto.lineas.length, 2);
+      const resultadoReintento = ejecutarScript(
+        "sincronizar-local.ts",
+        scriptEnv(localUrl),
+      );
+      const estadoDespuesDeReintento = await localPool.query<{
+        estado: string;
+        ultimo_error: string | null;
+      }>(
+        `SELECT estado, ultimo_error FROM eventos_sincronizacion
+          WHERE operation_id = $1`,
+        [operationIdReintentoCredito],
+      );
+      assert.equal(
+        resultadoReintento.status,
+        0,
+        `${resultadoReintento.stdout}\n${resultadoReintento.stderr}\n` +
+          `Evento: ${JSON.stringify(estadoDespuesDeReintento.rows[0])}`,
+      );
+      const eventoReintentado = await localPool.query<{ estado: string }>(
+        `SELECT estado FROM eventos_sincronizacion WHERE operation_id = $1`,
+        [operationIdReintentoCredito],
+      );
+      assert.equal(eventoReintentado.rows[0]?.estado, "sincronizado");
+      const relacionesLineasReintentadas = await localPool.query<{
+        id_local: string;
+        id_remoto: string;
+      }>(
+        `SELECT id_local, id_remoto FROM referencias_sincronizacion
+          WHERE entidad = 'credito_linea' AND id_local = ANY($1::text[])`,
+        [creditoReintentoLocal.lineas.map((linea) => String(linea.id))],
+      );
+      assert.equal(relacionesLineasReintentadas.rowCount, 2);
+      const relacionesPorLocal = new Map(
+        relacionesLineasReintentadas.rows.map((relacion) => [
+          relacion.id_local,
+          relacion.id_remoto,
+        ]),
+      );
+      for (let indice = 0; indice < creditoReintentoLocal.lineas.length; indice++) {
+        const lineaLocal = creditoReintentoLocal.lineas[indice];
+        const lineaRemota = creditoYaCreadoEnRemoto.lineas[indice];
+        assert.ok(lineaLocal);
+        assert.ok(lineaRemota);
+        assert.equal(
+          relacionesPorLocal.get(String(lineaLocal.id)),
+          String(lineaRemota.id),
+        );
+      }
+
       const localCreado = await api<CreditResponse>(
         localBase(),
         "/creditos",
@@ -355,6 +459,43 @@ test(
         },
         `${prefix}-remote-create`,
       );
+      const operationIdReintentoRemoto = `${prefix}-remote-retry-credit-create`;
+      const payloadReintentoRemoto = {
+        tipo: "credito",
+        concepto: `${prefix}-remote-retry`,
+        fechaFactura: fecha,
+        nombreCliente: "Prueba de reintento remoto",
+        valorCredito: 120,
+        lineas: [
+          {
+            productoNombre: "Línea remota reintento A",
+            cantidad: 1,
+            precioVenta: 50,
+            precioCompra: 0,
+          },
+          {
+            productoNombre: "Línea remota reintento B",
+            cantidad: 1,
+            precioVenta: 70,
+            precioCompra: 0,
+          },
+        ],
+      };
+      const creditoReintentoRemoto = await api<CreditResponse>(
+        remoteBase(),
+        "/creditos",
+        "POST",
+        payloadReintentoRemoto,
+        operationIdReintentoRemoto,
+      );
+      const creditoYaAplicadoLocal = await api<CreditResponse>(
+        localBase(),
+        "/creditos",
+        "POST",
+        payloadReintentoRemoto,
+        operationIdReintentoRemoto,
+        true,
+      );
       const remotoEditado = await api<CreditResponse>(
         remoteBase(),
         `/creditos/${remotoCreado.id}`,
@@ -416,11 +557,36 @@ test(
             WHERE origen = 'remoto' AND operation_id LIKE $1`,
           [`${prefix}-remote-%`],
         );
-        return Number(result.rows[0]?.count) === 5;
+        return Number(result.rows[0]?.count) === 6;
       }, "No se capturaron todos los eventos remotos de prueba.");
 
       const resultadoPull = ejecutarScript("sincronizar-remoto.ts", scriptEnv(localUrl));
       assert.equal(resultadoPull.status, 0, resultadoPull.stderr || resultadoPull.stdout);
+      const relacionesLineasReintentoRemoto = await localPool.query<{
+        id_local: string;
+        id_remoto: string;
+      }>(
+        `SELECT id_local, id_remoto FROM referencias_sincronizacion
+          WHERE entidad = 'credito_linea' AND id_local = ANY($1::text[])`,
+        [creditoYaAplicadoLocal.lineas.map((linea) => String(linea.id))],
+      );
+      assert.equal(relacionesLineasReintentoRemoto.rowCount, 2);
+      const relacionesPorLineaLocal = new Map(
+        relacionesLineasReintentoRemoto.rows.map((relacion) => [
+          relacion.id_local,
+          relacion.id_remoto,
+        ]),
+      );
+      for (let indice = 0; indice < creditoYaAplicadoLocal.lineas.length; indice++) {
+        const lineaLocal = creditoYaAplicadoLocal.lineas[indice];
+        const lineaRemota = creditoReintentoRemoto.lineas[indice];
+        assert.ok(lineaLocal);
+        assert.ok(lineaRemota);
+        assert.equal(
+          relacionesPorLineaLocal.get(String(lineaLocal.id)),
+          String(lineaRemota.id),
+        );
+      }
       const [vehiculoActualizadoLocal] = await localPool.query<{ placa: string }>(
         "SELECT placa FROM vehiculos_cliente WHERE id = $1",
         [vehiculoLocal.id],

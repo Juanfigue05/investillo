@@ -313,6 +313,34 @@ router.get("/", async (req, res) => {
   res.json(await Promise.all(creditos.map(mapCredito)));
 });
 
+router.get("/:id", async (req, res) => {
+  const idParam = req.params.id;
+  if (!/^\d+$/.test(idParam)) {
+    res.status(400).json({ error: "ID de crédito no válido" });
+    return;
+  }
+  const id = Number(idParam);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    res.status(400).json({ error: "ID de crédito no válido" });
+    return;
+  }
+  if (id > 2_147_483_647) {
+    res.status(404).json({ error: "Crédito no encontrado" });
+    return;
+  }
+
+  const [credito] = await db
+    .select()
+    .from(creditosTable)
+    .where(eq(creditosTable.id, id));
+  if (!credito) {
+    res.status(404).json({ error: "Crédito no encontrado" });
+    return;
+  }
+
+  res.json(await mapCredito(credito));
+});
+
 router.put("/reordenar", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const [ya] = await db

@@ -5,6 +5,7 @@ import {
   idsLineaPendiente,
   idsLineaCreditoEnPayload,
   relacionesDeRespuesta,
+  endpointDeRecuperacion,
   resolverEndpointConReferencias,
   traducirIdRecursoEnEndpoint,
   traducirIdsLineaCredito,
@@ -195,12 +196,12 @@ try {
     ) {
       const recursoId = (respuestaAplicada as { recursoId?: number | string })
         .recursoId;
-      const endpointRecuperacion =
-        evento.metodo === "POST" &&
-        evento.endpoint === "/creditos" &&
-        recursoId !== undefined
-          ? `/creditos/${recursoId}`
-          : endpoint;
+      const endpointRecuperacion = endpointDeRecuperacion(
+        evento.metodo,
+        evento.endpoint,
+        endpoint,
+        recursoId,
+      );
       const recuperada = await fetch(
         `http://localhost:${process.env.PORT || 8080}/api${endpointRecuperacion}`,
         {

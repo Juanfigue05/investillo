@@ -5,6 +5,7 @@ import {
   idsLineaPendiente,
   idsLineaCreditoEnPayload,
   relacionesDeRespuesta,
+  endpointDeRecuperacion,
   traducirIdsLineaCredito,
 } from "./lib/credito-lineas-sync";
 
@@ -209,7 +210,15 @@ try {
         Array.isArray(evento.referencias_respuesta) &&
         evento.referencias_respuesta.length > 0
       ) {
-        const recuperada = await fetch(`${remoteApiUrl}${endpoint}`, {
+        const recursoId = (respuestaRemota as { recursoId?: number | string })
+          .recursoId;
+        const endpointRecuperacion = endpointDeRecuperacion(
+          evento.metodo,
+          evento.endpoint,
+          endpoint,
+          recursoId,
+        );
+        const recuperada = await fetch(`${remoteApiUrl}${endpointRecuperacion}`, {
           headers: syncHeaders,
           redirect: "error",
           signal: AbortSignal.timeout(15_000),

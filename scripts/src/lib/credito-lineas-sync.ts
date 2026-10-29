@@ -102,6 +102,23 @@ function rutaSinQuery(endpoint: string): string {
   return endpoint.split("?")[0] ?? endpoint;
 }
 
+export function endpointDeRecuperacion(
+  metodo: string,
+  endpointOriginal: string,
+  endpointResuelto: string,
+  recursoId: number | string | null | undefined,
+): string {
+  if (
+    metodo === "POST" &&
+    rutaSinQuery(endpointOriginal) === "/creditos" &&
+    recursoId !== null &&
+    recursoId !== undefined
+  ) {
+    return `/creditos/${recursoId}`;
+  }
+  return endpointResuelto;
+}
+
 function tipoCampoLinea(endpoint: string): "id" | "lineaId" | undefined {
   const ruta = rutaSinQuery(endpoint);
   if (/^\/creditos(?:\/\d+)?$/.test(ruta)) return "id";

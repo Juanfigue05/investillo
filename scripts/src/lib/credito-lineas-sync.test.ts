@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { getRemoteApiUrl } from "../remote-api-url";
 import {
+  endpointDeRecuperacion,
   idsLineaPendiente,
   idsLineaCreditoEnPayload,
   relacionesDeRespuesta,
@@ -11,6 +12,29 @@ import {
   traducirIdsLineaCredito,
   valorEnRuta,
 } from "./credito-lineas-sync";
+
+test("calcula la ruta de recuperación para reintentos de creación de crédito", () => {
+  assert.equal(
+    endpointDeRecuperacion("POST", "/creditos", "/creditos", 42),
+    "/creditos/42",
+  );
+  assert.equal(
+    endpointDeRecuperacion("POST", "/creditos", "/creditos", undefined),
+    "/creditos",
+  );
+  assert.equal(
+    endpointDeRecuperacion("PUT", "/creditos/5", "/creditos/5", 42),
+    "/creditos/5",
+  );
+  assert.equal(
+    endpointDeRecuperacion("POST", "/ventas", "/ventas", 42),
+    "/ventas",
+  );
+  assert.equal(
+    endpointDeRecuperacion("POST", "/creditos?origen=local", "/creditos?origen=local", 42),
+    "/creditos/42",
+  );
+});
 
 test("resuelve rutas anidadas en respuestas de crédito", () => {
   assert.equal(
