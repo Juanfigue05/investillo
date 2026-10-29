@@ -36,5 +36,7 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  iniciarGuardadoDiario();
+  if (process.env.DISABLE_BACKGROUND_JOBS !== "true") {
+    iniciarGuardadoDiario();
+  }
 });

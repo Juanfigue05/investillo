@@ -11,6 +11,10 @@ export const capturarCambiosRemotos: RequestHandler = (req, res, next) => {
     return;
   }
 
+  if (!req.header("x-operation-id")) {
+    req.headers["x-operation-id"] = crypto.randomUUID();
+  }
+
   res.once("finish", () => {
     if (res.statusCode < 200 || res.statusCode >= 300 || req.path.startsWith("/sync/")) return;
     const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
@@ -32,8 +36,6 @@ export const capturarCambiosRemotos: RequestHandler = (req, res, next) => {
         estado: "sincronizado",
         procesadoEn: new Date(),
         payload: req.body ?? {},
-        endpoint: req.originalUrl.replace(/^\/api/, ""),
-        metodo: req.method,
       },
     }).catch((error) => console.error("No se pudo registrar cambio remoto:", error));
   });

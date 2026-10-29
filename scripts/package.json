@@ -12,6 +12,8 @@
     "sync:status": "tsx ./src/estado-sincronizacion.ts",
     "sync:pull": "tsx ./src/sincronizar-remoto.ts",
     "sync:all": "pnpm run sync:local && pnpm run sync:pull",
+    "test": "tsx --test src/lib/credito-lineas-sync.test.ts",
+    "test:sync-e2e": "pnpm --filter @workspace/api-server run build && tsx --test src/lib/sincronizacion.e2e.test.ts",
     "setup:local": "tsx ./src/preparar-local.ts",
     "verificar": "tsx ./src/verificar-consistencia.ts",
     "limpiar-operaciones": "tsx ./src/limpiar-operaciones-viejas.ts",

@@ -452,6 +452,7 @@ router.post("/", async (req, res) => {
   let credito;
   try {
     credito = await db.transaction(async (tx) => {
+    let lineasDelCredito: Array<{ id: number }> = [];
     const [created] = await tx
       .insert(creditosTable)
       .values({
@@ -483,6 +484,11 @@ router.post("/", async (req, res) => {
           valorAbonado: String(parseFloat(String(linea.valorAbonado || 0))),
         })),
       ).returning();
+      lineasDelCredito = await tx
+        .select({ id: creditoLineasTable.id })
+        .from(creditoLineasTable)
+        .where(eq(creditoLineasTable.creditoId, created.id))
+        .orderBy(asc(creditoLineasTable.id));
       // Descontar stock por cada línea con producto vinculado
       for (let indice = 0; indice < lineas.length; indice++) {
         const linea = lineas[indice];
@@ -544,9 +550,16 @@ router.post("/", async (req, res) => {
         endpoint: "/creditos",
         payload: req.body,
         origen: "local",
-        referenciasRespuesta: abonoInicialId
-          ? [{ campo: "_syncNuevoAbonoId", entidad: "abono_credito", valorLocal: String(abonoInicialId) }]
-          : undefined,
+        referenciasRespuesta: [
+          ...(abonoInicialId
+            ? [{ campo: "_syncNuevoAbonoId", entidad: "abono_credito", valorLocal: String(abonoInicialId) }]
+            : []),
+          ...lineasDelCredito.map((linea, index) => ({
+            campo: `lineas.${index}.id`,
+            entidad: "credito_linea",
+            valorLocal: String(linea.id),
+          })),
+        ],
       });
     }
     await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: created.id, recursoSecundarioId: abonoInicialId ?? null }).onConflictDoNothing();
@@ -616,6 +629,7 @@ router.put("/:id", async (req, res) => {
   let credito;
   try {
     credito = await db.transaction(async (tx) => {
+    let referenciasLineasNuevas: Array<{ campo: string; entidad: string; valorLocal: string }> = [];
     const [updated] = await tx
       .update(creditosTable)
       .set(updateData)
@@ -633,6 +647,7 @@ router.put("/:id", async (req, res) => {
         .from(creditoLineasTable)
         .where(eq(creditoLineasTable.creditoId, id))
         .orderBy(asc(creditoLineasTable.id));
+      const idsLineasExistentes = new Set(oldLineas.map((linea) => linea.id));
 
       for (const linea of oldLineas) {
         if (!linea.productoId) continue;
@@ -677,6 +692,15 @@ router.put("/:id", async (req, res) => {
       }
 
       const nuevasLineas = await tx.select().from(creditoLineasTable).where(eq(creditoLineasTable.creditoId, id)).orderBy(asc(creditoLineasTable.id));
+      referenciasLineasNuevas = nuevasLineas.flatMap((linea, index) =>
+        idsLineasExistentes.has(linea.id)
+          ? []
+          : [{
+              campo: `lineas.${index}.id`,
+              entidad: "credito_linea",
+              valorLocal: String(linea.id),
+            }],
+      );
       for (const linea of nuevasLineas) {
         if (!linea.productoId) continue;
         const distribucion = await descontarStockCredito(tx, linea.productoId, toNum(linea.cantidad));
@@ -695,7 +719,19 @@ router.put("/:id", async (req, res) => {
     if (manoObra !== undefined) await syncManoObraCredito(tx, updated, manoObra);
 
     if (!req.header("x-sync-apply")) {
-      await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "credito", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/creditos/${id}`, payload: req.body, origen: "local" });
+      await tx.insert(eventosSincronizacionTable).values({
+        operationId,
+        entidad: "credito",
+        entidadId: String(id),
+        tipo: "actualizar",
+        metodo: "PUT",
+        endpoint: `/creditos/${id}`,
+        payload: req.body,
+        origen: "local",
+        referenciasRespuesta: referenciasLineasNuevas.length > 0
+          ? referenciasLineasNuevas
+          : undefined,
+      });
     }
     await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: id }).onConflictDoNothing();
     return updated;

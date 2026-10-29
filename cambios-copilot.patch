@@ -1,0 +1,2182 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index faee2e6..3801829 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -47,3 +47,6 @@ jobs:
+ 
+       - name: Run API tests
+         run: pnpm --filter @workspace/api-server exec vitest run --config vitest.config.ts
++
++      - name: Run script tests
++        run: pnpm --filter @workspace/scripts run test
+diff --git a/artifacts/api-server/src/index.ts b/artifacts/api-server/src/index.ts
+index 9757431..0dcc5f8 100644
+--- a/artifacts/api-server/src/index.ts
++++ b/artifacts/api-server/src/index.ts
+@@ -36,5 +36,7 @@ app.listen(port, (err) => {
+   }
+ 
+   logger.info({ port }, "Server listening");
+-  iniciarGuardadoDiario();
++  if (process.env.DISABLE_BACKGROUND_JOBS !== "true") {
++    iniciarGuardadoDiario();
++  }
+ });
+diff --git a/artifacts/api-server/src/lib/solo-base-de-pruebas.ts b/artifacts/api-server/src/lib/solo-base-de-pruebas.ts
+index 635ff80..de17c2c 100644
+--- a/artifacts/api-server/src/lib/solo-base-de-pruebas.ts
++++ b/artifacts/api-server/src/lib/solo-base-de-pruebas.ts
+@@ -13,11 +13,15 @@ try {
+ }
+ 
+ const hostsLocales = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
++const basesDePruebaPermitidas = new Set([
++  "/investillo_test",
++  "/investillo_test_aiven",
++]);
+ if (
+   !hostsLocales.has(database.hostname) ||
+-  database.pathname !== "/investillo_test"
++  !basesDePruebaPermitidas.has(database.pathname)
+ ) {
+   throw new Error(
+-    "Pruebas bloqueadas: DATABASE_URL debe apuntar a localhost/investillo_test",
++    "Pruebas bloqueadas: DATABASE_URL debe apuntar a una base local de pruebas permitida",
+   );
+ }
+diff --git a/artifacts/api-server/src/middlewares/acceso-remoto.test.ts b/artifacts/api-server/src/middlewares/acceso-remoto.test.ts
+index 55df8d9..5b51e3a 100644
+--- a/artifacts/api-server/src/middlewares/acceso-remoto.test.ts
++++ b/artifacts/api-server/src/middlewares/acceso-remoto.test.ts
+@@ -68,15 +68,15 @@ describe("bloqueoAccesoRemoto", () => {
+ 
+     await request(app)
+       .get("/api/sync/pull")
+-      .set("Authorization", `Bearer ${TOKEN}`)
++      .set("X-Sync-Token", TOKEN)
+       .expect(200, { ok: true });
+     await request(app)
+       .get("/api/datos")
+-      .set("Authorization", `Bearer ${TOKEN}`)
++      .set("X-Sync-Token", TOKEN)
+       .expect(200, { ok: true });
+     await request(app)
+       .post("/api/datos")
+-      .set("Authorization", `Bearer ${TOKEN}`)
++      .set("X-Sync-Token", TOKEN)
+       .set("X-Sync-Apply", "true")
+       .expect(200, { ok: true });
+   });
+@@ -92,10 +92,21 @@ describe("bloqueoAccesoRemoto", () => {
+     await request(app)
+       .post("/api/datos")
+       .set("X-Sync-Apply", "true")
+-      .set("Authorization", `Bearer ${"x".repeat(64)}`)
++      .set("X-Sync-Token", "x".repeat(64))
+       .expect(401, { error: "Autenticación de sincronización requerida" });
+   });
+ 
++  it("mantiene compatibilidad con el formato Bearer usado por versiones anteriores", async () => {
++    vi.stubEnv("SYNC_TOKEN", TOKEN);
++    vi.stubEnv("CLAVE_ACCESO_REMOTO", "");
++    const app = await crearApp();
++
++    await request(app)
++      .get("/api/sync/pull")
++      .set("Authorization", `Bearer ${TOKEN}`)
++      .expect(200, { ok: true });
++  });
++
+   it("falla cerrado si la autenticación de sincronización no está configurada", async () => {
+     vi.stubEnv("SYNC_TOKEN", "");
+     vi.stubEnv("CLAVE_ACCESO_REMOTO", "");
+diff --git a/artifacts/api-server/src/middlewares/acceso-remoto.ts b/artifacts/api-server/src/middlewares/acceso-remoto.ts
+index 00f327b..e37087f 100644
+--- a/artifacts/api-server/src/middlewares/acceso-remoto.ts
++++ b/artifacts/api-server/src/middlewares/acceso-remoto.ts
+@@ -48,6 +48,7 @@ function esSolicitudSincronizacion(req: Request): boolean {
+   return (
+     req.path.startsWith("/api/sync/") ||
+     req.header("x-sync-apply") === "true" ||
++    Boolean(req.header("x-sync-token")) ||
+     (req.header("authorization") ?? "").startsWith("Bearer ")
+   );
+ }
+@@ -90,9 +91,11 @@ export function bloqueoAccesoRemoto(
+       return;
+     }
+     const autorizacion = req.header("authorization") ?? "";
+-    const token = autorizacion.startsWith("Bearer ")
+-      ? autorizacion.slice("Bearer ".length)
+-      : "";
++    const token =
++      req.header("x-sync-token") ??
++      (autorizacion.startsWith("Bearer ")
++        ? autorizacion.slice("Bearer ".length)
++        : "");
+     if (!token || !compararSecretos(token, SYNC_TOKEN)) {
+       res
+         .status(401)
+diff --git a/artifacts/api-server/src/middlewares/capturar-cambios-remotos.ts b/artifacts/api-server/src/middlewares/capturar-cambios-remotos.ts
+index 19fd983..98f175b 100644
+--- a/artifacts/api-server/src/middlewares/capturar-cambios-remotos.ts
++++ b/artifacts/api-server/src/middlewares/capturar-cambios-remotos.ts
+@@ -11,6 +11,10 @@ export const capturarCambiosRemotos: RequestHandler = (req, res, next) => {
+     return;
+   }
+ 
++  if (!req.header("x-operation-id")) {
++    req.headers["x-operation-id"] = crypto.randomUUID();
++  }
++
+   res.once("finish", () => {
+     if (res.statusCode < 200 || res.statusCode >= 300 || req.path.startsWith("/sync/")) return;
+     const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
+@@ -32,8 +36,6 @@ export const capturarCambiosRemotos: RequestHandler = (req, res, next) => {
+         estado: "sincronizado",
+         procesadoEn: new Date(),
+         payload: req.body ?? {},
+-        endpoint: req.originalUrl.replace(/^\/api/, ""),
+-        metodo: req.method,
+       },
+     }).catch((error) => console.error("No se pudo registrar cambio remoto:", error));
+   });
+diff --git a/artifacts/api-server/src/routes/creditos.stock.test.ts b/artifacts/api-server/src/routes/creditos.stock.test.ts
+index 6003ccc..cc7bf78 100644
+--- a/artifacts/api-server/src/routes/creditos.stock.test.ts
++++ b/artifacts/api-server/src/routes/creditos.stock.test.ts
+@@ -20,6 +20,7 @@ import request from "supertest";
+ import app from "../app";
+ import { db } from "@workspace/db";
+ import {
++  eventosSincronizacionTable,
+   productosTable,
+   ventasDiariasTable,
+ } from "@workspace/db/schema";
+@@ -122,6 +123,82 @@ describe("Escenario 1: Crear credito con productos", () => {
+   });
+ });
+ 
++describe("Sincronización de líneas nuevas de crédito", () => {
++  it("registra la ruta de respuesta de una línea agregada mediante PUT", async () => {
++    let creditoId: number | null = null;
++    try {
++      const creado = await request(app)
++        .post("/api/creditos")
++        .send({
++          tipo: "credito",
++          concepto: "TEST-SYNC-LINEA",
++          fechaFactura: new Date().toISOString().slice(0, 10),
++          nombreCliente: "Cliente Test Sync",
++          valorCredito: 100,
++          lineas: [{
++            productoNombre: "Línea inicial",
++            cantidad: 1,
++            precioVenta: 100,
++            precioCompra: 0,
++          }],
++        });
++
++      expect(creado.status).toBe(201);
++      creditoId = creado.body.id as number;
++      const lineaInicial = creado.body.lineas[0] as {
++        id: number;
++        productoNombre: string;
++        cantidad: number;
++        precioVenta: number;
++        precioCompra: number;
++      };
++      const operationId = crypto.randomUUID();
++
++      const editado = await request(app)
++        .put(`/api/creditos/${creditoId}`)
++        .set("X-Operation-Id", operationId)
++        .send({
++          valorCredito: 300,
++          lineas: [
++            {
++              id: lineaInicial.id,
++              productoNombre: lineaInicial.productoNombre,
++              cantidad: lineaInicial.cantidad,
++              precioVenta: lineaInicial.precioVenta,
++              precioCompra: lineaInicial.precioCompra,
++            },
++            {
++              productoNombre: "Línea agregada",
++              cantidad: 1,
++              precioVenta: 200,
++              precioCompra: 0,
++            },
++          ],
++        });
++
++      expect(editado.status).toBe(200);
++      const lineaNueva = editado.body.lineas[1] as { id: number };
++      const [evento] = await db
++        .select({ referencias: eventosSincronizacionTable.referenciasRespuesta })
++        .from(eventosSincronizacionTable)
++        .where(eq(eventosSincronizacionTable.operationId, operationId));
++
++      expect(evento?.referencias).toEqual([
++        {
++          campo: "lineas.1.id",
++          entidad: "credito_linea",
++          valorLocal: String(lineaNueva.id),
++        },
++      ]);
++    } finally {
++      if (creditoId !== null) {
++        const eliminado = await request(app).delete(`/api/creditos/${creditoId}`);
++        expect(eliminado.status).toBeLessThan(500);
++      }
++    }
++  });
++});
++
+ // ── Escenario 2: Pagar el credito completamente → stock NO baja de nuevo ──────
+ 
+ describe("Escenario 2: Pagar credito completamente", () => {
+diff --git a/artifacts/api-server/src/routes/creditos.ts b/artifacts/api-server/src/routes/creditos.ts
+index 045304f..4f5774c 100644
+--- a/artifacts/api-server/src/routes/creditos.ts
++++ b/artifacts/api-server/src/routes/creditos.ts
+@@ -452,6 +452,7 @@ router.post("/", async (req, res) => {
+   let credito;
+   try {
+     credito = await db.transaction(async (tx) => {
++    let lineasDelCredito: Array<{ id: number }> = [];
+     const [created] = await tx
+       .insert(creditosTable)
+       .values({
+@@ -483,6 +484,11 @@ router.post("/", async (req, res) => {
+           valorAbonado: String(parseFloat(String(linea.valorAbonado || 0))),
+         })),
+       ).returning();
++      lineasDelCredito = await tx
++        .select({ id: creditoLineasTable.id })
++        .from(creditoLineasTable)
++        .where(eq(creditoLineasTable.creditoId, created.id))
++        .orderBy(asc(creditoLineasTable.id));
+       // Descontar stock por cada línea con producto vinculado
+       for (let indice = 0; indice < lineas.length; indice++) {
+         const linea = lineas[indice];
+@@ -544,9 +550,16 @@ router.post("/", async (req, res) => {
+         endpoint: "/creditos",
+         payload: req.body,
+         origen: "local",
+-        referenciasRespuesta: abonoInicialId
+-          ? [{ campo: "_syncNuevoAbonoId", entidad: "abono_credito", valorLocal: String(abonoInicialId) }]
+-          : undefined,
++        referenciasRespuesta: [
++          ...(abonoInicialId
++            ? [{ campo: "_syncNuevoAbonoId", entidad: "abono_credito", valorLocal: String(abonoInicialId) }]
++            : []),
++          ...lineasDelCredito.map((linea, index) => ({
++            campo: `lineas.${index}.id`,
++            entidad: "credito_linea",
++            valorLocal: String(linea.id),
++          })),
++        ],
+       });
+     }
+     await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: created.id, recursoSecundarioId: abonoInicialId ?? null }).onConflictDoNothing();
+@@ -616,6 +629,7 @@ router.put("/:id", async (req, res) => {
+   let credito;
+   try {
+     credito = await db.transaction(async (tx) => {
++    let referenciasLineasNuevas: Array<{ campo: string; entidad: string; valorLocal: string }> = [];
+     const [updated] = await tx
+       .update(creditosTable)
+       .set(updateData)
+@@ -633,6 +647,7 @@ router.put("/:id", async (req, res) => {
+         .from(creditoLineasTable)
+         .where(eq(creditoLineasTable.creditoId, id))
+         .orderBy(asc(creditoLineasTable.id));
++      const idsLineasExistentes = new Set(oldLineas.map((linea) => linea.id));
+ 
+       for (const linea of oldLineas) {
+         if (!linea.productoId) continue;
+@@ -677,6 +692,15 @@ router.put("/:id", async (req, res) => {
+       }
+ 
+       const nuevasLineas = await tx.select().from(creditoLineasTable).where(eq(creditoLineasTable.creditoId, id)).orderBy(asc(creditoLineasTable.id));
++      referenciasLineasNuevas = nuevasLineas.flatMap((linea, index) =>
++        idsLineasExistentes.has(linea.id)
++          ? []
++          : [{
++              campo: `lineas.${index}.id`,
++              entidad: "credito_linea",
++              valorLocal: String(linea.id),
++            }],
++      );
+       for (const linea of nuevasLineas) {
+         if (!linea.productoId) continue;
+         const distribucion = await descontarStockCredito(tx, linea.productoId, toNum(linea.cantidad));
+@@ -695,7 +719,19 @@ router.put("/:id", async (req, res) => {
+     if (manoObra !== undefined) await syncManoObraCredito(tx, updated, manoObra);
+ 
+     if (!req.header("x-sync-apply")) {
+-      await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "credito", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/creditos/${id}`, payload: req.body, origen: "local" });
++      await tx.insert(eventosSincronizacionTable).values({
++        operationId,
++        entidad: "credito",
++        entidadId: String(id),
++        tipo: "actualizar",
++        metodo: "PUT",
++        endpoint: `/creditos/${id}`,
++        payload: req.body,
++        origen: "local",
++        referenciasRespuesta: referenciasLineasNuevas.length > 0
++          ? referenciasLineasNuevas
++          : undefined,
++      });
+     }
+     await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: id }).onConflictDoNothing();
+     return updated;
+diff --git a/artifacts/api-server/src/routes/sync.ts b/artifacts/api-server/src/routes/sync.ts
+index 2a509ab..29c8c9e 100644
+--- a/artifacts/api-server/src/routes/sync.ts
++++ b/artifacts/api-server/src/routes/sync.ts
+@@ -1,7 +1,10 @@
+ import { Router } from "express";
+ import { db } from "@workspace/db";
+-import { eventosSincronizacionTable } from "@workspace/db/schema";
+-import { and, asc, gt, eq } from "drizzle-orm";
++import {
++  cursosSincronizacionTable,
++  eventosSincronizacionTable,
++} from "@workspace/db/schema";
++import { and, asc, gt, eq, sql } from "drizzle-orm";
+ 
+ const router = Router();
+ 
+@@ -13,6 +16,10 @@ router.get("/pull", async (req, res) => {
+     endpoint: eventosSincronizacionTable.endpoint,
+     metodo: eventosSincronizacionTable.metodo,
+     payload: eventosSincronizacionTable.payload,
++    entidad: eventosSincronizacionTable.entidad,
++    entidadId: eventosSincronizacionTable.entidadId,
++    referenciasRespuesta: eventosSincronizacionTable.referenciasRespuesta,
++    referenciasEndpoint: eventosSincronizacionTable.referenciasEndpoint,
+     creadoEn: eventosSincronizacionTable.creadoEn,
+   }).from(eventosSincronizacionTable)
+     .where(and(eq(eventosSincronizacionTable.origen, "remoto"), gt(eventosSincronizacionTable.creadoEn, desde)))
+@@ -22,4 +29,54 @@ router.get("/pull", async (req, res) => {
+   res.json({ eventos, hasta });
+ });
+ 
++router.post("/ack", async (req, res) => {
++  const hasta =
++    typeof req.body?.hasta === "string" ? new Date(req.body.hasta) : null;
++  if (!hasta || Number.isNaN(hasta.getTime())) {
++    res.status(400).json({ error: "hasta debe ser una fecha válida" });
++    return;
++  }
++  if (hasta > new Date()) {
++    res.status(400).json({ error: "El acuse no puede estar en el futuro" });
++    return;
++  }
++
++  const hastaUtc = hasta.toISOString();
++  const hastaCursor =
++    `${hastaUtc.slice(0, 19).replace("T", " ")}.${hastaUtc.slice(20, 23)}000`;
++  const yaAcusado = await db
++    .select({ valor: cursosSincronizacionTable.nombre })
++    .from(cursosSincronizacionTable)
++    .where(
++      and(
++        eq(cursosSincronizacionTable.nombre, "acuse_local"),
++        sql`${cursosSincronizacionTable.valor} >= ${hastaCursor}::timestamp`,
++      ),
++    )
++    .limit(1);
++  const [validacionUltimoEvento] = await db
++    .select({
++      supera: sql<boolean>`COALESCE(
++        ${hastaCursor}::timestamp > max(${eventosSincronizacionTable.creadoEn}),
++        false
++      )`,
++    })
++    .from(eventosSincronizacionTable)
++    .where(eq(eventosSincronizacionTable.origen, "remoto"));
++  if (!yaAcusado.length && validacionUltimoEvento?.supera) {
++    res.status(400).json({ error: "El acuse supera el último evento remoto" });
++    return;
++  }
++
++  await db.execute(sql`
++    INSERT INTO cursos_sincronizacion (nombre, valor)
++    VALUES ('acuse_local', ${hastaCursor}::timestamp)
++    ON CONFLICT (nombre) DO UPDATE SET
++      valor = GREATEST(cursos_sincronizacion.valor, EXCLUDED.valor),
++      actualizado_en = now()
++  `);
++
++  res.json({ ok: true, hasta: hasta.toISOString() });
++});
++
+ export default router;
+\ No newline at end of file
+diff --git a/readme.md b/readme.md
+index 857f004..0b9a6d4 100644
+--- a/readme.md
++++ b/readme.md
+@@ -449,8 +449,8 @@ La instalación local usa PostgreSQL en este computador. Esto evita que las oper
+ #### Qué significa cada variable
+ 
+ - `DATABASE_URL` es una conexión de PostgreSQL. En `.env.local` apunta a la base instalada en este computador, por ejemplo `localhost:5432/investillo_local`.
+-- `SYNC_REMOTE_API_URL` **no** es una conexión de PostgreSQL y **no** es una URL de Supabase. Es la dirección HTTP del sistema/API publicado en Render, normalmente con `/api` al final, por ejemplo `https://investillo.onrender.com/api`.
+-- `SYNC_TOKEN` es un secreto aleatorio compartido por Render, `.env.local` y el servidor local. Los scripts lo envían como `Authorization: Bearer`; debe tener al menos 32 bytes.
++- `SYNC_REMOTE_API_URL` **no** es una conexión de PostgreSQL y **no** es una URL de Supabase. Es la dirección HTTPS del sistema/API publicado en Render, normalmente con `/api` al final, por ejemplo `https://investillo.onrender.com/api`.
++- `SYNC_TOKEN` es un secreto aleatorio compartido por Render, `.env.local` y el servidor local. Los scripts lo envían en la cabecera `X-Sync-Token`; debe tener al menos 32 bytes.
+ - La conexión de Supabase permanece en `.env.api` como `DATABASE_URL` para el servidor remoto y en `.env.backup` como `SOURCE_DATABASE_URL` para los respaldos.
+ - Nunca pongas la contraseña de Supabase en `SYNC_REMOTE_API_URL`.
+ 
+@@ -591,7 +591,7 @@ Ambas usan **la misma base de datos de Supabase de siempre** — nunca se crea u
+    | `TRUST_PROXY_HOPS` | `1` para Render detrás de un proxy |
+ 5. Clic en **"Create Web Service"** y espera a que termine — te da una dirección como `https://investillo.onrender.com`.
+ 
+-Genera el token con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Guarda el mismo valor en Render y en `.env.local`, y no lo publiques ni lo subas a Git. Los scripts `sync:local` y `sync:pull` lo envían como `Authorization: Bearer`; sin este token la sincronización se rechaza. El límite de intentos de acceso es de 5 fallos por IP cada 15 minutos y se guarda en memoria, por lo que está pensado para una sola instancia. `TRUST_PROXY_HOPS` debe corresponder al número real de proxies confiables; verifica esa configuración antes de usar el límite en producción.
++Genera el token con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Guarda el mismo valor en Render y en `.env.local`, y no lo publiques ni lo subas a Git. Los scripts `sync:local` y `sync:pull` lo envían como `X-Sync-Token`; sin este token la sincronización se rechaza. El límite de intentos de acceso es de 5 fallos por IP cada 15 minutos y se guarda en memoria, por lo que está pensado para una sola instancia. `TRUST_PROXY_HOPS` debe corresponder al número real de proxies confiables; verifica esa configuración antes de usar el límite en producción.
+ 
+ La dirección que Render entrega, seguida de `/api`, es la que se debe poner en `SYNC_REMOTE_API_URL` del computador local. Ejemplo: si Render entrega `https://investillo.onrender.com`, configura `SYNC_REMOTE_API_URL=https://investillo.onrender.com/api`. No pongas allí `DATABASE_URL`, la URL del pooler de Supabase, ni una URL de Cloudflare o Aiven.
+ 
+@@ -606,7 +606,8 @@ Debe responder con un estado correcto. Si no responde, no programes todavía `sy
+ #### Acceso remoto y sincronización autenticada
+ 
+ - Configura `CLAVE_ACCESO_REMOTO` en Render para proteger la aplicación. Tras iniciar sesión, el navegador recibe una cookie `investillo_sesion` aleatoria, `HttpOnly`, `SameSite=Lax` y con expiración de 30 días; el servidor guarda solo el hash en `sesiones_acceso`. Cerrar sesión revoca la sesión de ese navegador/perfil. La tabla se crea automáticamente al iniciar sesión y la limpieza periódica de operaciones elimina sesiones vencidas.
+-- Configura `SYNC_TOKEN` con el mismo secreto aleatorio en Render y `.env.local`. Genéralo con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` y no lo compartas ni lo subas a Git. Se necesita para subir y descargar cambios; sin él, la API rechaza las solicitudes de sincronización.
++- Configura `SYNC_TOKEN` con el mismo secreto aleatorio en Render y `.env.local`. Genéralo con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` y no lo compartas ni lo subas a Git. Se necesita para subir y descargar cambios; los scripts lo envían mediante `X-Sync-Token` y, sin él, la API rechaza las solicitudes de sincronización.
++- La descarga confirma a Render el último cursor aplicado (`/api/sync/ack`). El limpiador conserva los eventos remotos mientras no tengan acuse; una vez confirmados, quedan sujetos a la retención normal de 60 días. Esta confirmación está diseñada para una sola PC sincronizadora.
+ - En Render configura `TRUST_PROXY_HOPS` con el número real de proxies confiables. Para la configuración habitual de Render se usa `1`; verifica el recorrido de red antes de habilitar el servicio. Es obligatorio en producción cuando `CLAVE_ACCESO_REMOTO` está activa. El límite de acceso es de cinco fallos por IP en 15 minutos y se mantiene en memoria, adecuado para una sola instancia.
+ - La política CSP de Helmet se mantiene desactivada para no interferir con los estilos, fuentes ni PWA; se habilitan las demás cabeceras de seguridad y `Referrer-Policy: same-origin`.
+ 
+@@ -831,9 +832,10 @@ Para que sepas qué esperar y qué no, por ahora:
+ - El sistema hoy solo tiene **Render** desplegado en la nube — Railway o Koyeb como segunda plataforma de respaldo quedaron analizados pero sin implementar (no es urgente: el portátil local conecta directo a Supabase, sin depender de Render para nada).
+ - El plan gratis de Aiven se pausa si pasan 7 días sin usarlo — si el respaldo automático deja de correr por más de una semana, toca reactivarlo a mano.
+ - La importación masiva de clientes detecta duplicados por nombre y por teléfono (compara solo los dígitos, sin importar el formato) — si un número ya está en uso, esa fila queda separada para revisión manual, no se omite en silencio. Correo no se valida contra duplicados.
+-- El outbox transaccional ya cubre clientes, vehículos, productos, ventas y reordenamiento, mano de obra, créditos y abonos, compras individuales y por lote, notas, remachadas, trabajadores y pagos de seguro, cierres, grupos, conteo de monedas, calculadora, historiales, edición de nómina, obra electrónica, tensionadas e importaciones procesadas de clientes e inventario. Las importaciones se convierten a filas JSON para sincronizarse sin transportar archivos binarios. La descarga de cambios remotos usa `/api/sync/pull` y el comando `pnpm run sync:pull`; aún requiere pruebas de extremo a extremo.
++- El outbox transaccional ya cubre clientes, vehículos, productos, ventas y reordenamiento, mano de obra, créditos y abonos, compras individuales y por lote, notas, remachadas, trabajadores y pagos de seguro, cierres, grupos, conteo de monedas, calculadora, historiales, edición de nómina, obra electrónica, tensionadas e importaciones procesadas de clientes e inventario. Las importaciones se convierten a filas JSON para sincronizarse sin transportar archivos binarios. La descarga de cambios remotos usa `/api/sync/pull` y `pnpm run sync:pull`; el servidor conserva los eventos remotos hasta que la PC confirma el cursor y luego permite limpiar los que superan 60 días desde su procesamiento.
+ - Si una operación recibe un error del servidor, queda marcada como error con el mensaje y número de intentos. El panel **Copia local** permite reactivarla y reintentarla; no debe asumirse que fue aplicada hasta comprobarlo.
+ - No hay pruebas automáticas de integración que levanten PostgreSQL por sí solas; las pruebas del API necesitan una `DATABASE_URL` válida.
++- La prueba E2E de sincronización usa dos bases locales aisladas derivadas del respaldo. Configura `SYNC_TEST_DATABASE_LOCAL` y `SYNC_TEST_DATABASE_REMOTE` con las URL de `investillo_sync_local` e `investillo_sync_remote`, y ejecuta `pnpm --filter @workspace/scripts run test:sync-e2e`. La prueba limpia la metadata de sincronización de esas bases; no debe apuntarse a producción ni a una base de trabajo.
+ - El contrato OpenAPI y las rutas implementadas no son idénticos: las funciones que usan `fetch` manual deben probarse además de ejecutar el codegen.
+ - La PWA usa `BASE_PATH` para `base`, `start_url`, `scope` y `navigateFallback`. Para desplegar bajo una subruta, configura esa variable durante el build y verifica que el proxy publique `/api` en la misma URL esperada por el frontend.
+ 
+diff --git a/scripts/package.json b/scripts/package.json
+index ec2f036..9554781 100644
+--- a/scripts/package.json
++++ b/scripts/package.json
+@@ -12,6 +12,8 @@
+     "sync:status": "tsx ./src/estado-sincronizacion.ts",
+     "sync:pull": "tsx ./src/sincronizar-remoto.ts",
+     "sync:all": "pnpm run sync:local && pnpm run sync:pull",
++    "test": "tsx --test src/lib/credito-lineas-sync.test.ts",
++    "test:sync-e2e": "pnpm --filter @workspace/api-server run build && tsx --test src/lib/sincronizacion.e2e.test.ts",
+     "setup:local": "tsx ./src/preparar-local.ts",
+     "verificar": "tsx ./src/verificar-consistencia.ts",
+     "limpiar-operaciones": "tsx ./src/limpiar-operaciones-viejas.ts",
+diff --git a/scripts/src/lib/credito-lineas-sync.test.ts b/scripts/src/lib/credito-lineas-sync.test.ts
+new file mode 100644
+index 0000000..ba6ae33
+--- /dev/null
++++ b/scripts/src/lib/credito-lineas-sync.test.ts
+@@ -0,0 +1,192 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { getRemoteApiUrl } from "../remote-api-url";
++import {
++  idsLineaPendiente,
++  idsLineaCreditoEnPayload,
++  relacionesDeRespuesta,
++  resolverEndpointConReferencias,
++  traducirIdCreditoEnEndpoint,
++  traducirIdRecursoEnEndpoint,
++  traducirIdsLineaCredito,
++  valorEnRuta,
++} from "./credito-lineas-sync";
++
++test("resuelve rutas anidadas en respuestas de crédito", () => {
++  assert.equal(
++    valorEnRuta({ lineas: [{ id: 8 }, { id: 12 }] }, "lineas.1.id"),
++    12,
++  );
++});
++
++test("empareja las líneas creadas al editar un crédito", () => {
++  const relaciones = relacionesDeRespuesta(
++    [
++      {
++        campo: "lineas.1.id",
++        entidad: "credito_linea",
++        valorLocal: "21",
++      },
++    ],
++    { id: 4, lineas: [{ id: 6 }, { id: 82 }] },
++    "local",
++  );
++
++  assert.deepEqual(relaciones, [
++    { entidad: "credito_linea", idLocal: "21", idRemoto: "82" },
++  ]);
++});
++
++test("crea la relación inversa al bajar una edición remota", () => {
++  const relaciones = relacionesDeRespuesta(
++    [
++      {
++        campo: "lineas.0.id",
++        entidad: "credito_linea",
++        valorLocal: "91",
++      },
++    ],
++    { lineas: [{ id: 17 }] },
++    "remoto",
++  );
++
++  assert.deepEqual(relaciones, [
++    { entidad: "credito_linea", idLocal: "17", idRemoto: "91" },
++  ]);
++});
++
++test("traduce IDs de líneas en ediciones de crédito y abonos", () => {
++  const relaciones = new Map([["21", "82"]]);
++
++  assert.deepEqual(
++    traducirIdsLineaCredito(
++      { lineas: [{ id: 21 }, { id: 22 }] },
++      "/creditos/3",
++      relaciones,
++    ),
++    { lineas: [{ id: 82 }, { id: 22 }] },
++  );
++  assert.deepEqual(
++    traducirIdsLineaCredito(
++      { lineas: [{ lineaId: "21", valor: 5000 }] },
++      "/creditos/{creditoId}/abono",
++      relaciones,
++    ),
++    { lineas: [{ lineaId: "82", valor: 5000 }] },
++  );
++  assert.deepEqual(
++    idsLineaCreditoEnPayload(
++      { lineas: [{ lineaId: 21 }, { lineaId: 22 }] },
++      "/creditos/3/abono",
++    ),
++    ["21", "22"],
++  );
++});
++
++test("no permite usar una línea que aún espera su relación de sincronización", () => {
++  assert.deepEqual(
++    idsLineaPendiente(
++      ["21", "22", "23"],
++      new Map([["22", "82"]]),
++      new Set(["21", "23"]),
++    ),
++    ["21", "23"],
++  );
++});
++
++test("traduce el crédito en la ruta y deja intactas otras rutas", () => {
++  const relaciones = new Map([["3", "7"]]);
++  assert.equal(
++    traducirIdCreditoEnEndpoint("/creditos/3/abono?x=1", relaciones),
++    "/creditos/7/abono?x=1",
++  );
++  assert.equal(
++    traducirIdCreditoEnEndpoint("/creditos/{creditoId}/abono", relaciones),
++    "/creditos/{creditoId}/abono",
++  );
++  assert.equal(
++    traducirIdCreditoEnEndpoint("/ventas/3", relaciones),
++    "/ventas/3",
++  );
++});
++
++test("resuelve rutas relacionadas al sincronizar en sentido inverso", () => {
++  assert.equal(
++    resolverEndpointConReferencias(
++      "/clientes/{clienteId}/vehiculos/{id}",
++      [
++        {
++          marcador: "{clienteId}",
++          entidad: "cliente",
++          valorLocal: "81",
++        },
++      ],
++      new Map([["cliente:81", "14"]]),
++    ),
++    "/clientes/14/vehiculos/{id}",
++  );
++  assert.equal(
++    resolverEndpointConReferencias(
++      "/clientes/81/vehiculos/7",
++      [
++        {
++          marcador: "{clienteId}",
++          entidad: "cliente",
++          valorLocal: "81",
++        },
++      ],
++      new Map([["cliente:81", "14"]]),
++    ),
++    "/clientes/14/vehiculos/7",
++  );
++  assert.throws(
++    () =>
++      resolverEndpointConReferencias(
++        "/clientes/{clienteId}/vehiculos/{id}",
++        [
++          {
++            marcador: "{clienteId}",
++            entidad: "cliente",
++            valorLocal: "81",
++          },
++        ],
++        new Map(),
++      ),
++    /Referencia sin resolver/,
++  );
++});
++
++test("solo permite HTTP en loopback con autorización explícita de pruebas", () => {
++  const originalUrl = process.env.SYNC_REMOTE_API_URL;
++  const originalAllowHttp = process.env.SYNC_TEST_ALLOW_LOCAL_HTTP;
++  try {
++    process.env.SYNC_REMOTE_API_URL = "http://127.0.0.1:4100/api";
++    delete process.env.SYNC_TEST_ALLOW_LOCAL_HTTP;
++    assert.throws(() => getRemoteApiUrl(), /debe usar HTTPS/);
++
++    process.env.SYNC_TEST_ALLOW_LOCAL_HTTP = "true";
++    assert.equal(getRemoteApiUrl(), "http://127.0.0.1:4100/api");
++
++    process.env.SYNC_REMOTE_API_URL = "http://example.test/api";
++    assert.throws(() => getRemoteApiUrl(), /debe usar HTTPS/);
++  } finally {
++    if (originalUrl === undefined) delete process.env.SYNC_REMOTE_API_URL;
++    else process.env.SYNC_REMOTE_API_URL = originalUrl;
++    if (originalAllowHttp === undefined) {
++      delete process.env.SYNC_TEST_ALLOW_LOCAL_HTTP;
++    } else {
++      process.env.SYNC_TEST_ALLOW_LOCAL_HTTP = originalAllowHttp;
++    }
++  }
++});
++
++test("traduce el ID del recurso final sin alterar otros segmentos", () => {
++  assert.equal(
++    traducirIdRecursoEnEndpoint("/productos/52?vista=1", "52", "103"),
++    "/productos/103?vista=1",
++  );
++  assert.equal(
++    traducirIdRecursoEnEndpoint("/creditos/52/abono", "52", "103"),
++    "/creditos/52/abono",
++  );
++});
+diff --git a/scripts/src/lib/credito-lineas-sync.ts b/scripts/src/lib/credito-lineas-sync.ts
+new file mode 100644
+index 0000000..a11aa86
+--- /dev/null
++++ b/scripts/src/lib/credito-lineas-sync.ts
+@@ -0,0 +1,189 @@
++export type ReferenciaRespuesta = {
++  campo: string;
++  entidad: string;
++  valorLocal: string;
++};
++
++export type RelacionId = {
++  entidad: string;
++  idLocal: string;
++  idRemoto: string;
++};
++
++export type ReferenciaEndpoint = {
++  marcador: string;
++  entidad: string;
++  valorLocal: string;
++};
++
++export function resolverEndpointConReferencias(
++  endpoint: string,
++  referencias: ReferenciaEndpoint[],
++  idsDestino: ReadonlyMap<string, string>,
++): string {
++  let resuelto = endpoint;
++  for (const referencia of referencias) {
++    const idDestino = idsDestino.get(
++      `${referencia.entidad}:${referencia.valorLocal}`,
++    );
++    if (!idDestino) {
++      throw new Error(
++        `Referencia sin resolver: ${referencia.entidad} id=${referencia.valorLocal}`,
++      );
++    }
++    if (resuelto.includes(referencia.marcador)) {
++      resuelto = resuelto.replace(referencia.marcador, idDestino);
++    } else {
++      const queryIndex = resuelto.indexOf("?");
++      const ruta = queryIndex < 0 ? resuelto : resuelto.slice(0, queryIndex);
++      const query = queryIndex < 0 ? "" : resuelto.slice(queryIndex);
++      const segmentos = ruta.split("/");
++      const indice = segmentos.indexOf(referencia.valorLocal);
++      if (indice >= 0) segmentos[indice] = idDestino;
++      resuelto = `${segmentos.join("/")}${query}`;
++    }
++  }
++  if (resuelto.replaceAll("{id}", "").includes("{")) {
++    throw new Error(`Endpoint sin resolver por completo: ${resuelto}`);
++  }
++  return resuelto;
++}
++
++export function idsLineaPendiente(
++  ids: string[],
++  relaciones: ReadonlyMap<string, string>,
++  pendientes: ReadonlySet<string>,
++): string[] {
++  return ids.filter((id) => !relaciones.has(id) && pendientes.has(id));
++}
++
++export function valorEnRuta(valor: unknown, ruta: string): unknown {
++  return ruta.split(".").reduce<unknown>((actual, segmento) => {
++    if (actual === null || typeof actual !== "object") return undefined;
++    return (actual as Record<string, unknown>)[segmento];
++  }, valor);
++}
++
++export function relacionesDeRespuesta(
++  referencias: ReferenciaRespuesta[],
++  respuesta: unknown,
++  origen: "local" | "remoto",
++): RelacionId[] {
++  const relaciones: RelacionId[] = [];
++
++  for (const referencia of referencias) {
++    const idDestino = valorEnRuta(respuesta, referencia.campo);
++    if (
++      (typeof idDestino !== "number" && typeof idDestino !== "string") ||
++      !/^\d+$/.test(String(idDestino))
++    ) {
++      continue;
++    }
++
++    relaciones.push(
++      origen === "local"
++        ? {
++            entidad: referencia.entidad,
++            idLocal: referencia.valorLocal,
++            idRemoto: String(idDestino),
++          }
++        : {
++            entidad: referencia.entidad,
++            idLocal: String(idDestino),
++            idRemoto: referencia.valorLocal,
++          },
++    );
++  }
++
++  return relaciones;
++}
++
++function rutaSinQuery(endpoint: string): string {
++  return endpoint.split("?")[0] ?? endpoint;
++}
++
++function tipoCampoLinea(endpoint: string): "id" | "lineaId" | undefined {
++  const ruta = rutaSinQuery(endpoint);
++  if (/^\/creditos(?:\/\d+)?$/.test(ruta)) return "id";
++  if (/^\/creditos\/(?:\d+|\{[^/]+\})\/abono(?:\/(?:\d+|\{[^/]+\}))?$/.test(ruta)) {
++    return "lineaId";
++  }
++  return undefined;
++}
++
++export function idsLineaCreditoEnPayload(
++  payload: unknown,
++  endpoint: string,
++): string[] {
++  const campoId = tipoCampoLinea(endpoint);
++  if (!campoId || payload === null || typeof payload !== "object") return [];
++
++  const lineas = (payload as Record<string, unknown>).lineas;
++  if (!Array.isArray(lineas)) return [];
++
++  return lineas.flatMap((linea) => {
++    if (linea === null || typeof linea !== "object") return [];
++    const id = (linea as Record<string, unknown>)[campoId];
++    return (typeof id === "number" || typeof id === "string") && /^\d+$/.test(String(id))
++      ? [String(id)]
++      : [];
++  });
++}
++
++export function traducirIdsLineaCredito(
++  payload: unknown,
++  endpoint: string,
++  relaciones: ReadonlyMap<string, string>,
++): unknown {
++  const campoId = tipoCampoLinea(endpoint);
++  if (!campoId || payload === null || typeof payload !== "object") return payload;
++
++  const objeto = payload as Record<string, unknown>;
++  if (!Array.isArray(objeto.lineas)) return payload;
++
++  return {
++    ...objeto,
++    lineas: objeto.lineas.map((linea) => {
++      if (linea === null || typeof linea !== "object") return linea;
++      const datosLinea = linea as Record<string, unknown>;
++      const id = datosLinea[campoId];
++      if ((typeof id !== "number" && typeof id !== "string") || !/^\d+$/.test(String(id))) {
++        return linea;
++      }
++
++      const traducido = relaciones.get(String(id));
++      if (traducido === undefined) return linea;
++
++      return {
++        ...datosLinea,
++        [campoId]: typeof id === "number" ? Number(traducido) : traducido,
++      };
++    }),
++  };
++}
++
++export function traducirIdCreditoEnEndpoint(
++  endpoint: string,
++  relaciones: ReadonlyMap<string, string>,
++): string {
++  return endpoint.replace(
++    /^(\/creditos\/)(\d+)(?=\/|$)/,
++    (coincidencia, prefijo: string, id: string) =>
++      `${prefijo}${relaciones.get(id) ?? id}`,
++  );
++}
++
++export function traducirIdRecursoEnEndpoint(
++  endpoint: string,
++  idOrigen: string,
++  idDestino: string,
++): string {
++  const queryIndex = endpoint.indexOf("?");
++  const ruta = queryIndex < 0 ? endpoint : endpoint.slice(0, queryIndex);
++  const query = queryIndex < 0 ? "" : endpoint.slice(queryIndex);
++  const segmentos = ruta.split("/");
++  if (segmentos.at(-1) === idOrigen) {
++    segmentos[segmentos.length - 1] = idDestino;
++  }
++  return `${segmentos.join("/")}${query}`;
++}
+diff --git a/scripts/src/lib/sincronizacion.e2e.test.ts b/scripts/src/lib/sincronizacion.e2e.test.ts
+new file mode 100644
+index 0000000..028c2b7
+--- /dev/null
++++ b/scripts/src/lib/sincronizacion.e2e.test.ts
+@@ -0,0 +1,663 @@
++import assert from "node:assert/strict";
++import { spawn, spawnSync, type ChildProcess } from "node:child_process";
++import { createServer } from "node:net";
++import { randomBytes, randomUUID } from "node:crypto";
++import { setTimeout as delay } from "node:timers/promises";
++import { dirname, join, resolve } from "node:path";
++import { fileURLToPath } from "node:url";
++import pg from "pg";
++import test from "node:test";
++
++const localUrl = process.env.SYNC_TEST_DATABASE_LOCAL;
++const remoteUrl = process.env.SYNC_TEST_DATABASE_REMOTE;
++if (!localUrl || !remoteUrl) {
++  throw new Error(
++    "Define SYNC_TEST_DATABASE_LOCAL y SYNC_TEST_DATABASE_REMOTE con las dos bases locales aisladas",
++  );
++}
++const { Pool } = pg;
++const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
++const scriptsRoot = join(repoRoot, "scripts");
++const apiEntry = join(repoRoot, "artifacts", "api-server", "dist", "index.mjs");
++const token = randomBytes(32).toString("hex");
++const prefix = `SYNC-E2E-${randomUUID()}`;
++
++type CreditResponse = {
++  id: number;
++  lineas: Array<{
++    id: number;
++    productoNombre: string;
++    cantidad: number;
++    precioVenta: number;
++    precioCompra: number;
++  }>;
++  _syncNuevoAbonoId?: number;
++};
++
++function assertTestDatabase(databaseUrl: string, expectedName: string): void {
++  const parsed = new URL(databaseUrl);
++  if (
++    !["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname) ||
++    parsed.pathname !== `/${expectedName}`
++  ) {
++    throw new Error(
++      `E2E bloqueado: se requiere una base loopback llamada ${expectedName}`,
++    );
++  }
++}
++
++function childEnv(values: Record<string, string>): NodeJS.ProcessEnv {
++  return {
++    PATH: process.env.PATH,
++    SystemRoot: process.env.SystemRoot,
++    TEMP: process.env.TEMP,
++    TMP: process.env.TMP,
++    USERPROFILE: process.env.USERPROFILE,
++    NODE_ENV: "test",
++    TZ: "UTC",
++    ...values,
++  };
++}
++
++async function puertoLibre(): Promise<number> {
++  const server = createServer();
++  await new Promise<void>((resolveListen, reject) => {
++    server.once("error", reject);
++    server.listen(0, "127.0.0.1", resolveListen);
++  });
++  const address = server.address();
++  assert.ok(address && typeof address !== "string");
++  const port = address.port;
++  await new Promise<void>((resolveClose, reject) => {
++    server.close((error) => (error ? reject(error) : resolveClose()));
++  });
++  return port;
++}
++
++async function iniciarApi(
++  databaseUrl: string,
++  port: number,
++  capturarRemoto: boolean,
++): Promise<ChildProcess> {
++  const apiDatabaseUrl = new URL(databaseUrl);
++  apiDatabaseUrl.searchParams.set("options", "-c timezone=UTC");
++  const child = spawn(process.execPath, ["--enable-source-maps", apiEntry], {
++    cwd: repoRoot,
++    env: childEnv({
++      DATABASE_URL: apiDatabaseUrl.toString(),
++      PORT: String(port),
++      SYNC_TOKEN: token,
++      DISABLE_BACKGROUND_JOBS: "true",
++      ...(capturarRemoto ? { SYNC_CAPTURE_REMOTE: "true" } : {}),
++    }),
++    stdio: ["ignore", "pipe", "pipe"],
++  });
++  let output = "";
++  child.stdout?.on("data", (chunk: Buffer) => {
++    output = `${output}${chunk.toString()}`.slice(-3000);
++  });
++  child.stderr?.on("data", (chunk: Buffer) => {
++    output = `${output}${chunk.toString()}`.slice(-3000);
++  });
++
++  const healthUrl = `http://127.0.0.1:${port}/api/healthz`;
++  for (let attempt = 0; attempt < 100; attempt++) {
++    if (child.exitCode !== null) {
++      throw new Error(`El servidor E2E terminó al iniciar: ${output}`);
++    }
++    try {
++      const response = await fetch(healthUrl);
++      if (response.ok) return child;
++    } catch {
++      await delay(100);
++    }
++  }
++  child.kill();
++  throw new Error(`El servidor E2E no quedó disponible: ${output}`);
++}
++
++function detenerApi(child: ChildProcess | undefined): void {
++  if (child && child.exitCode === null) child.kill();
++}
++
++async function api<T>(
++  baseUrl: string,
++  endpoint: string,
++  method: string,
++  body?: unknown,
++  operationId?: string,
++  syncRequest = false,
++): Promise<T> {
++  const response = await fetch(`${baseUrl}/api${endpoint}`, {
++    method,
++    headers: {
++      "Content-Type": "application/json",
++      ...(operationId ? { "X-Operation-Id": operationId } : {}),
++      ...(syncRequest
++        ? {
++            "X-Sync-Token": token,
++            "X-Sync-Apply": "true",
++          }
++        : {}),
++    },
++    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
++  });
++  const result = await response.json();
++  assert.ok(
++    response.ok,
++    `${method} ${endpoint}: HTTP ${response.status} ${JSON.stringify(result)}`,
++  );
++  return result as T;
++}
++
++function ejecutarScript(
++  archivo: string,
++  variables: Record<string, string>,
++): { status: number | null; stdout: string; stderr: string } {
++  const result = spawnSync(
++    process.execPath,
++    ["--import", "tsx", join("src", archivo)],
++    {
++      cwd: scriptsRoot,
++      env: childEnv(variables),
++      encoding: "utf8",
++      timeout: 60_000,
++    },
++  );
++  if (result.error) throw result.error;
++  return {
++    status: result.status,
++    stdout: result.stdout,
++    stderr: result.stderr,
++  };
++}
++
++async function esperar(
++  comprobar: () => Promise<boolean>,
++  mensaje: string,
++): Promise<void> {
++  for (let intento = 0; intento < 50; intento++) {
++    if (await comprobar()) return;
++    await delay(100);
++  }
++  throw new Error(mensaje);
++}
++
++test(
++  "sincroniza créditos, líneas y abonos en ambas direcciones; confirma retención y atomicidad",
++  async () => {
++    assert.ok(localUrl && remoteUrl);
++    assertTestDatabase(localUrl, "investillo_sync_local");
++    assertTestDatabase(remoteUrl, "investillo_sync_remote");
++
++    const localPool = new Pool({ connectionString: localUrl });
++    const remotePool = new Pool({ connectionString: remoteUrl });
++    let localPort = 0;
++    let remotePort = 0;
++    let localApi: ChildProcess | undefined;
++    let remoteApi: ChildProcess | undefined;
++    const localBase = () => `http://127.0.0.1:${localPort}`;
++    const remoteBase = () => `http://127.0.0.1:${remotePort}`;
++    const scriptEnv = (databaseUrl: string) => ({
++      DATABASE_URL: databaseUrl,
++      SYNC_REMOTE_API_URL: `${remoteBase()}/api`,
++      SYNC_TEST_ALLOW_LOCAL_HTTP: "true",
++      SYNC_TOKEN: token,
++      PORT: String(localPort),
++    });
++
++    try {
++      await Promise.all(
++        [localPool, remotePool].map((pool) =>
++          pool.query(
++            `DELETE FROM eventos_sincronizacion;
++             DELETE FROM operaciones_sincronizadas;
++             DELETE FROM referencias_sincronizacion;
++             DELETE FROM cursos_sincronizacion;`,
++          ),
++        ),
++      );
++      localPort = await puertoLibre();
++      remotePort = await puertoLibre();
++      localApi = await iniciarApi(localUrl, localPort, false);
++      remoteApi = await iniciarApi(remoteUrl, remotePort, true);
++
++      const fecha = new Date().toISOString().slice(0, 10);
++      const clienteLocal = await api<{ id: number }>(
++        localBase(),
++        "/clientes",
++        "POST",
++        { nombre: `${prefix}-cliente` },
++        `${prefix}-cliente-create`,
++      );
++      assert.equal(ejecutarScript("sincronizar-local.ts", scriptEnv(localUrl)).status, 0);
++      const [mapeoCliente] = await localPool.query<{ id_remoto: string }>(
++        `SELECT id_remoto FROM referencias_sincronizacion
++          WHERE entidad = 'cliente' AND id_local = $1`,
++        [String(clienteLocal.id)],
++      ).then((result) => result.rows);
++      assert.ok(mapeoCliente);
++      const vehiculoLocal = await api<{ id: number }>(
++        localBase(),
++        `/clientes/${clienteLocal.id}/vehiculos`,
++        "POST",
++        { placa: `${prefix}-PLACA` },
++        `${prefix}-vehiculo-create`,
++      );
++      assert.equal(ejecutarScript("sincronizar-local.ts", scriptEnv(localUrl)).status, 0);
++      const [mapeoVehiculo] = await localPool.query<{ id_remoto: string }>(
++        `SELECT id_remoto FROM referencias_sincronizacion
++          WHERE entidad = 'vehiculo' AND id_local = $1`,
++        [String(vehiculoLocal.id)],
++      ).then((result) => result.rows);
++      assert.ok(mapeoVehiculo);
++
++      const localCreado = await api<CreditResponse>(
++        localBase(),
++        "/creditos",
++        "POST",
++        {
++          tipo: "credito",
++          concepto: `${prefix}-local`,
++          fechaFactura: fecha,
++          nombreCliente: "Prueba de sincronización local",
++          valorCredito: 100,
++          lineas: [{
++            productoNombre: "Línea inicial local",
++            cantidad: 1,
++            precioVenta: 100,
++            precioCompra: 0,
++          }],
++        },
++        `${prefix}-local-create`,
++      );
++      assert.equal(ejecutarScript("sincronizar-local.ts", scriptEnv(localUrl)).status, 0);
++
++      const [mapeoCredito] = await localPool.query<{ id_remoto: string }>(
++        `SELECT id_remoto FROM referencias_sincronizacion
++          WHERE entidad = 'credito' AND id_local = $1`,
++        [String(localCreado.id)],
++      ).then((result) => result.rows);
++      assert.ok(mapeoCredito);
++      const creditoRemotoId = Number(mapeoCredito.id_remoto);
++
++      const localEditado = await api<CreditResponse>(
++        localBase(),
++        `/creditos/${localCreado.id}`,
++        "PUT",
++        {
++          valorCredito: 300,
++          lineas: [
++            { ...localCreado.lineas[0] },
++            {
++              productoNombre: "Línea agregada local",
++              cantidad: 1,
++              precioVenta: 200,
++              precioCompra: 0,
++            },
++          ],
++        },
++        `${prefix}-local-edit`,
++      );
++      const lineaNuevaLocal = localEditado.lineas.find(
++        (linea) => linea.productoNombre === "Línea agregada local",
++      );
++      assert.ok(lineaNuevaLocal);
++      assert.equal(ejecutarScript("sincronizar-local.ts", scriptEnv(localUrl)).status, 0);
++
++      const [mapeoLinea] = await localPool.query<{ id_remoto: string }>(
++        `SELECT id_remoto FROM referencias_sincronizacion
++          WHERE entidad = 'credito_linea' AND id_local = $1`,
++        [String(lineaNuevaLocal.id)],
++      ).then((result) => result.rows);
++      assert.ok(mapeoLinea);
++      const lineaRemotaId = Number(mapeoLinea.id_remoto);
++
++      await api<CreditResponse>(
++        localBase(),
++        `/creditos/${localCreado.id}/abono`,
++        "POST",
++        {
++          valor: 20,
++          lineas: [{ lineaId: lineaNuevaLocal.id, valor: 20 }],
++          fechaAbono: fecha,
++          fechaVentaDiaria: fecha,
++        },
++        `${prefix}-local-abono`,
++      );
++      assert.equal(ejecutarScript("sincronizar-local.ts", scriptEnv(localUrl)).status, 0);
++      const abonoRemoto = await remotePool.query<{ linea_detalle: string }>(
++        `SELECT linea_detalle FROM abonos_creditos
++          WHERE credito_id = $1 ORDER BY id DESC LIMIT 1`,
++        [creditoRemotoId],
++      );
++      const detalleRemoto = JSON.parse(abonoRemoto.rows[0]?.linea_detalle ?? "{}") as {
++        lineas?: Array<{ lineaId: number }>;
++      };
++      assert.equal(detalleRemoto.lineas?.[0]?.lineaId, lineaRemotaId);
++
++      const remotoCreado = await api<CreditResponse>(
++        remoteBase(),
++        "/creditos",
++        "POST",
++        {
++          tipo: "credito",
++          concepto: `${prefix}-remote`,
++          fechaFactura: fecha,
++          nombreCliente: "Prueba de sincronización remota",
++          valorCredito: 100,
++          lineas: [{
++            productoNombre: "Línea inicial remota",
++            cantidad: 1,
++            precioVenta: 100,
++            precioCompra: 0,
++          }],
++        },
++        `${prefix}-remote-create`,
++      );
++      const remotoEditado = await api<CreditResponse>(
++        remoteBase(),
++        `/creditos/${remotoCreado.id}`,
++        "PUT",
++        {
++          valorCredito: 300,
++          lineas: [
++            { ...remotoCreado.lineas[0] },
++            {
++              productoNombre: "Línea agregada remota",
++              cantidad: 1,
++              precioVenta: 200,
++              precioCompra: 0,
++            },
++          ],
++        },
++        `${prefix}-remote-edit`,
++      );
++      const lineaNuevaRemota = remotoEditado.lineas.find(
++        (linea) => linea.productoNombre === "Línea agregada remota",
++      );
++      assert.ok(lineaNuevaRemota);
++      const remoteAbono = await api<CreditResponse>(
++        remoteBase(),
++        `/creditos/${remotoCreado.id}/abono`,
++        "POST",
++        {
++          valor: 20,
++          lineas: [{ lineaId: lineaNuevaRemota.id, valor: 20 }],
++          fechaAbono: fecha,
++          fechaVentaDiaria: fecha,
++        },
++        `${prefix}-remote-abono`,
++      );
++      assert.ok(remoteAbono._syncNuevoAbonoId);
++      await api<CreditResponse>(
++        remoteBase(),
++        `/creditos/${remotoCreado.id}/abono/${remoteAbono._syncNuevoAbonoId}`,
++        "PUT",
++        {
++          valor: 10,
++          lineas: [{ lineaId: lineaNuevaRemota.id, valor: 10 }],
++          fechaAbono: fecha,
++          fechaVentaDiaria: fecha,
++        },
++        `${prefix}-remote-abono-edit`,
++      );
++      await api(
++        remoteBase(),
++        `/clientes/${Number(mapeoCliente.id_remoto)}/vehiculos/${Number(mapeoVehiculo.id_remoto)}`,
++        "PUT",
++        { placa: `${prefix}-PLACA-EDITADA` },
++        `${prefix}-remote-vehiculo-edit`,
++      );
++
++      await esperar(async () => {
++        const result = await remotePool.query<{ count: string }>(
++          `SELECT count(*)::text AS count FROM eventos_sincronizacion
++            WHERE origen = 'remoto' AND operation_id LIKE $1`,
++          [`${prefix}-remote-%`],
++        );
++        return Number(result.rows[0]?.count) === 5;
++      }, "No se capturaron todos los eventos remotos de prueba.");
++
++      const resultadoPull = ejecutarScript("sincronizar-remoto.ts", scriptEnv(localUrl));
++      assert.equal(resultadoPull.status, 0, resultadoPull.stderr || resultadoPull.stdout);
++      const [vehiculoActualizadoLocal] = await localPool.query<{ placa: string }>(
++        "SELECT placa FROM vehiculos_cliente WHERE id = $1",
++        [vehiculoLocal.id],
++      ).then((result) => result.rows);
++      assert.equal(vehiculoActualizadoLocal?.placa, `${prefix}-PLACA-EDITADA`);
++      const [mapeoLineaRemota] = await localPool.query<{ id_local: string }>(
++        `SELECT id_local FROM referencias_sincronizacion
++          WHERE entidad = 'credito_linea' AND id_remoto = $1`,
++        [String(lineaNuevaRemota.id)],
++      ).then((result) => result.rows);
++      assert.ok(mapeoLineaRemota);
++
++      const [eventoAbonoRemoto] = await remotePool.query<{ entidad_id: string }>(
++        `SELECT entidad_id FROM eventos_sincronizacion WHERE operation_id = $1`,
++        [`${prefix}-remote-abono`],
++      ).then((result) => result.rows);
++      assert.ok(eventoAbonoRemoto);
++      const mapeoAbono = await localPool.query<{ id_local: string; id_remoto: string }>(
++        `SELECT id_local, id_remoto FROM referencias_sincronizacion
++          WHERE entidad = 'abono_credito' AND id_remoto = $1`,
++        [eventoAbonoRemoto.entidad_id],
++      );
++      assert.equal(mapeoAbono.rowCount, 1);
++      const abonoLocal = await localPool.query<{ linea_detalle: string }>(
++        `SELECT linea_detalle FROM abonos_creditos WHERE id = $1`,
++        [Number(mapeoAbono.rows[0]?.id_local)],
++      );
++      const detalleLocal = JSON.parse(abonoLocal.rows[0]?.linea_detalle ?? "{}") as {
++        lineas?: Array<{ lineaId: number; valor: number }>;
++      };
++      assert.equal(detalleLocal.lineas?.[0]?.lineaId, Number(mapeoLineaRemota.id_local));
++      assert.equal(detalleLocal.lineas?.[0]?.valor, 10);
++
++      const acuse = await remotePool.query<{ valor: string }>(
++        `SELECT to_char(valor, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS valor
++           FROM cursos_sincronizacion WHERE nombre = 'acuse_local'`,
++      );
++      assert.equal(acuse.rowCount, 1);
++      const acuseRepetido = await api<{ ok: boolean }>(
++        remoteBase(),
++        "/sync/ack",
++        "POST",
++        { hasta: acuse.rows[0]?.valor },
++        undefined,
++        true,
++      );
++      assert.equal(acuseRepetido.ok, true);
++      const acuseAntiguo = await api<{ ok: boolean }>(
++        remoteBase(),
++        "/sync/ack",
++        "POST",
++        { hasta: "1970-01-01T00:00:00.000Z" },
++        undefined,
++        true,
++      );
++      assert.equal(acuseAntiguo.ok, true);
++      const cursorDespuesDeAcuseAntiguo = await remotePool.query<{ valor: string }>(
++        `SELECT to_char(valor, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS valor
++           FROM cursos_sincronizacion WHERE nombre = 'acuse_local'`,
++      );
++      assert.equal(cursorDespuesDeAcuseAntiguo.rows[0]?.valor, acuse.rows[0]?.valor);
++      const eventosDeAcuse = await remotePool.query<{ count: string }>(
++        `SELECT count(*)::text AS count FROM eventos_sincronizacion
++          WHERE origen = 'remoto' AND endpoint LIKE '%/sync/ack%'`,
++      );
++      assert.equal(Number(eventosDeAcuse.rows[0]?.count), 0);
++      const coberturaAcuse = await remotePool.query<{ noAvanzaMasAlla: boolean }>(
++        `SELECT (
++           SELECT valor FROM cursos_sincronizacion WHERE nombre = 'acuse_local'
++         ) <= (
++           SELECT max(creado_en) FROM eventos_sincronizacion
++            WHERE origen = 'remoto' AND operation_id LIKE $1
++         ) AS "noAvanzaMasAlla"`,
++        [`${prefix}-remote-%`],
++      );
++      assert.equal(coberturaAcuse.rows[0]?.noAvanzaMasAlla, true);
++
++      const eventoAntiguo = `${prefix}-retencion`;
++      const eventoErrorAntiguo = `${prefix}-error`;
++      const eventoConflictoAntiguo = `${prefix}-conflicto`;
++      await remotePool.query(
++        `INSERT INTO eventos_sincronizacion
++          (operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
++           origen, estado, creado_en, procesado_en)
++         VALUES ($1, 'e2e', '1', 'crear', 'POST', '/e2e', '{}'::jsonb,
++           'remoto', 'sincronizado', now() - interval '61 days', now() - interval '61 days'),
++                ($2, 'e2e', '2', 'crear', 'POST', '/e2e', '{}'::jsonb,
++           'remoto', 'error', now() - interval '61 days', now() - interval '61 days'),
++                ($3, 'e2e', '3', 'crear', 'POST', '/e2e', '{}'::jsonb,
++           'remoto', 'conflicto', now() - interval '61 days', now() - interval '61 days')`,
++        [eventoAntiguo, eventoErrorAntiguo, eventoConflictoAntiguo],
++      );
++      await remotePool.query(
++        "DELETE FROM cursos_sincronizacion WHERE nombre = 'acuse_local'",
++      );
++      const cleanEnv = childEnv({ DATABASE_URL: remoteUrl });
++      const limpiaSinAcuse = spawnSync(
++        process.execPath,
++        ["--import", "tsx", join("src", "limpiar-operaciones-viejas.ts")],
++        { cwd: scriptsRoot, env: cleanEnv, encoding: "utf8", timeout: 30_000 },
++      );
++      assert.equal(limpiaSinAcuse.status, 0, limpiaSinAcuse.stderr);
++      const conservado = await remotePool.query(
++        `SELECT 1 FROM eventos_sincronizacion WHERE operation_id = $1`,
++        [eventoAntiguo],
++      );
++      assert.equal(conservado.rowCount, 1);
++
++      await remotePool.query(
++        `INSERT INTO cursos_sincronizacion (nombre, valor)
++         VALUES ('acuse_local', $1)
++         ON CONFLICT (nombre) DO UPDATE SET valor = EXCLUDED.valor`,
++        [acuse.rows[0]!.valor],
++      );
++      const limpiaConAcuse = spawnSync(
++        process.execPath,
++        ["--import", "tsx", join("src", "limpiar-operaciones-viejas.ts")],
++        { cwd: scriptsRoot, env: cleanEnv, encoding: "utf8", timeout: 30_000 },
++      );
++      assert.equal(limpiaConAcuse.status, 0, limpiaConAcuse.stderr);
++      const eliminado = await remotePool.query(
++        `SELECT 1 FROM eventos_sincronizacion WHERE operation_id = $1`,
++        [eventoAntiguo],
++      );
++      assert.equal(eliminado.rowCount, 0);
++      const noSincronizadosAntiguos = await remotePool.query(
++        `SELECT operation_id FROM eventos_sincronizacion
++          WHERE operation_id = ANY($1::text[])`,
++        [[eventoErrorAntiguo, eventoConflictoAntiguo]],
++      );
++      assert.equal(noSincronizadosAntiguos.rowCount, 2);
++
++      const localFallido = await api<CreditResponse>(
++        localBase(),
++        "/creditos",
++        "POST",
++        {
++          tipo: "credito",
++          concepto: `${prefix}-atomic`,
++          fechaFactura: fecha,
++          nombreCliente: "Prueba de atomicidad",
++          valorCredito: 100,
++          lineas: [{
++            productoNombre: "Línea de atomicidad",
++            cantidad: 1,
++            precioVenta: 100,
++            precioCompra: 0,
++          }],
++        },
++        `${prefix}-atomic-create`,
++      );
++      await localPool.query(
++        `UPDATE eventos_sincronizacion
++            SET referencias_respuesta = $2::jsonb
++          WHERE operation_id = $1`,
++        [
++          `${prefix}-atomic-create`,
++          JSON.stringify([
++            {
++              campo: "lineas.0.id",
++              entidad: "credito_linea",
++              valorLocal: String(localFallido.lineas[0]!.id),
++            },
++            {
++              campo: "lineas.99.id",
++              entidad: "credito_linea",
++              valorLocal: `${localFallido.lineas[0]!.id}-missing`,
++            },
++          ]),
++        ],
++      );
++      const resultadoAtomico = ejecutarScript("sincronizar-local.ts", scriptEnv(localUrl));
++      assert.notEqual(resultadoAtomico.status, 0);
++      const relacionesAtomicas = await localPool.query(
++        `SELECT 1 FROM referencias_sincronizacion
++          WHERE (entidad = 'credito' AND id_local = $1)
++             OR (entidad = 'credito_linea' AND id_local = $2)`,
++        [String(localFallido.id), String(localFallido.lineas[0]!.id)],
++      );
++      assert.equal(relacionesAtomicas.rowCount, 0);
++      const estadoFallido = await localPool.query<{ estado: string }>(
++        `SELECT estado FROM eventos_sincronizacion WHERE operation_id = $1`,
++        [`${prefix}-atomic-create`],
++      );
++      assert.equal(estadoFallido.rows[0]?.estado, "error");
++    } finally {
++      try {
++        if (localApi && remoteApi) {
++          for (const [pool, base] of [
++            [localPool, localBase()],
++            [remotePool, remoteBase()],
++          ] as const) {
++            const creditos = await pool.query<{ id: number }>(
++              "SELECT id FROM creditos WHERE concepto LIKE $1",
++              [`${prefix}%`],
++            );
++            for (const credito of creditos.rows) {
++              await api(
++                base,
++                `/creditos/${credito.id}`,
++                "DELETE",
++                undefined,
++                `${prefix}-cleanup-${credito.id}`,
++                true,
++              );
++            }
++            const clientes = await pool.query<{ id: number }>(
++              "SELECT id FROM clientes WHERE nombre LIKE $1",
++              [`${prefix}%`],
++            );
++            for (const cliente of clientes.rows) {
++              await api(
++                base,
++                `/clientes/${cliente.id}`,
++                "DELETE",
++                undefined,
++                `${prefix}-cleanup-client-${cliente.id}`,
++                true,
++              );
++            }
++          }
++        }
++        await Promise.all(
++          [localPool, remotePool].map((pool) =>
++            pool.query(
++              `DELETE FROM eventos_sincronizacion;
++               DELETE FROM operaciones_sincronizadas;
++               DELETE FROM referencias_sincronizacion;
++               DELETE FROM cursos_sincronizacion;`,
++            ),
++          ),
++        );
++      } finally {
++        detenerApi(localApi);
++        detenerApi(remoteApi);
++        await Promise.all([localPool.end(), remotePool.end()]);
++      }
++    }
++  },
++);
+diff --git a/scripts/src/limpiar-operaciones-viejas.ts b/scripts/src/limpiar-operaciones-viejas.ts
+index 19109c6..de4a8d3 100644
+--- a/scripts/src/limpiar-operaciones-viejas.ts
++++ b/scripts/src/limpiar-operaciones-viejas.ts
+@@ -15,7 +15,15 @@ async function main() {
+   const eventos = await pool.query(
+     `DELETE FROM eventos_sincronizacion
+      WHERE estado = 'sincronizado'
+-       AND procesado_en < now() - make_interval(days => $1)`,
++       AND procesado_en < now() - make_interval(days => $1)
++       AND (
++         origen <> 'remoto'
++         OR creado_en <= (
++           SELECT valor
++             FROM cursos_sincronizacion
++            WHERE nombre = 'acuse_local'
++         )
++       )`,
+     [DIAS_A_CONSERVAR],
+   );
+   await pool.query(`
+diff --git a/scripts/src/remote-api-url.ts b/scripts/src/remote-api-url.ts
+new file mode 100644
+index 0000000..6805d6d
+--- /dev/null
++++ b/scripts/src/remote-api-url.ts
+@@ -0,0 +1,42 @@
++export function getRemoteApiUrl(): string {
++  const configuredUrl = process.env.SYNC_REMOTE_API_URL?.replace(/\/+$/, "");
++  if (!configuredUrl) {
++    throw new Error("SYNC_REMOTE_API_URL es obligatorio");
++  }
++
++  let url: URL;
++  try {
++    url = new URL(configuredUrl);
++  } catch {
++    throw new Error("SYNC_REMOTE_API_URL debe ser una URL válida");
++  }
++
++  if (
++    url.pathname.replace(/\/+$/, "") !== "/api" ||
++    url.username ||
++    url.password ||
++    url.search ||
++    url.hash ||
++    configuredUrl.includes("TU-SERVICIO") ||
++    configuredUrl.includes("example.com")
++  ) {
++    throw new Error(
++      "SYNC_REMOTE_API_URL debe ser la URL del API remoto y terminar en /api",
++    );
++  }
++
++  if (url.protocol === "https:") return configuredUrl;
++
++  const hostLocal = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
++  if (
++    url.protocol === "http:" &&
++    process.env.SYNC_TEST_ALLOW_LOCAL_HTTP === "true" &&
++    hostLocal.has(url.hostname)
++  ) {
++    return configuredUrl;
++  }
++
++  throw new Error(
++    "SYNC_REMOTE_API_URL debe usar HTTPS; HTTP solo se permite para pruebas explícitas en loopback",
++  );
++}
+diff --git a/scripts/src/sincronizar-local.ts b/scripts/src/sincronizar-local.ts
+index f6cac01..af2c43e 100644
+--- a/scripts/src/sincronizar-local.ts
++++ b/scripts/src/sincronizar-local.ts
+@@ -1,25 +1,18 @@
+ import pg from "pg";
+ import { getSyncHeaders } from "./sync-auth";
++import { getRemoteApiUrl } from "./remote-api-url";
++import {
++  idsLineaPendiente,
++  idsLineaCreditoEnPayload,
++  relacionesDeRespuesta,
++  traducirIdsLineaCredito,
++} from "./lib/credito-lineas-sync";
+ 
+ const { Pool } = pg;
+ const databaseUrl = process.env.DATABASE_URL;
+-const remoteApiUrl = process.env.SYNC_REMOTE_API_URL?.replace(/\/+$/, "");
++const remoteApiUrl = getRemoteApiUrl();
+ 
+ if (!databaseUrl) throw new Error("DATABASE_URL es obligatorio");
+-if (!remoteApiUrl) throw new Error("SYNC_REMOTE_API_URL es obligatorio");
+-if (!remoteApiUrl.startsWith("https://") || !remoteApiUrl.endsWith("/api")) {
+-  throw new Error(
+-    "SYNC_REMOTE_API_URL debe ser la URL HTTPS del API remoto y terminar en /api",
+-  );
+-}
+-if (
+-  remoteApiUrl.includes("TU-SERVICIO") ||
+-  remoteApiUrl.includes("example.com")
+-) {
+-  throw new Error(
+-    "Reemplace SYNC_REMOTE_API_URL por el dominio real de Render",
+-  );
+-}
+ 
+ const LIMIT = 50;
+ const syncHeaders = getSyncHeaders();
+@@ -64,7 +57,6 @@ try {
+   let conflictos = 0;
+   for (const evento of rows) {
+     try {
+-      const payload = evento.payload;
+       const referencia = await pool.query<{ id_remoto: string }>(
+         `SELECT id_remoto FROM referencias_sincronizacion
+           WHERE entidad = $1 AND id_local = $2`,
+@@ -106,6 +98,46 @@ try {
+           : evento.endpoint;
+       }
+ 
++      const idsLineasCredito = idsLineaCreditoEnPayload(evento.payload, endpoint);
++      const referenciasLineasCredito = idsLineasCredito.length > 0
++        ? await pool.query<{ id_local: string; id_remoto: string }>(
++            `SELECT id_local, id_remoto FROM referencias_sincronizacion
++              WHERE entidad = 'credito_linea' AND id_local = ANY($1::text[])`,
++            [idsLineasCredito],
++          )
++        : { rows: [] };
++      const mapaLineasCredito = new Map(
++        referenciasLineasCredito.rows.map((row) => [row.id_local, row.id_remoto]),
++      );
++      if (idsLineasCredito.length > 0) {
++        const pendientes = await pool.query<{ id: string }>(
++          `SELECT DISTINCT referencia->>'valorLocal' AS id
++             FROM eventos_sincronizacion evento,
++                  jsonb_array_elements(COALESCE(evento.referencias_respuesta, '[]'::jsonb)) referencia
++            WHERE evento.origen = 'local'
++              AND evento.estado IN ('pendiente', 'error')
++              AND referencia->>'entidad' = 'credito_linea'
++              AND referencia->>'valorLocal' = ANY($1::text[])`,
++          [idsLineasCredito],
++        );
++        const pendientesIds = new Set(pendientes.rows.map((row) => row.id));
++        const bloqueados = idsLineaPendiente(
++          idsLineasCredito,
++          mapaLineasCredito,
++          pendientesIds,
++        );
++        if (bloqueados.length > 0) {
++          throw new Error(
++            `Dependencia pendiente: la(s) línea(s) de crédito ${bloqueados.join(", ")} aún no tiene(n) relación remota; se reintentará(n) después de sincronizar su edición.`,
++          );
++        }
++      }
++      const payload = traducirIdsLineaCredito(
++        evento.payload,
++        endpoint,
++        mapaLineasCredito,
++      );
++
+       // No sobrescribe una edición remota posterior sin revisión manual.
+       if (evento.metodo !== "POST") {
+         const remoto = await fetch(`${remoteApiUrl}${endpoint}`, {
+@@ -169,53 +201,98 @@ try {
+       }
+ 
+       const respuestaRemota = await response.json().catch(() => null);
+-      await pool.query(
+-        `UPDATE eventos_sincronizacion
+-            SET estado = 'sincronizado', procesado_en = now(), ultimo_error = NULL,
+-                respuesta_remota = $2
+-          WHERE operation_id = $1`,
+-        [evento.operation_id, JSON.stringify(respuestaRemota)],
+-      );
+-      const idNuevo =
+-        respuestaRemota && typeof respuestaRemota === "object"
+-          ? ((respuestaRemota as { _syncNuevoAbonoId?: number | string })
+-              ._syncNuevoAbonoId ??
+-            (respuestaRemota as { id?: number | string }).id ??
+-            (respuestaRemota as { recursoId?: number | string }).recursoId)
+-          : undefined;
+-      if (idNuevo !== undefined && !idRemoto) {
+-        await pool.query(
+-          `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
+-           VALUES ($1, $2, $3)
+-           ON CONFLICT (entidad, id_local) DO UPDATE SET id_remoto = EXCLUDED.id_remoto, actualizado_en = now()`,
+-          [evento.entidad, evento.entidad_id, String(idNuevo)],
+-        );
+-      }
++      let respuestaParaMapear = respuestaRemota;
+       if (
++        respuestaRemota &&
++        typeof respuestaRemota === "object" &&
++        (respuestaRemota as { yaProcesado?: boolean }).yaProcesado &&
+         Array.isArray(evento.referencias_respuesta) &&
+         evento.referencias_respuesta.length > 0
+       ) {
+-        for (const ref of evento.referencias_respuesta as {
+-          campo: string;
+-          entidad: string;
+-          valorLocal: string;
+-        }[]) {
+-          const valorRemoto =
+-            respuestaRemota && typeof respuestaRemota === "object"
+-              ? (respuestaRemota as Record<string, unknown>)[ref.campo]
+-              : undefined;
+-          if (valorRemoto === undefined || valorRemoto === null) {
+-            throw new Error(
+-              `La respuesta remota no contiene ${ref.campo}; se reintentará.`,
+-            );
+-          }
+-          await pool.query(
++        const recuperada = await fetch(`${remoteApiUrl}${endpoint}`, {
++          headers: syncHeaders,
++          redirect: "error",
++          signal: AbortSignal.timeout(15_000),
++        });
++        if (recuperada.ok) respuestaParaMapear = await recuperada.json();
++      }
++      const idNuevo =
++        respuestaParaMapear && typeof respuestaParaMapear === "object"
++          ? ((respuestaParaMapear as { _syncNuevoAbonoId?: number | string })
++              ._syncNuevoAbonoId ??
++            (respuestaParaMapear as { id?: number | string }).id ??
++            (respuestaParaMapear as { recursoId?: number | string }).recursoId)
++          : undefined;
++      const client = await pool.connect();
++      try {
++        await client.query("BEGIN");
++        if (idNuevo !== undefined && !idRemoto) {
++          await client.query(
+             `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
+              VALUES ($1, $2, $3)
+              ON CONFLICT (entidad, id_local) DO UPDATE SET id_remoto = EXCLUDED.id_remoto, actualizado_en = now()`,
+-            [ref.entidad, ref.valorLocal, String(valorRemoto)],
++            [evento.entidad, evento.entidad_id, String(idNuevo)],
+           );
+         }
++        if (
++          Array.isArray(evento.referencias_respuesta) &&
++          evento.referencias_respuesta.length > 0
++        ) {
++          const referencias = evento.referencias_respuesta as {
++            campo: string;
++            entidad: string;
++            valorLocal: string;
++          }[];
++          const relaciones = relacionesDeRespuesta(
++            referencias,
++            respuestaParaMapear,
++            "local",
++          );
++          for (const relacion of relaciones) {
++            await client.query(
++              `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
++               VALUES ($1, $2, $3)
++               ON CONFLICT (entidad, id_local) DO UPDATE SET id_remoto = EXCLUDED.id_remoto, actualizado_en = now()`,
++              [relacion.entidad, relacion.idLocal, relacion.idRemoto],
++            );
++          }
++          for (const referencia of referencias) {
++            const guardada = relaciones.some((relacion) =>
++              relacion.entidad === referencia.entidad &&
++              relacion.idLocal === referencia.valorLocal,
++            );
++            if (guardada) continue;
++
++            const existente = await client.query(
++              `SELECT 1 FROM referencias_sincronizacion
++                WHERE entidad = $1 AND id_local = $2`,
++              [referencia.entidad, referencia.valorLocal],
++            );
++            if (existente.rowCount === 0) {
++              throw new Error(
++                `La respuesta remota no contiene ${referencia.campo} y no existe una relación previa; se reintentará sin marcar el evento como sincronizado.`,
++              );
++            }
++          }
++        }
++        await client.query(
++          `UPDATE eventos_sincronizacion
++              SET estado = 'sincronizado', procesado_en = now(), ultimo_error = NULL,
++                  respuesta_remota = $2
++            WHERE operation_id = $1`,
++          [evento.operation_id, JSON.stringify(respuestaRemota)],
++        );
++        await client.query("COMMIT");
++      } catch (error) {
++        await client.query("ROLLBACK").catch((rollbackError: unknown) => {
++          console.error(
++            "No se pudo revertir la transacción de sincronización:",
++            rollbackError,
++          );
++        });
++        throw error;
++      } finally {
++        client.release();
+       }
+       sincronizadas++;
+     } catch (error) {
+diff --git a/scripts/src/sincronizar-remoto.ts b/scripts/src/sincronizar-remoto.ts
+index d99107e..ca8742e 100644
+--- a/scripts/src/sincronizar-remoto.ts
++++ b/scripts/src/sincronizar-remoto.ts
+@@ -1,21 +1,32 @@
+ import pg from "pg";
+ import { getSyncHeaders } from "./sync-auth";
++import { getRemoteApiUrl } from "./remote-api-url";
++import {
++  idsLineaPendiente,
++  idsLineaCreditoEnPayload,
++  relacionesDeRespuesta,
++  resolverEndpointConReferencias,
++  traducirIdRecursoEnEndpoint,
++  traducirIdsLineaCredito,
++} from "./lib/credito-lineas-sync";
+ 
+ const databaseUrl = process.env.DATABASE_URL;
+-const remoteApiUrl = process.env.SYNC_REMOTE_API_URL?.replace(/\/+$/, "");
++const remoteApiUrl = getRemoteApiUrl();
+ if (!databaseUrl || !remoteApiUrl)
+   throw new Error("DATABASE_URL y SYNC_REMOTE_API_URL son obligatorios");
+-if (!remoteApiUrl.startsWith("https://") || !remoteApiUrl.endsWith("/api")) {
+-  throw new Error(
+-    "SYNC_REMOTE_API_URL debe ser la URL HTTPS del API remoto y terminar en /api",
+-  );
+-}
+-if (remoteApiUrl.includes("TU-SERVICIO") || remoteApiUrl.includes("example.com")) {
+-  throw new Error("Reemplace SYNC_REMOTE_API_URL por el dominio real de Render");
+-}
+ 
+ const syncHeaders = getSyncHeaders();
+ const pool = new pg.Pool({ connectionString: databaseUrl });
++const lockClient = await pool.connect();
++const lock = await lockClient.query<{ bloqueado: boolean }>(
++  "SELECT pg_try_advisory_lock(hashtext('investillo-sync-remoto')) AS bloqueado",
++);
++if (!lock.rows[0]?.bloqueado) {
++  console.log("Ya hay una descarga de cambios remotos en ejecución; esta se omite.");
++  lockClient.release();
++  await pool.end();
++  process.exit(0);
++}
+ try {
+   const pendientes = await pool.query<{ cantidad: string }>(
+     `SELECT count(*)::text AS cantidad FROM eventos_sincronizacion
+@@ -49,15 +60,116 @@ try {
+       endpoint: string;
+       metodo: string;
+       payload: unknown;
++      entidad: string;
++      entidadId: string;
++      referenciasRespuesta: Array<{
++        campo: string;
++        entidad: string;
++        valorLocal: string;
++      }> | null;
++      referenciasEndpoint: Array<{
++        marcador: string;
++        entidad: string;
++        valorLocal: string;
++      }> | null;
+       creadoEn: string;
+     }>;
+     hasta: string;
+   };
+ 
++  const lineasCreditoPendientes = new Set(
++    data.eventos.flatMap((evento) =>
++      (evento.referenciasRespuesta ?? [])
++        .filter((referencia) => referencia.entidad === "credito_linea")
++        .map((referencia) => referencia.valorLocal),
++    ),
++  );
++
+   let aplicados = 0;
+   for (const evento of data.eventos) {
++    let endpoint = evento.endpoint;
++    if (evento.referenciasEndpoint?.length) {
++      const idsDestino = new Map<string, string>();
++      for (const referencia of evento.referenciasEndpoint) {
++        const relacion = await pool.query<{ id_local: string }>(
++          `SELECT id_local FROM referencias_sincronizacion
++            WHERE entidad = $1 AND id_remoto = $2`,
++          [referencia.entidad, referencia.valorLocal],
++        );
++        if (relacion.rows[0]) {
++          idsDestino.set(
++            `${referencia.entidad}:${referencia.valorLocal}`,
++            relacion.rows[0].id_local,
++          );
++        }
++      }
++      endpoint = resolverEndpointConReferencias(
++        endpoint,
++        evento.referenciasEndpoint,
++        idsDestino,
++      );
++    }
++    if (endpoint.includes("{id}")) {
++      const relacion = await pool.query<{ id_local: string }>(
++        `SELECT id_local FROM referencias_sincronizacion
++          WHERE entidad = $1 AND id_remoto = $2`,
++        [evento.entidad, evento.entidadId],
++      );
++      const idLocal = relacion.rows[0]?.id_local;
++      if (!idLocal) {
++        throw new Error(
++          `No existe mapeo local para ${evento.entidad} remoto=${evento.entidadId}`,
++        );
++      }
++      endpoint = endpoint.replace("{id}", idLocal);
++    }
++    if (evento.metodo !== "POST" && !endpoint.includes("{")) {
++      const relacionRecurso = await pool.query<{ id_local: string }>(
++        `SELECT id_local FROM referencias_sincronizacion
++          WHERE entidad = $1 AND id_remoto = $2`,
++        [evento.entidad, evento.entidadId],
++      );
++      if (relacionRecurso.rows[0]) {
++        endpoint = traducirIdRecursoEnEndpoint(
++          endpoint,
++          evento.entidadId,
++          relacionRecurso.rows[0].id_local,
++        );
++      }
++    }
++
++    const idsLineasCredito = idsLineaCreditoEnPayload(
++      evento.payload,
++      evento.endpoint,
++    );
++    const referenciasLineasCredito = idsLineasCredito.length > 0
++      ? await pool.query<{ id_remoto: string; id_local: string }>(
++          `SELECT id_remoto, id_local FROM referencias_sincronizacion
++            WHERE entidad = 'credito_linea' AND id_remoto = ANY($1::text[])`,
++          [idsLineasCredito],
++        )
++      : { rows: [] };
++    const mapaLineasCredito = new Map(
++      referenciasLineasCredito.rows.map((row) => [row.id_remoto, row.id_local]),
++    );
++    const bloqueados = idsLineaPendiente(
++      idsLineasCredito,
++      mapaLineasCredito,
++      lineasCreditoPendientes,
++    );
++    if (bloqueados.length > 0) {
++      throw new Error(
++        `Dependencia pendiente: la(s) línea(s) remota(s) ${bloqueados.join(", ")} aún no tiene(n) relación local.`,
++      );
++    }
++    const payload = traducirIdsLineaCredito(
++      evento.payload,
++      evento.endpoint,
++      mapaLineasCredito,
++    );
++
+     const applied = await fetch(
+-      `http://localhost:${process.env.PORT || 8080}/api${evento.endpoint}`,
++      `http://localhost:${process.env.PORT || 8080}/api${endpoint}`,
+       {
+         method: evento.metodo,
+         headers: {
+@@ -67,27 +179,158 @@ try {
+           "X-Sync-Apply": "true",
+         },
+         redirect: "error",
+-        body: JSON.stringify(evento.payload),
++        body: JSON.stringify(payload),
+       },
+     );
+     if (!applied.ok)
+       throw new Error(
+-        `No se pudo aplicar ${evento.metodo} ${evento.endpoint}: HTTP ${applied.status}`,
++        `No se pudo aplicar ${evento.metodo} ${endpoint}: HTTP ${applied.status}`,
++      );
++    const respuestaAplicada = await applied.json().catch(() => null);
++    let respuestaLocal = respuestaAplicada;
++    if (
++      respuestaAplicada &&
++      typeof respuestaAplicada === "object" &&
++      (respuestaAplicada as { yaProcesado?: boolean }).yaProcesado
++    ) {
++      const recursoId = (respuestaAplicada as { recursoId?: number | string })
++        .recursoId;
++      const endpointRecuperacion =
++        evento.metodo === "POST" &&
++        evento.endpoint === "/creditos" &&
++        recursoId !== undefined
++          ? `/creditos/${recursoId}`
++          : endpoint;
++      const recuperada = await fetch(
++        `http://localhost:${process.env.PORT || 8080}/api${endpointRecuperacion}`,
++        {
++          headers: syncHeaders,
++          redirect: "error",
++          signal: AbortSignal.timeout(15_000),
++        },
+       );
++      if (recuperada.ok) respuestaLocal = await recuperada.json();
++    }
++
++    const relaciones = relacionesDeRespuesta(
++      evento.referenciasRespuesta ?? [],
++      respuestaLocal,
++      "remoto",
++    );
++    const client = await pool.connect();
++    try {
++      await client.query("BEGIN");
++      if (
++        evento.metodo === "POST" &&
++        evento.entidad !== "api" &&
++        respuestaLocal &&
++        typeof respuestaLocal === "object"
++      ) {
++        const respuesta = respuestaLocal as {
++          _syncNuevoAbonoId?: number | string;
++          id?: number | string;
++          recursoId?: number | string;
++        };
++        const idLocal =
++          respuesta._syncNuevoAbonoId ?? respuesta.id ?? respuesta.recursoId;
++        if (idLocal !== undefined) {
++          await client.query(
++            `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
++             VALUES ($1, $2, $3)
++             ON CONFLICT (entidad, id_local) DO UPDATE
++             SET id_remoto = EXCLUDED.id_remoto, actualizado_en = now()`,
++            [evento.entidad, String(idLocal), evento.entidadId],
++          );
++        }
++      }
++      for (const relacion of relaciones) {
++        await client.query(
++          `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
++           VALUES ($1, $2, $3)
++           ON CONFLICT (entidad, id_local) DO UPDATE
++           SET id_remoto = EXCLUDED.id_remoto, actualizado_en = now()`,
++          [relacion.entidad, relacion.idLocal, relacion.idRemoto],
++        );
++      }
++      for (const referencia of evento.referenciasRespuesta ?? []) {
++        const guardada = relaciones.some((relacion) =>
++          relacion.entidad === referencia.entidad &&
++          relacion.idRemoto === referencia.valorLocal,
++        );
++        if (guardada) continue;
++
++        const existente = await client.query(
++          `SELECT 1 FROM referencias_sincronizacion
++            WHERE entidad = $1 AND id_remoto = $2`,
++          [referencia.entidad, referencia.valorLocal],
++        );
++        if (existente.rowCount === 0) {
++          throw new Error(
++            `La respuesta local no contiene ${referencia.campo} y no existe una relación previa; no se avanzará el cursor.`,
++          );
++        }
++      }
++      await client.query("COMMIT");
++    } catch (error) {
++      await client.query("ROLLBACK").catch((rollbackError: unknown) => {
++        console.error(
++          "No se pudo revertir la transacción de referencias remotas:",
++          rollbackError,
++        );
++      });
++      throw error;
++    } finally {
++      client.release();
++    }
+     aplicados++;
+   }
+ 
+   if (data.hasta) {
+-    await pool.query(
+-      `INSERT INTO cursos_sincronizacion (nombre, valor)
+-       VALUES ('remoto', $1)
+-       ON CONFLICT (nombre) DO UPDATE SET valor = EXCLUDED.valor, actualizado_en = now()`,
+-      [new Date(data.hasta)],
+-    );
++    const client = await pool.connect();
++    try {
++      await client.query("BEGIN");
++      await client.query(
++        `INSERT INTO cursos_sincronizacion (nombre, valor)
++         VALUES ('remoto', $1)
++         ON CONFLICT (nombre) DO UPDATE SET valor = EXCLUDED.valor, actualizado_en = now()`,
++        [new Date(data.hasta)],
++      );
++      await client.query("COMMIT");
++    } catch (error) {
++      await client.query("ROLLBACK").catch((rollbackError: unknown) => {
++        console.error("No se pudo revertir el cursor remoto:", rollbackError);
++      });
++      throw error;
++    } finally {
++      client.release();
++    }
++    const ack = await fetch(`${remoteApiUrl}/sync/ack`, {
++      method: "POST",
++      headers: {
++        ...syncHeaders,
++        "Content-Type": "application/json",
++        "X-Sync-Apply": "true",
++      },
++      body: JSON.stringify({ hasta: data.hasta }),
++      redirect: "error",
++      signal: AbortSignal.timeout(15_000),
++    });
++    if (!ack.ok) {
++      throw new Error(
++        `No se pudo confirmar el cursor remoto: HTTP ${ack.status} ${(await ack.text()).slice(0, 300)}`,
++      );
++    }
+   }
+   console.log(
+     `Sincronización remota → local: ${aplicados}/${data.eventos.length} eventos aplicados.`,
+   );
+ } finally {
+-  await pool.end();
++  try {
++    await lockClient.query(
++      "SELECT pg_advisory_unlock(hashtext('investillo-sync-remoto'))",
++    );
++  } finally {
++    lockClient.release();
++    await pool.end();
++  }
+ }
+diff --git a/scripts/src/sync-auth.ts b/scripts/src/sync-auth.ts
+index 404d738..1f735bf 100644
+--- a/scripts/src/sync-auth.ts
++++ b/scripts/src/sync-auth.ts
+@@ -8,5 +8,5 @@ export function getSyncHeaders(): Record<string, string> {
+   if (Buffer.byteLength(token) < 32) {
+     throw new Error("SYNC_TOKEN debe tener al menos 32 bytes");
+   }
+-  return { Authorization: `Bearer ${token}` };
++  return { "X-Sync-Token": token };
+ }

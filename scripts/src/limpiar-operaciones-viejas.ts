@@ -15,7 +15,15 @@ async function main() {
   const eventos = await pool.query(
     `DELETE FROM eventos_sincronizacion
      WHERE estado = 'sincronizado'
-       AND procesado_en < now() - make_interval(days => $1)`,
+       AND procesado_en < now() - make_interval(days => $1)
+       AND (
+         origen <> 'remoto'
+         OR creado_en <= (
+           SELECT valor
+             FROM cursos_sincronizacion
+            WHERE nombre = 'acuse_local'
+         )
+       )`,
     [DIAS_A_CONSERVAR],
   );
   await pool.query(`

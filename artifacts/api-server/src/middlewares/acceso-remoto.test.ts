@@ -68,15 +68,15 @@ describe("bloqueoAccesoRemoto", () => {
 
     await request(app)
       .get("/api/sync/pull")
-      .set("Authorization", `Bearer ${TOKEN}`)
+      .set("X-Sync-Token", TOKEN)
       .expect(200, { ok: true });
     await request(app)
       .get("/api/datos")
-      .set("Authorization", `Bearer ${TOKEN}`)
+      .set("X-Sync-Token", TOKEN)
       .expect(200, { ok: true });
     await request(app)
       .post("/api/datos")
-      .set("Authorization", `Bearer ${TOKEN}`)
+      .set("X-Sync-Token", TOKEN)
       .set("X-Sync-Apply", "true")
       .expect(200, { ok: true });
   });
@@ -92,8 +92,19 @@ describe("bloqueoAccesoRemoto", () => {
     await request(app)
       .post("/api/datos")
       .set("X-Sync-Apply", "true")
-      .set("Authorization", `Bearer ${"x".repeat(64)}`)
+      .set("X-Sync-Token", "x".repeat(64))
       .expect(401, { error: "Autenticación de sincronización requerida" });
+  });
+
+  it("mantiene compatibilidad con el formato Bearer usado por versiones anteriores", async () => {
+    vi.stubEnv("SYNC_TOKEN", TOKEN);
+    vi.stubEnv("CLAVE_ACCESO_REMOTO", "");
+    const app = await crearApp();
+
+    await request(app)
+      .get("/api/sync/pull")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .expect(200, { ok: true });
   });
 
   it("falla cerrado si la autenticación de sincronización no está configurada", async () => {

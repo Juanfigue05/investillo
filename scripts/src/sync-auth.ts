@@ -8,5 +8,5 @@ export function getSyncHeaders(): Record<string, string> {
   if (Buffer.byteLength(token) < 32) {
     throw new Error("SYNC_TOKEN debe tener al menos 32 bytes");
   }
-  return { Authorization: `Bearer ${token}` };
+  return { "X-Sync-Token": token };
 }

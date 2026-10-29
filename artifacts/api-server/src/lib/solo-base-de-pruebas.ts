@@ -13,11 +13,15 @@ try {
 }
 
 const hostsLocales = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+const basesDePruebaPermitidas = new Set([
+  "/investillo_test",
+  "/investillo_test_aiven",
+]);
 if (
   !hostsLocales.has(database.hostname) ||
-  database.pathname !== "/investillo_test"
+  !basesDePruebaPermitidas.has(database.pathname)
 ) {
   throw new Error(
-    "Pruebas bloqueadas: DATABASE_URL debe apuntar a localhost/investillo_test",
+    "Pruebas bloqueadas: DATABASE_URL debe apuntar a una base local de pruebas permitida",
   );
 }

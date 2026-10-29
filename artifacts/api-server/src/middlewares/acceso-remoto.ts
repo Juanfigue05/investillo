@@ -48,6 +48,7 @@ function esSolicitudSincronizacion(req: Request): boolean {
   return (
     req.path.startsWith("/api/sync/") ||
     req.header("x-sync-apply") === "true" ||
+    Boolean(req.header("x-sync-token")) ||
     (req.header("authorization") ?? "").startsWith("Bearer ")
   );
 }
@@ -90,9 +91,11 @@ export function bloqueoAccesoRemoto(
       return;
     }
     const autorizacion = req.header("authorization") ?? "";
-    const token = autorizacion.startsWith("Bearer ")
-      ? autorizacion.slice("Bearer ".length)
-      : "";
+    const token =
+      req.header("x-sync-token") ??
+      (autorizacion.startsWith("Bearer ")
+        ? autorizacion.slice("Bearer ".length)
+        : "");
     if (!token || !compararSecretos(token, SYNC_TOKEN)) {
       res
         .status(401)

@@ -47,3 +47,6 @@ jobs:
 
       - name: Run API tests
         run: pnpm --filter @workspace/api-server exec vitest run --config vitest.config.ts
+
+      - name: Run script tests
+        run: pnpm --filter @workspace/scripts run test
