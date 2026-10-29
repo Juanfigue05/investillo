@@ -8,6 +8,7 @@ import cookieParser from "cookie-parser";
 import { capturarCambiosRemotos } from "./middlewares/capturar-cambios-remotos";
 import { bloqueoOperacion } from "./middlewares/bloqueo-operacion";
 import { bloqueoAccesoRemoto } from "./middlewares/acceso-remoto";
+import { rechazarCuerpoComprimido } from "./middlewares/rechazar-cuerpo-comprimido";
 
 const app: Express = express();
 const trustProxyHops = process.env.TRUST_PROXY_HOPS;
@@ -84,6 +85,7 @@ app.use(
     credentials: true,
   }),
 );
+app.use(rechazarCuerpoComprimido);
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 app.use(cookieParser());
