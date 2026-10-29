@@ -300,6 +300,7 @@ Todos se escriben en el **Símbolo del sistema (CMD)**, estando dentro de la car
 | `pnpm run verificar`                             | Revisa consistencia de datos (stock negativo, créditos sobre-abonados, precios invertidos, etc.) |
 | `pnpm run verificar:local`                       | Ejecuta la misma revisión contra PostgreSQL local                                      |
 | `pnpm run sync:local`                            | Intenta subir eventos locales pendientes al API remoto configurado en `SYNC_REMOTE_API_URL` |
+| `pnpm run sync:init`                             | Inicializa una sola vez el punto de partida para descargar cambios desde Render |
 | `pnpm run sync:pull`                             | Descarga cambios registrados en Render y los aplica al API local                    |
 | `pnpm run sync:all`                              | Sube primero operaciones locales y luego descarga cambios remotos, en ese orden     |
 | `pnpm run sync:status`                           | Muestra pendientes, errores y eventos sincronizados retenidos en la cola local           |
@@ -607,6 +608,7 @@ Debe responder con un estado correcto. Si no responde, no programes todavía `sy
 
 - Configura `CLAVE_ACCESO_REMOTO` en Render para proteger la aplicación. Tras iniciar sesión, el navegador recibe una cookie `investillo_sesion` aleatoria, `HttpOnly`, `SameSite=Lax` y con expiración de 30 días; el servidor guarda solo el hash en `sesiones_acceso`. Cerrar sesión revoca la sesión de ese navegador/perfil. La tabla se crea automáticamente al iniciar sesión y la limpieza periódica de operaciones elimina sesiones vencidas.
 - Configura `SYNC_TOKEN` con el mismo secreto aleatorio en Render y `.env.local`. Genéralo con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` y no lo compartas ni lo subas a Git. Se necesita para subir y descargar cambios; los scripts lo envían mediante `X-Sync-Token` y, sin él, la API rechaza las solicitudes de sincronización.
+- Antes de descargar cambios por primera vez, ejecuta `pnpm run sync:init` en la PC local. En producción, agrega la columna nullable que permite reanudar entre eventos con la misma marca de tiempo: `ALTER TABLE cursos_sincronizacion ADD COLUMN IF NOT EXISTS operacion_id text;`.
 - La descarga confirma a Render el último cursor aplicado (`/api/sync/ack`). El limpiador conserva los eventos remotos mientras no tengan acuse; una vez confirmados, quedan sujetos a la retención normal de 60 días. Esta confirmación está diseñada para una sola PC sincronizadora.
 - En Render configura `TRUST_PROXY_HOPS` con el número real de proxies confiables. Para la configuración habitual de Render se usa `1`; verifica el recorrido de red antes de habilitar el servicio. Es obligatorio en producción cuando `CLAVE_ACCESO_REMOTO` está activa. El límite de acceso es de cinco fallos por IP en 15 minutos y se mantiene en memoria, adecuado para una sola instancia.
 - La política CSP de Helmet se mantiene desactivada para no interferir con los estilos, fuentes ni PWA; se habilitan las demás cabeceras de seguridad y `Referrer-Policy: same-origin`.

@@ -13,6 +13,7 @@
     "backup": "dotenv -e .env.backup -- pnpm --filter @workspace/scripts run backup",
     "backup:local": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run backup:local",
     "sync:local": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run sync:local",
+    "sync:init": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run sync:init",
     "sync:status": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run sync:status",
     "sync:pull": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run sync:pull",
     "sync:all": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run sync:all",

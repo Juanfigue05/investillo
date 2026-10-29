@@ -1,49 +1,137 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import {
-  cursosSincronizacionTable,
-  eventosSincronizacionTable,
-} from "@workspace/db/schema";
-import { and, asc, gt, eq, sql } from "drizzle-orm";
+import { cursosSincronizacionTable } from "@workspace/db/schema";
+import { and, eq, sql } from "drizzle-orm";
 
 const router = Router();
+const DESDE_PREDETERMINADO = "1970-01-01 00:00:00";
+const FORMATO_FECHA =
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?$/;
+
+function fechaCursorValida(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = FORMATO_FECHA.exec(value);
+  if (!match || match[1] === "0000") return false;
+  const fechaBase = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}Z`;
+  const fecha = new Date(fechaBase);
+  return (
+    Number.isFinite(fecha.getTime()) &&
+    fecha.toISOString().slice(0, 19) === fechaBase.slice(0, 19)
+  );
+}
+
+function fechaSql(value: string): string {
+  return value.replace("T", " ");
+}
+
+function limitePull(value: unknown): number {
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return 100;
+  const limite = Number(value);
+  if (!Number.isSafeInteger(limite) || limite < 1) return 100;
+  return Math.min(limite, 200);
+}
 
 router.get("/pull", async (req, res) => {
-  const desde = new Date(String(req.query.desde || "1970-01-01T00:00:00.000Z"));
-  if (Number.isNaN(desde.getTime())) { res.status(400).json({ error: "desde inválido" }); return; }
-  const eventos = await db.select({
-    operationId: eventosSincronizacionTable.operationId,
-    endpoint: eventosSincronizacionTable.endpoint,
-    metodo: eventosSincronizacionTable.metodo,
-    payload: eventosSincronizacionTable.payload,
-    entidad: eventosSincronizacionTable.entidad,
-    entidadId: eventosSincronizacionTable.entidadId,
-    referenciasRespuesta: eventosSincronizacionTable.referenciasRespuesta,
-    referenciasEndpoint: eventosSincronizacionTable.referenciasEndpoint,
-    creadoEn: eventosSincronizacionTable.creadoEn,
-  }).from(eventosSincronizacionTable)
-    .where(and(eq(eventosSincronizacionTable.origen, "remoto"), gt(eventosSincronizacionTable.creadoEn, desde)))
-    .orderBy(asc(eventosSincronizacionTable.creadoEn))
-    .limit(100);
-  const hasta = eventos.at(-1)?.creadoEn ?? desde;
-  res.json({ eventos, hasta });
+  const desdeParametro = req.query.desde;
+  const desde =
+    desdeParametro === undefined ? DESDE_PREDETERMINADO : desdeParametro;
+  if (!fechaCursorValida(desde)) {
+    res.status(400).json({ error: "desde inválido" });
+    return;
+  }
+
+  const desdeOperacion = req.query.desdeOperacion;
+  if (
+    desdeOperacion !== undefined &&
+    (typeof desdeOperacion !== "string" ||
+      desdeOperacion.length === 0 ||
+      desdeOperacion.length > 200)
+  ) {
+    res.status(400).json({ error: "desdeOperacion inválido" });
+    return;
+  }
+  const limite = limitePull(req.query.limite);
+  const desdeTexto = fechaSql(desde);
+  const eventosQuery = db.execute(sql`
+    SELECT
+      operation_id AS "operationId",
+      endpoint,
+      metodo,
+      payload,
+      entidad,
+      entidad_id AS "entidadId",
+      referencias_respuesta AS "referenciasRespuesta",
+      referencias_endpoint AS "referenciasEndpoint",
+      creado_en::text AS "creadoEn"
+    FROM eventos_sincronizacion
+    WHERE origen = 'remoto'
+      AND creado_en < now() - interval '2 seconds'
+      AND ${
+        desdeOperacion === undefined
+          ? sql`creado_en > ${desdeTexto}::timestamp`
+          : sql`(creado_en, operation_id) > (${desdeTexto}::timestamp, ${desdeOperacion})`
+      }
+    ORDER BY creado_en, operation_id
+    LIMIT ${limite}
+  `);
+  const { rows } = await eventosQuery;
+  const eventos = rows as Array<{
+    operationId: string;
+    endpoint: string;
+    metodo: string;
+    payload: unknown;
+    entidad: string;
+    entidadId: string;
+    referenciasRespuesta: unknown;
+    referenciasEndpoint: unknown;
+    creadoEn: string;
+  }>;
+  const ultimoEvento = eventos.at(-1);
+  res.json({
+    eventos,
+    hasta: ultimoEvento?.creadoEn ?? desdeTexto,
+    hastaOperacion: ultimoEvento?.operationId ?? desdeOperacion ?? null,
+    hayMas: eventos.length >= limite,
+  });
+});
+
+router.get("/ahora", async (_req, res) => {
+  const { rows } = await db.execute(sql`
+    SELECT to_char(
+      now() - interval '2 seconds',
+      'YYYY-MM-DD HH24:MI:SS.US'
+    ) AS ahora
+  `);
+  res.json({ ahora: rows[0]?.ahora });
 });
 
 router.post("/ack", async (req, res) => {
-  const hasta =
-    typeof req.body?.hasta === "string" ? new Date(req.body.hasta) : null;
-  if (!hasta || Number.isNaN(hasta.getTime())) {
+  const hasta = req.body?.hasta;
+  if (!fechaCursorValida(hasta)) {
     res.status(400).json({ error: "hasta debe ser una fecha válida" });
     return;
   }
-  if (hasta > new Date()) {
+
+  const hastaCursor = fechaSql(hasta);
+  const validacion = await db.execute(sql`
+    SELECT
+      ${hastaCursor}::timestamp > now() AS futuro,
+      COALESCE(
+        ${hastaCursor}::timestamp > (
+          SELECT max(creado_en)
+          FROM eventos_sincronizacion
+          WHERE origen = 'remoto'
+        ),
+        false
+      ) AS supera_ultimo_evento
+  `);
+  const resultado = validacion.rows[0] as
+    | { futuro: boolean; supera_ultimo_evento: boolean }
+    | undefined;
+  if (resultado?.futuro) {
     res.status(400).json({ error: "El acuse no puede estar en el futuro" });
     return;
   }
-
-  const hastaUtc = hasta.toISOString();
-  const hastaCursor =
-    `${hastaUtc.slice(0, 19).replace("T", " ")}.${hastaUtc.slice(20, 23)}000`;
   const yaAcusado = await db
     .select({ valor: cursosSincronizacionTable.nombre })
     .from(cursosSincronizacionTable)
@@ -54,16 +142,7 @@ router.post("/ack", async (req, res) => {
       ),
     )
     .limit(1);
-  const [validacionUltimoEvento] = await db
-    .select({
-      supera: sql<boolean>`COALESCE(
-        ${hastaCursor}::timestamp > max(${eventosSincronizacionTable.creadoEn}),
-        false
-      )`,
-    })
-    .from(eventosSincronizacionTable)
-    .where(eq(eventosSincronizacionTable.origen, "remoto"));
-  if (!yaAcusado.length && validacionUltimoEvento?.supera) {
+  if (!yaAcusado.length && resultado?.supera_ultimo_evento) {
     res.status(400).json({ error: "El acuse supera el último evento remoto" });
     return;
   }
@@ -76,7 +155,7 @@ router.post("/ack", async (req, res) => {
       actualizado_en = now()
   `);
 
-  res.json({ ok: true, hasta: hasta.toISOString() });
+  res.json({ ok: true, hasta: hastaCursor });
 });
 
 export default router;
