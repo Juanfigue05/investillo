@@ -233,16 +233,6 @@ try {
           detenerPorRespuesta(clasificarRespuesta(null, evento.intentos));
           break;
         }
-        if (!remoto.ok) {
-          const decision = await registrarRespuestaFallida(evento, remoto);
-          if (
-            decision === "INTERRUMPIR" ||
-            decision === "LLAVE_RECHAZADA"
-          ) {
-            break;
-          }
-          continue;
-        }
         if (remoto.ok) {
           const registro = (await remoto.json().catch(() => null)) as {
             actualizadoEn?: string;
@@ -267,6 +257,18 @@ try {
             );
             conflictos++;
             continue;
+          }
+        } else {
+          const decision = clasificarRespuesta(
+            remoto.status,
+            Number(evento.intentos),
+          );
+          if (
+            decision === "INTERRUMPIR" ||
+            decision === "LLAVE_RECHAZADA"
+          ) {
+            detenerPorRespuesta(decision);
+            break;
           }
         }
       }

@@ -30,8 +30,14 @@ const token = randomBytes(32).toString("hex");
 const prefix = `sync-local-test-${randomUUID()}`;
 const pool = new Pool({ connectionString: databaseUrl });
 let postCount = 0;
+let getCount = 0;
+let putCount = 0;
+let deleteCount = 0;
 let pullCount = 0;
 let postStatus: (numero: number) => number = () => 200;
+let putStatus: (numero: number) => number = () => 200;
+let deleteStatus: (numero: number) => number = () => 200;
+let preflightStatus = 404;
 
 const server = createServer(
   (request: IncomingMessage, response: ServerResponse) => {
@@ -53,9 +59,24 @@ const server = createServer(
       );
       return;
     }
-    if (request.method === "POST" && request.url === "/api/test") {
+    if (path === "/api/test" && request.method === "GET") {
+      getCount++;
+      response.writeHead(preflightStatus).end("{}");
+      return;
+    }
+    if (path === "/api/test" && request.method === "POST") {
       postCount++;
       response.writeHead(postStatus(postCount)).end("{}");
+      return;
+    }
+    if (path === "/api/test" && request.method === "PUT") {
+      putCount++;
+      response.writeHead(putStatus(putCount)).end("{}");
+      return;
+    }
+    if (path === "/api/test" && request.method === "DELETE") {
+      deleteCount++;
+      response.writeHead(deleteStatus(deleteCount)).end("{}");
       return;
     }
     response.writeHead(200).end("{}");
@@ -104,7 +125,12 @@ function ejecutarScript(nombre: string): Promise<{
 
 let port = 0;
 
-async function insertarEventos(cantidad: number, nombre: string): Promise<string[]> {
+async function insertarEventos(
+  cantidad: number,
+  nombre: string,
+  metodo = "POST",
+  endpoint = "/test",
+): Promise<string[]> {
   const ids = Array.from({ length: cantidad }, (_, index) =>
     `${prefix}-${nombre}-${index + 1}`,
   );
@@ -113,9 +139,9 @@ async function insertarEventos(cantidad: number, nombre: string): Promise<string
       `INSERT INTO eventos_sincronizacion
         (operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
          origen, estado, creado_en)
-       VALUES ($1, 'test', $1, 'crear', 'POST', '/test', '{}'::jsonb,
+       VALUES ($1, 'test', $1, 'crear', $3, $4, '{}'::jsonb,
                'local', 'pendiente', now() + ($2::int * interval '1 millisecond'))`,
-      [ids[index], index],
+      [ids[index], index, metodo, endpoint],
     );
   }
   return ids;
@@ -202,6 +228,92 @@ test("clasifica respuestas remotas, preserva la cola y permite descargar tras un
         ["pendiente", 0],
         ["pendiente", 0],
       ],
+    );
+    await borrarEventos();
+
+    const [idPutNoExistente] = await insertarEventos(1, "put-404", "PUT");
+    getCount = 0;
+    putCount = 0;
+    preflightStatus = 404;
+    putStatus = () => 200;
+    const putSinGet = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(putSinGet.status, 0, `${putSinGet.stdout}\n${putSinGet.stderr}`);
+    assert.equal(getCount, 1, "No se consultó el GET previo al PUT");
+    assert.equal(putCount, 1, "El PUT real no llegó al servidor remoto");
+    assert.equal((await estados([idPutNoExistente!]))[0]?.estado, "sincronizado");
+    await borrarEventos();
+
+    const [idDeleteNoExistente] = await insertarEventos(
+      1,
+      "delete-404",
+      "DELETE",
+    );
+    getCount = 0;
+    deleteCount = 0;
+    preflightStatus = 404;
+    deleteStatus = () => 200;
+    const deleteSinGet = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(
+      deleteSinGet.status,
+      0,
+      `${deleteSinGet.stdout}\n${deleteSinGet.stderr}`,
+    );
+    assert.equal(getCount, 1, "No se consultó el GET previo al DELETE");
+    assert.equal(deleteCount, 1, "El DELETE real no llegó al servidor remoto");
+    assert.equal(
+      (await estados([idDeleteNoExistente!]))[0]?.estado,
+      "sincronizado",
+    );
+    await borrarEventos();
+
+    const [idPutConflicto] = await insertarEventos(1, "put-conflict", "PUT");
+    getCount = 0;
+    putCount = 0;
+    preflightStatus = 404;
+    putStatus = () => 409;
+    const putConConflicto = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(putConConflicto.status, 3);
+    assert.equal(getCount, 1);
+    assert.equal(putCount, 1);
+    const [estadoPutConflicto] = await estados([idPutConflicto!]);
+    assert.equal(estadoPutConflicto?.estado, "conflicto");
+    assert.equal(estadoPutConflicto?.intentos, 1);
+    await borrarEventos();
+
+    const [idPutCon503] = await insertarEventos(1, "put-preflight-503", "PUT");
+    getCount = 0;
+    putCount = 0;
+    preflightStatus = 503;
+    putStatus = () => 200;
+    const putPreflight503 = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(putPreflight503.status, 1);
+    assert.equal(getCount, 1);
+    assert.equal(putCount, 0);
+    assert.deepEqual(
+      (await estados([idPutCon503!])).map((evento) => [
+        evento.estado,
+        evento.intentos,
+        evento.ultimo_error,
+      ]),
+      [["pendiente", 0, null]],
+    );
+    await borrarEventos();
+
+    const [idPutCon401] = await insertarEventos(1, "put-preflight-401", "PUT");
+    getCount = 0;
+    putCount = 0;
+    preflightStatus = 401;
+    const putPreflight401 = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(putPreflight401.status, 2);
+    assert.equal(getCount, 1);
+    assert.equal(putCount, 0);
+    assert.deepEqual(
+      (await estados([idPutCon401!])).map((evento) => [
+        evento.estado,
+        evento.intentos,
+        evento.ultimo_error,
+      ]),
+      [["pendiente", 0, null]],
     );
     await borrarEventos();
 
