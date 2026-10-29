@@ -38,12 +38,16 @@ type CreditResponse = {
 
 function assertTestDatabase(databaseUrl: string, expectedName: string): void {
   const parsed = new URL(databaseUrl);
+  const nombreAislado =
+    expectedName === "investillo_sync_local"
+      ? "investillo_order8_sync_local"
+      : "investillo_order8_sync_remote";
   if (
     !["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname) ||
-    parsed.pathname !== `/${expectedName}`
+    ![`/${expectedName}`, `/${nombreAislado}`].includes(parsed.pathname)
   ) {
     throw new Error(
-      `E2E bloqueado: se requiere una base loopback llamada ${expectedName}`,
+      `E2E bloqueado: se requiere una base loopback de pruebas para ${expectedName}`,
     );
   }
 }
@@ -749,6 +753,43 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
       { placa: `${prefix}-PLACA-EDITADA` },
       `${prefix}-remote-vehiculo-edit`,
     );
+    const clienteEditadoRemoto = await api<{ id: number }>(
+      remoteBase(),
+      `/clientes/${Number(mapeoCliente.id_remoto)}`,
+      "PUT",
+      { nombre: `${prefix}-cliente-remoto` },
+      `${prefix}-remote-cliente-edit`,
+    );
+    assert.ok(clienteEditadoRemoto.id);
+    await api(
+      localBase(),
+      `/clientes/${clienteLocal.id}`,
+      "PUT",
+      { nombre: `${prefix}-cliente-local` },
+      `${prefix}-local-cliente-conflicto`,
+    );
+    const subidaConConflicto = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      subidaConConflicto.status,
+      3,
+      subidaConConflicto.stderr || subidaConConflicto.stdout,
+    );
+    const eventoLocalEnConflicto = await localPool.query<{
+      estado: string;
+      ultimo_error: string;
+    }>(
+      `SELECT estado, ultimo_error FROM eventos_sincronizacion
+          WHERE operation_id = $1`,
+      [`${prefix}-local-cliente-conflicto`],
+    );
+    assert.equal(eventoLocalEnConflicto.rows[0]?.estado, "conflicto");
+    assert.match(
+      eventoLocalEnConflicto.rows[0]?.ultimo_error ?? "",
+      new RegExp(`${prefix}-remote-cliente-edit`),
+    );
 
     await esperar(async () => {
       const result = await remotePool.query<{ count: string }>(
@@ -756,7 +797,7 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
             WHERE origen = 'remoto' AND operation_id LIKE $1`,
         [`${prefix}-remote-%`],
       );
-      return Number(result.rows[0]?.count) === 6;
+      return Number(result.rows[0]?.count) === 7;
     }, "No se capturaron todos los eventos remotos de prueba.");
     await delay(2_100);
 
@@ -768,6 +809,13 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
       resultadoPull.status,
       0,
       resultadoPull.stderr || resultadoPull.stdout,
+    );
+    const clienteLocalTrasConflicto = await localPool.query<{
+      nombre: string;
+    }>("SELECT nombre FROM clientes WHERE id = $1", [clienteLocal.id]);
+    assert.equal(
+      clienteLocalTrasConflicto.rows[0]?.nombre,
+      `${prefix}-cliente-remoto`,
     );
     const relacionesLineasReintentoRemoto = await localPool.query<{
       id_local: string;

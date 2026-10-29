@@ -95,6 +95,74 @@ router.get("/pull", async (req, res) => {
   });
 });
 
+router.get("/conflicto", async (req, res) => {
+  const desde = req.query.desde;
+  const desdeOperacion = req.query.desdeOperacion;
+  const endpoint = req.query.endpoint;
+  const entidad = req.query.entidad;
+  const entidadId = req.query.entidadId;
+  if (
+    !fechaCursorValida(desde) ||
+    (desdeOperacion !== undefined &&
+      (typeof desdeOperacion !== "string" ||
+        desdeOperacion.length === 0 ||
+        desdeOperacion.length > 200)) ||
+    typeof endpoint !== "string" ||
+    !endpoint.startsWith("/") ||
+    endpoint.length > 500 ||
+    (entidad !== undefined &&
+      (typeof entidad !== "string" || entidad.length === 0 || entidad.length > 100)) ||
+    (entidadId !== undefined &&
+      (typeof entidadId !== "string" ||
+        entidadId.length === 0 ||
+        entidadId.length > 200)) ||
+    ((entidad === undefined) !== (entidadId === undefined))
+  ) {
+    res.status(400).json({ error: "Parámetros de conflicto inválidos" });
+    return;
+  }
+
+  const desdeTexto = fechaSql(desde);
+  const endpointSinConsulta = endpoint.split("?", 1)[0]!;
+  const { rows } = await db.execute(sql`
+    SELECT
+      operation_id AS "operationId",
+      creado_en::text AS "creadoEn",
+      metodo,
+      endpoint
+    FROM eventos_sincronizacion
+    WHERE origen = 'remoto'
+      AND ${
+        desdeOperacion === undefined
+          ? sql`creado_en > ${desdeTexto}::timestamp`
+          : sql`(creado_en, operation_id) > (${desdeTexto}::timestamp, ${desdeOperacion})`
+      }
+      AND (
+        split_part(endpoint, '?', 1) = ${endpointSinConsulta}
+        OR (
+          ${entidad ?? null}::text IS NOT NULL
+          AND entidad = ${entidad ?? null}
+          AND entidad_id = ${entidadId ?? null}
+        )
+      )
+    ORDER BY creado_en, operation_id
+    LIMIT 1
+  `);
+  const evento = rows[0] as
+    | {
+        operationId: string;
+        creadoEn: string;
+        metodo: string;
+        endpoint: string;
+      }
+    | undefined;
+  res.json(
+    evento
+      ? { conflicto: true, evento }
+      : { conflicto: false },
+  );
+});
+
 router.get("/ahora", async (_req, res) => {
   const { rows } = await db.execute(sql`
     SELECT to_char(

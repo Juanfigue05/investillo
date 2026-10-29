@@ -16,10 +16,12 @@ if (!databaseUrl) {
 const database = new URL(databaseUrl);
 if (
   !["localhost", "127.0.0.1", "::1", "[::1]"].includes(database.hostname) ||
-  database.pathname !== "/investillo_sync_local"
+  !["/investillo_sync_local", "/investillo_order8_sync_local"].includes(
+    database.pathname,
+  )
 ) {
   throw new Error(
-    "Prueba bloqueada: SYNC_TEST_DATABASE_LOCAL debe ser la base local investillo_sync_local",
+    "Prueba bloqueada: SYNC_TEST_DATABASE_LOCAL debe ser una base local de pruebas",
   );
 }
 
@@ -34,10 +36,13 @@ let getCount = 0;
 let putCount = 0;
 let deleteCount = 0;
 let pullCount = 0;
+let conflictoCount = 0;
+let conflictoStatusPorLlamada: (numero: number) => number = () => conflictoStatus;
 let postStatus: (numero: number) => number = () => 200;
 let putStatus: (numero: number) => number = () => 200;
 let deleteStatus: (numero: number) => number = () => 200;
-let preflightStatus = 404;
+let conflictoStatus = 200;
+let conflictoRemoto = false;
 
 const server = createServer(
   (request: IncomingMessage, response: ServerResponse) => {
@@ -59,9 +64,33 @@ const server = createServer(
       );
       return;
     }
+    if (path === "/api/sync/conflicto") {
+      conflictoCount++;
+      const status = conflictoStatusPorLlamada(conflictoCount);
+      response.writeHead(status).end(
+        JSON.stringify(
+          status === 200
+            ? {
+                conflicto: conflictoRemoto,
+                ...(conflictoRemoto
+                  ? {
+                      evento: {
+                        operationId: "evento-remoto-test",
+                        creadoEn: "2026-10-29 01:00:00.000000",
+                        metodo: "PUT",
+                        endpoint: "/test",
+                      },
+                    }
+                  : {}),
+              }
+            : { error: "No disponible" },
+        ),
+      );
+      return;
+    }
     if (path === "/api/test" && request.method === "GET") {
       getCount++;
-      response.writeHead(preflightStatus).end("{}");
+      response.writeHead(404).end("{}");
       return;
     }
     if (path === "/api/test" && request.method === "POST") {
@@ -175,7 +204,7 @@ async function borrarEventos(): Promise<void> {
   );
 }
 
-test("clasifica respuestas remotas, preserva la cola y permite descargar tras un conflicto", async () => {
+test("clasifica respuestas remotas y detecta conflictos antes de enviar", async () => {
   const anteriores = await pool.query<{
     valor: string;
     operacion_id: string | null;
@@ -204,8 +233,31 @@ test("clasifica respuestas remotas, preserva la cola y permite descargar tras un
   port = address.port;
 
   try {
+    const [idSinCursor] = await insertarEventos(1, "sin-cursor");
+    const sincronizacionSinCursor = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(sincronizacionSinCursor.status, 1);
+    assert.match(
+      `${sincronizacionSinCursor.stdout}\n${sincronizacionSinCursor.stderr}`,
+      /pnpm run sync:init/,
+    );
+    assert.equal(postCount, 0);
+    assert.equal(conflictoCount, 0);
+    assert.deepEqual(
+      (await estados([idSinCursor!])).map((evento) => [
+        evento.estado,
+        evento.intentos,
+      ]),
+      [["pendiente", 0]],
+    );
+    await borrarEventos();
+    await pool.query(
+      `INSERT INTO cursos_sincronizacion (nombre, valor, operacion_id)
+       VALUES ('remoto', '2000-01-01 00:00:00'::timestamp, NULL)`,
+    );
+
     const idsServicioCaido = await insertarEventos(2, "503");
     postCount = 0;
+    conflictoCount = 0;
     postStatus = (numero) => numero === 1 ? 503 : 200;
     const servicioCaido = await ejecutarScript("sincronizar-todo.ts");
     assert.equal(servicioCaido.status, 1);
@@ -219,6 +271,7 @@ test("clasifica respuestas remotas, preserva la cola y permite descargar tras un
       `${servicioCaido.stdout}\n${servicioCaido.stderr}`,
     );
     assert.equal(pullCount, 0);
+    assert.equal(conflictoCount, 0);
     assert.deepEqual(
       (await estados(idsServicioCaido)).map((evento) => [
         evento.estado,
@@ -234,11 +287,14 @@ test("clasifica respuestas remotas, preserva la cola y permite descargar tras un
     const [idPutNoExistente] = await insertarEventos(1, "put-404", "PUT");
     getCount = 0;
     putCount = 0;
-    preflightStatus = 404;
+    conflictoCount = 0;
+    conflictoStatus = 200;
+    conflictoRemoto = false;
     putStatus = () => 200;
     const putSinGet = await ejecutarScript("sincronizar-local.ts");
     assert.equal(putSinGet.status, 0, `${putSinGet.stdout}\n${putSinGet.stderr}`);
-    assert.equal(getCount, 1, "No se consultó el GET previo al PUT");
+    assert.equal(getCount, 0, "No debe consultarse el recurso con GET");
+    assert.equal(conflictoCount, 1, "No se consultó /sync/conflicto");
     assert.equal(putCount, 1, "El PUT real no llegó al servidor remoto");
     assert.equal((await estados([idPutNoExistente!]))[0]?.estado, "sincronizado");
     await borrarEventos();
@@ -250,7 +306,9 @@ test("clasifica respuestas remotas, preserva la cola y permite descargar tras un
     );
     getCount = 0;
     deleteCount = 0;
-    preflightStatus = 404;
+    conflictoCount = 0;
+    conflictoStatus = 200;
+    conflictoRemoto = false;
     deleteStatus = () => 200;
     const deleteSinGet = await ejecutarScript("sincronizar-local.ts");
     assert.equal(
@@ -258,7 +316,8 @@ test("clasifica respuestas remotas, preserva la cola y permite descargar tras un
       0,
       `${deleteSinGet.stdout}\n${deleteSinGet.stderr}`,
     );
-    assert.equal(getCount, 1, "No se consultó el GET previo al DELETE");
+    assert.equal(getCount, 0, "No debe consultarse el recurso con GET");
+    assert.equal(conflictoCount, 1, "No se consultó /sync/conflicto");
     assert.equal(deleteCount, 1, "El DELETE real no llegó al servidor remoto");
     assert.equal(
       (await estados([idDeleteNoExistente!]))[0]?.estado,
@@ -269,25 +328,80 @@ test("clasifica respuestas remotas, preserva la cola y permite descargar tras un
     const [idPutConflicto] = await insertarEventos(1, "put-conflict", "PUT");
     getCount = 0;
     putCount = 0;
-    preflightStatus = 404;
+    conflictoCount = 0;
+    conflictoStatus = 200;
+    conflictoRemoto = false;
     putStatus = () => 409;
     const putConConflicto = await ejecutarScript("sincronizar-local.ts");
     assert.equal(putConConflicto.status, 3);
-    assert.equal(getCount, 1);
+    assert.equal(getCount, 0);
+    assert.equal(conflictoCount, 1);
     assert.equal(putCount, 1);
     const [estadoPutConflicto] = await estados([idPutConflicto!]);
     assert.equal(estadoPutConflicto?.estado, "conflicto");
     assert.equal(estadoPutConflicto?.intentos, 1);
     await borrarEventos();
 
+    const [idPutCambioRemoto] = await insertarEventos(
+      1,
+      "put-remote-conflict",
+      "PUT",
+    );
+    conflictoCount = 0;
+    conflictoStatus = 200;
+    conflictoRemoto = true;
+    putCount = 0;
+    const putConCambioRemoto = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(putConCambioRemoto.status, 3);
+    assert.equal(conflictoCount, 1);
+    assert.equal(putCount, 0, "PUT fue enviado pese al conflicto remoto");
+    const [estadoCambioRemoto] = await estados([idPutCambioRemoto!]);
+    assert.equal(estadoCambioRemoto?.estado, "conflicto");
+    assert.equal(estadoCambioRemoto?.intentos, 1);
+    assert.match(
+      estadoCambioRemoto?.ultimo_error ?? "",
+      /evento-remoto-test.*2026-10-29 01:00:00\.000000/,
+    );
+    conflictoRemoto = false;
+    await borrarEventos();
+
+    const [idPutVersionFaltante] = await insertarEventos(
+      1,
+      "put-api-missing",
+      "PUT",
+    );
+    conflictoCount = 0;
+    conflictoStatusPorLlamada = () => 404;
+    putCount = 0;
+    const apiFaltante = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(apiFaltante.status, 1);
+    assert.match(
+      `${apiFaltante.stdout}\n${apiFaltante.stderr}`,
+      /Render no tiene la versión nueva de la API; despliégala primero/,
+    );
+    assert.equal(conflictoCount, 1);
+    assert.equal(putCount, 0);
+    assert.deepEqual(
+      (await estados([idPutVersionFaltante!])).map((evento) => [
+        evento.estado,
+        evento.intentos,
+        evento.ultimo_error,
+      ]),
+      [["pendiente", 0, null]],
+    );
+    conflictoStatusPorLlamada = () => conflictoStatus;
+    await borrarEventos();
+
     const [idPutCon503] = await insertarEventos(1, "put-preflight-503", "PUT");
     getCount = 0;
     putCount = 0;
-    preflightStatus = 503;
+    conflictoCount = 0;
+    conflictoStatus = 503;
     putStatus = () => 200;
     const putPreflight503 = await ejecutarScript("sincronizar-local.ts");
     assert.equal(putPreflight503.status, 1);
-    assert.equal(getCount, 1);
+    assert.equal(getCount, 0);
+    assert.equal(conflictoCount, 1);
     assert.equal(putCount, 0);
     assert.deepEqual(
       (await estados([idPutCon503!])).map((evento) => [
@@ -302,10 +416,12 @@ test("clasifica respuestas remotas, preserva la cola y permite descargar tras un
     const [idPutCon401] = await insertarEventos(1, "put-preflight-401", "PUT");
     getCount = 0;
     putCount = 0;
-    preflightStatus = 401;
+    conflictoCount = 0;
+    conflictoStatus = 401;
     const putPreflight401 = await ejecutarScript("sincronizar-local.ts");
     assert.equal(putPreflight401.status, 2);
-    assert.equal(getCount, 1);
+    assert.equal(getCount, 0);
+    assert.equal(conflictoCount, 1);
     assert.equal(putCount, 0);
     assert.deepEqual(
       (await estados([idPutCon401!])).map((evento) => [
@@ -319,6 +435,7 @@ test("clasifica respuestas remotas, preserva la cola y permite descargar tras un
 
     const idsLlaveRechazada = await insertarEventos(2, "401");
     postCount = 0;
+    conflictoCount = 0;
     postStatus = () => 401;
     const llaveRechazada = await ejecutarScript("sincronizar-todo.ts");
     assert.equal(llaveRechazada.status, 2);
@@ -327,6 +444,7 @@ test("clasifica respuestas remotas, preserva la cola y permite descargar tras un
       /Render rechazó la llave de sincronización; revisa SYNC_TOKEN/,
     );
     assert.equal(postCount, 1);
+    assert.equal(conflictoCount, 0, "POST no debe consultar conflictos");
     assert.equal(pullCount, 0);
     assert.deepEqual(
       (await estados(idsLlaveRechazada)).map((evento) => [
@@ -341,10 +459,6 @@ test("clasifica respuestas remotas, preserva la cola y permite descargar tras un
     );
     await borrarEventos();
 
-    await pool.query(
-      `INSERT INTO cursos_sincronizacion (nombre, valor, operacion_id)
-       VALUES ('remoto', '2000-01-01 00:00:00'::timestamp, NULL)`,
-    );
     const idsConflicto = await insertarEventos(3, "409");
     postCount = 0;
     pullCount = 0;
@@ -364,6 +478,10 @@ test("clasifica respuestas remotas, preserva la cola y permite descargar tras un
     );
     await borrarEventos();
 
+    await pool.query(
+      `INSERT INTO cursos_sincronizacion (nombre, valor, operacion_id)
+       VALUES ('remoto', '2000-01-01 00:00:00'::timestamp, NULL)`,
+    );
     const [idErrorTemporal] = await insertarEventos(1, "500");
     postCount = 0;
     postStatus = () => 500;

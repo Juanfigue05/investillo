@@ -16,6 +16,7 @@ const hostsLocales = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 const basesDePruebaPermitidas = new Set([
   "/investillo_test",
   "/investillo_test_aiven",
+  "/investillo_order8_test",
 ]);
 if (
   !hostsLocales.has(database.hostname) ||

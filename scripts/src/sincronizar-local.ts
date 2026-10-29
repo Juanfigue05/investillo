@@ -50,6 +50,21 @@ function detenerPorRespuesta(decision: DecisionRespuesta): boolean {
 }
 
 try {
+  const cursorResult = await pool.query<{
+    valor: string;
+    operacion_id: string | null;
+  }>(
+    `SELECT valor::text AS valor, operacion_id
+       FROM cursos_sincronizacion WHERE nombre = 'remoto'`,
+  );
+  const cursor = cursorResult.rows[0];
+  if (!cursor) {
+    throw new ErrorSincronizacion(
+      1,
+      "No existe un punto de partida remoto; ejecuta primero `pnpm run sync:init`.",
+    );
+  }
+
   let health: Response;
   try {
     health = await fetch(`${remoteApiUrl}/healthz`, {
@@ -219,57 +234,99 @@ try {
         mapaLineasCredito,
       );
 
-      // No sobrescribe una edición remota posterior sin revisión manual.
-      if (evento.metodo !== "POST") {
-        let remoto: Response;
+      if (["PUT", "PATCH", "DELETE"].includes(evento.metodo)) {
+        const urlConflicto = new URL(`${remoteApiUrl}/sync/conflicto`);
+        urlConflicto.searchParams.set("desde", cursor.valor);
+        if (cursor.operacion_id) {
+          urlConflicto.searchParams.set(
+            "desdeOperacion",
+            cursor.operacion_id,
+          );
+        }
+        urlConflicto.searchParams.set("endpoint", endpoint);
+        if (idRemoto) {
+          urlConflicto.searchParams.set("entidad", evento.entidad);
+          urlConflicto.searchParams.set("entidadId", idRemoto);
+        }
+        let respuestaConflicto: Response;
         try {
-          remoto = await fetch(`${remoteApiUrl}${endpoint}`, {
-            method: "GET",
+          respuestaConflicto = await fetch(urlConflicto, {
             headers: syncHeaders,
             redirect: "error",
             signal: AbortSignal.timeout(15_000),
           });
         } catch {
-          detenerPorRespuesta(clasificarRespuesta(null, evento.intentos));
+          detenerPorRespuesta(clasificarRespuesta(null, 0));
           break;
         }
-        if (remoto.ok) {
-          const registro = (await remoto.json().catch(() => null)) as {
-            actualizadoEn?: string;
-            actualizado_en?: string;
-          } | null;
-          const actualizado =
-            registro?.actualizadoEn ?? registro?.actualizado_en;
-          if (
-            actualizado &&
-            new Date(actualizado).getTime() >
-              new Date(evento.creado_en).getTime()
-          ) {
-            await pool.query(
-              `UPDATE eventos_sincronizacion
-                  SET estado = 'conflicto', intentos = intentos + 1,
-                      ultimo_error = $2
-                WHERE operation_id = $1`,
-              [
-                evento.operation_id,
-                `El recurso remoto cambió después de crear esta operación local: ${actualizado}`,
-              ],
-            );
-            conflictos++;
-            continue;
-          }
-        } else {
-          const decision = clasificarRespuesta(
-            remoto.status,
-            Number(evento.intentos),
-          );
-          if (
-            decision === "INTERRUMPIR" ||
-            decision === "LLAVE_RECHAZADA"
-          ) {
+        if (!respuestaConflicto.ok) {
+          const decision = clasificarRespuesta(respuestaConflicto.status, 0);
+          if (decision === "LLAVE_RECHAZADA") {
             detenerPorRespuesta(decision);
+          } else if (decision === "INTERRUMPIR") {
+            detenerPorRespuesta(decision);
+          } else {
+            console.error(
+              "Render no tiene la versión nueva de la API; despliégala primero",
+            );
+            process.exitCode = Math.max(Number(process.exitCode ?? 0), 1);
+          }
+          break;
+        }
+        type ResultadoConflicto = {
+          conflicto?: unknown;
+          evento?: {
+            operationId?: unknown;
+            creadoEn?: unknown;
+          };
+        };
+        let resultadoConflicto: ResultadoConflicto | null;
+        try {
+          resultadoConflicto =
+            (await respuestaConflicto.json()) as ResultadoConflicto | null;
+        } catch {
+          console.error(
+            "Render no tiene la versión nueva de la API; despliégala primero",
+          );
+          process.exitCode = Math.max(Number(process.exitCode ?? 0), 1);
+          break;
+        }
+        if (
+          !resultadoConflicto ||
+          typeof resultadoConflicto !== "object" ||
+          typeof resultadoConflicto.conflicto !== "boolean"
+        ) {
+          console.error(
+            "Render no tiene la versión nueva de la API; despliégala primero",
+          );
+          process.exitCode = Math.max(Number(process.exitCode ?? 0), 1);
+          break;
+        }
+        if (resultadoConflicto.conflicto) {
+          const operationId = resultadoConflicto.evento?.operationId;
+          const creadoEn = resultadoConflicto.evento?.creadoEn;
+          if (
+            typeof operationId !== "string" ||
+            typeof creadoEn !== "string"
+          ) {
+            console.error(
+              "Render no tiene la versión nueva de la API; despliégala primero",
+            );
+            process.exitCode = Math.max(Number(process.exitCode ?? 0), 1);
             break;
           }
+          await pool.query(
+            `UPDATE eventos_sincronizacion
+                SET estado = 'conflicto', intentos = intentos + 1,
+                    ultimo_error = $2
+              WHERE operation_id = $1`,
+            [
+              evento.operation_id,
+              `Conflicto con el cambio remoto ${String(operationId)} creado en ${String(creadoEn)}`,
+            ],
+          );
+          conflictos++;
+          continue;
         }
       }
 

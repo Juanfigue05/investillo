@@ -173,6 +173,8 @@ Las tareas de respaldo, verificación, sincronización y limpieza se crean de la
 
 La tarea `sync:all` comprueba que el API remoto esté disponible, sube primero las operaciones locales pendientes o con error y después descarga cambios remotos. Si la subida termina con código `1` (Render no disponible) o `2` (llave rechazada), no inicia la descarga; con código `3` (quedaron errores o conflictos) sí continúa con ella. Los conflictos no se reintentan automáticamente ni bloquean la descarga. Para probarla sin esperar, ejecuta la tarea con clic derecho → **Ejecutar** y revisa `logs\sincronizacion.txt`.
 
+Antes de ejecutar la sincronización en la PC después de actualizar el sistema, despliega primero la API nueva en Render. Para modificaciones y borrados, la subida consulta si hay un cambio remoto posterior al cursor de descarga sobre el mismo recurso (por endpoint o entidad e ID); no compara las fechas de los relojes de ambos equipos. Si existe ese cambio, la modificación local queda guardada como conflicto para revisión y no se envía; la descarga aplica el cambio de Render. Los eventos POST no necesitan esa consulta.
+
 **Cómo confirmar que sí están funcionando:** haz clic derecho sobre cualquiera de las tareas creadas → **"Ejecutar"** — esto la corre de inmediato, sin esperar a la fecha programada, para que puedas revisar los archivos de log (`logs\backup-local.txt`, `logs\consistencia-local.txt`, `logs\sincronizacion.txt`, etc.).
 
 ---
@@ -478,7 +480,7 @@ La instalación local usa PostgreSQL en este computador. Esto evita que las oper
   pnpm run sync:all
   ```
   Para automatizarla, crea la tarea de Windows descrita en la sección 3.4 y ejecútala cada 5 minutos. La tarea debe usar la misma carpeta del proyecto para encontrar `.env.local`.
-  Antes o después puedes revisar la cola con `pnpm run sync:status`. El resultado esperado cuando no hay trabajo pendiente es `Pendientes: 0`, `Con error: 0` y `Conflictos: 0`. Antes de subir una edición, `sync:local` consulta el registro remoto; si detecta una actualización remota posterior, marca `conflicto`, no sobrescribe y detiene `sync:all` antes del pull. Ese caso requiere revisión manual.
+  Antes o después puedes revisar la cola con `pnpm run sync:status`. El resultado esperado cuando no hay trabajo pendiente es `Pendientes: 0`, `Con error: 0` y `Conflictos: 0`. Antes de subir una modificación o borrado, `sync:local` consulta si hay un cambio remoto sin descargar sobre el mismo endpoint o recurso. Si lo hay, guarda la operación local como `conflicto` y no la envía; `sync:all` continúa con la descarga para aplicar el cambio de Render y la operación local queda para revisión manual.
 
   7. Programa también un respaldo local diario con `cmd.exe` y estos argumentos:
     `/c cd /d "C:\ruta\investillo" && pnpm run backup:local`.

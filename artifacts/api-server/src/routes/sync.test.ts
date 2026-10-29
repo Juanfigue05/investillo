@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import "../lib/solo-base-de-pruebas";
 import express from "express";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -9,7 +10,7 @@ const app = express();
 app.use(express.json());
 app.use("/api/sync", syncRouter);
 
-const prefix = `sync-route-test-${Date.now()}`;
+const prefix = `sync-route-test-${randomUUID()}`;
 let acuseAnterior: { valor: string; operacion_id: string | null } | undefined;
 
 async function insertarEvento(
@@ -225,5 +226,120 @@ describe.sequential("Rutas de sincronización", () => {
          FROM cursos_sincronizacion WHERE nombre = 'acuse_local'`,
     );
     expect(ackSinRetroceso.rows[0]?.valor).toBe(ackGuardado.rows[0]?.valor);
+  });
+
+  it("detecta cambios remotos posteriores por endpoint o recurso, sin margen temporal", async () => {
+    const [marcas] = await pool.query<{
+      desde: string;
+      anterior: string;
+      reciente: string;
+      igual: string;
+    }>(
+      `SELECT
+         to_char(now() - interval '1 second', 'YYYY-MM-DD HH24:MI:SS.US') AS desde,
+         to_char(now() - interval '2 seconds', 'YYYY-MM-DD HH24:MI:SS.US') AS anterior,
+         to_char(now() - interval '100 milliseconds', 'YYYY-MM-DD HH24:MI:SS.US') AS reciente,
+         to_char(now() - interval '3 seconds', 'YYYY-MM-DD HH24:MI:SS.US') AS igual`,
+    ).then((result) => result.rows);
+    expect(marcas).toBeDefined();
+    const operationIds = [
+      `${prefix}-endpoint-match`,
+      `${prefix}-entity-match`,
+      `${prefix}-older`,
+      `${prefix}-cursor-a`,
+    ];
+    await pool.query(
+      `INSERT INTO eventos_sincronizacion
+        (operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
+         origen, estado, creado_en)
+       VALUES
+        ($1, 'venta', '7', 'editar', 'PUT', '/ventas/7?fuente=remota', '{}'::jsonb,
+         'remoto', 'sincronizado', $2::timestamp),
+        ($3, 'cliente', '55', 'editar', 'PUT', '/clientes/55', '{}'::jsonb,
+         'remoto', 'sincronizado', $4::timestamp),
+        ($5, 'producto', '9', 'editar', 'PUT', '/productos/9', '{}'::jsonb,
+         'remoto', 'sincronizado', $6::timestamp),
+        ($7, 'venta', '8', 'editar', 'PUT', '/ventas/8', '{}'::jsonb,
+         'remoto', 'sincronizado', $8::timestamp)`,
+        [
+          operationIds[0],
+          marcas!.reciente,
+          operationIds[1],
+          marcas!.reciente,
+          operationIds[2],
+          marcas!.anterior,
+          operationIds[3],
+          marcas!.igual,
+        ],
+      );
+
+    const endpointMatch = await request(app)
+      .get("/api/sync/conflicto")
+      .query({
+        desde: marcas!.desde,
+        endpoint: "/ventas/7?fuente=local",
+      })
+      .expect(200);
+    expect(endpointMatch.body.conflicto).toBe(true);
+    expect(endpointMatch.body.evento).toMatchObject({
+      operationId: `${prefix}-endpoint-match`,
+      metodo: "PUT",
+      endpoint: "/ventas/7?fuente=remota",
+    });
+    expect(endpointMatch.body.evento.creadoEn).toMatch(
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$/,
+    );
+
+    const entityMatch = await request(app)
+      .get("/api/sync/conflicto")
+      .query({
+        desde: marcas!.desde,
+        endpoint: "/clientes/otro",
+        entidad: "cliente",
+        entidadId: "55",
+      })
+      .expect(200);
+    expect(entityMatch.body.conflicto).toBe(true);
+    expect(entityMatch.body.evento.operationId).toBe(
+      `${prefix}-entity-match`,
+    );
+
+    const noAnterior = await request(app)
+      .get("/api/sync/conflicto")
+      .query({
+        desde: marcas!.desde,
+        endpoint: "/productos/9",
+      })
+      .expect(200);
+    expect(noAnterior.body.conflicto).toBe(false);
+
+    const cursorCompuesto = await request(app)
+      .get("/api/sync/conflicto")
+      .query({
+        desde: marcas!.igual,
+        desdeOperacion: `${prefix}-tie-m`,
+        endpoint: "/ventas/8",
+      })
+      .expect(200);
+    expect(cursorCompuesto.body.conflicto).toBe(false);
+
+    for (const query of [
+      { endpoint: "/ventas/1" },
+      { desde: "ayer", endpoint: "/ventas/1" },
+      { desde: marcas!.desde, endpoint: "ventas/1" },
+      { desde: marcas!.desde, endpoint: `/${"x".repeat(500)}` },
+      {
+        desde: marcas!.desde,
+        desdeOperacion: "",
+        endpoint: "/ventas/1",
+      },
+      {
+        desde: marcas!.desde,
+        endpoint: "/ventas/1",
+        entidad: "venta",
+      },
+    ]) {
+      await request(app).get("/api/sync/conflicto").query(query).expect(400);
+    }
   });
 });
