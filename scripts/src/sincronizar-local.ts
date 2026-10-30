@@ -12,6 +12,7 @@ import {
   clasificarRespuesta,
   type DecisionRespuesta,
 } from "./lib/clasificar-respuesta";
+import { clasificarReferencia } from "./lib/clasificar-referencia";
 import {
   ENTIDAD_TABLA,
   encontrarRegla,
@@ -55,12 +56,6 @@ function detenerPorRespuesta(decision: DecisionRespuesta): boolean {
   );
   process.exitCode = Math.max(Number(process.exitCode ?? 0), codigoSalida);
   return true;
-}
-
-function entidadConTabla(
-  entidad: string,
-): entidad is keyof typeof ENTIDAD_TABLA {
-  return Object.prototype.hasOwnProperty.call(ENTIDAD_TABLA, entidad);
 }
 
 try {
@@ -182,31 +177,6 @@ try {
       );
       const idRemoto = referencia.rows[0]?.id_remoto;
       let endpoint = evento.endpoint;
-
-      if (
-        Array.isArray(evento.referencias_endpoint) &&
-        evento.referencias_endpoint.length > 0
-      ) {
-        for (const ref of evento.referencias_endpoint as {
-          marcador: string;
-          entidad: string;
-          valorLocal: string;
-        }[]) {
-          const refRemota = await pool.query<{ id_remoto: string }>(
-            `SELECT id_remoto FROM referencias_sincronizacion WHERE entidad = $1 AND id_local = $2`,
-            [ref.entidad, ref.valorLocal],
-          );
-          const valor = refRemota.rows[0]?.id_remoto;
-          if (!valor) {
-            throw new Error(
-              `Referencia sin resolver: ${ref.entidad} local=${ref.valorLocal}. El padre aún no se ha sincronizado; se reintentará.`,
-            );
-          }
-          endpoint = endpoint.replace(ref.marcador, valor);
-        }
-        if (idRemoto) endpoint = endpoint.replace("{id}", idRemoto);
-      }
-
       const regla = encontrarRegla(evento.metodo, endpoint);
       if (!regla) {
         throw new Error(
@@ -220,50 +190,102 @@ try {
       const segmentosEndpoint = regla.endpoint.split("/");
       const rutaEndpoint = endpoint.split("?", 1)[0] ?? endpoint;
       const valoresEndpoint = rutaEndpoint.split("/");
+      const referenciasPadre = Array.isArray(evento.referencias_endpoint)
+        ? (evento.referencias_endpoint as {
+            marcador: string;
+            entidad: string;
+            valorLocal: string;
+          }[])
+        : [];
+      const referenciasPropias: Array<{
+        referencia: { entidad: string; valorLocal: string };
+        indice: number;
+        marcador?: string;
+      }> = [];
+      const indiceId = segmentosEndpoint.indexOf(":id");
+      const marcadorId = endpoint.includes("{id}");
+      if (indiceId >= 0 || marcadorId) {
+        referenciasPropias.push({
+          referencia: {
+            entidad: evento.entidad,
+            valorLocal: evento.entidad_id,
+          },
+          indice: indiceId,
+          ...(marcadorId ? { marcador: "{id}" } : {}),
+        });
+      }
+
+      const referenciasDeSegmento: Array<{
+        referencia: { entidad: string; valorLocal: string };
+        indice: number;
+      }> = [];
       for (const segmento of regla.segmentos ?? []) {
         const indice = segmentosEndpoint.indexOf(`:${segmento.parametro}`);
         const valorLocal = valoresEndpoint[indice];
         if (indice >= 0 && valorLocal && !valorLocal.startsWith("{")) {
-          referencias.push({ entidad: segmento.entidad, valorLocal });
+          referenciasDeSegmento.push({
+            referencia: { entidad: segmento.entidad, valorLocal },
+            indice,
+          });
         }
       }
 
       const mapaReferencias = new Map<string, string>();
+      const reemplazosSegmento = new Map<number, string>();
+      const reemplazosMarcador = new Map<string, string>();
       let debeEsperar = false;
       let conflictoReferencia: { entidad: string; valorLocal: string } | undefined;
-      for (const ref of referencias) {
-        const existente = await pool.query<{ id_remoto: string }>(
-          `SELECT id_remoto FROM referencias_sincronizacion
-            WHERE entidad = $1 AND id_local = $2`,
-          [ref.entidad, ref.valorLocal],
-        );
-        const remoto = existente.rows[0]?.id_remoto;
-        if (remoto !== undefined) {
-          mapaReferencias.set(`${ref.entidad}:${ref.valorLocal}`, remoto);
+      let idPropioResuelto: string | undefined;
+      const referenciasAClasificar = [
+        ...referencias.map((referencia) => ({
+          referencia,
+          destino: "payload" as const,
+        })),
+        ...referenciasDeSegmento.map(({ referencia, indice }) => ({
+          referencia,
+          destino: "segmento" as const,
+          indice,
+        })),
+        ...referenciasPadre.map((referencia) => ({
+          referencia: {
+            entidad: referencia.entidad,
+            valorLocal: referencia.valorLocal,
+          },
+          destino: "marcador" as const,
+          marcador: referencia.marcador,
+        })),
+        ...referenciasPropias.map(({ referencia, indice, marcador }) => ({
+          referencia,
+          destino: "propia" as const,
+          indice,
+          marcador,
+        })),
+      ];
+      const referenciasVistas = new Set<string>();
+      for (const elemento of referenciasAClasificar) {
+        const { referencia: ref } = elemento;
+        const clave = `${ref.entidad}:${ref.valorLocal}`;
+        if (referenciasVistas.has(clave)) {
+          const valorResuelto = mapaReferencias.get(clave) ?? ref.valorLocal;
+          if (elemento.destino === "segmento") {
+            reemplazosSegmento.set(elemento.indice, valorResuelto);
+          } else if (elemento.destino === "marcador") {
+            reemplazosMarcador.set(elemento.marcador, valorResuelto);
+          } else if (elemento.destino === "propia") {
+            idPropioResuelto = valorResuelto;
+          }
           continue;
         }
+        referenciasVistas.add(clave);
 
-        const creador = await pool.query(
-          `SELECT EXISTS (
-             SELECT 1 FROM eventos_sincronizacion
-              WHERE origen = 'local'
-                AND estado IN ('pendiente', 'error')
-                AND metodo = 'POST'
-                AND entidad = $1 AND entidad_id = $2
-                AND operation_id <> $3
-             UNION ALL
-             SELECT 1
-               FROM eventos_sincronizacion evento,
-                    jsonb_array_elements(COALESCE(evento.referencias_respuesta, '[]'::jsonb)) referencia
-              WHERE evento.origen = 'local'
-                AND evento.estado IN ('pendiente', 'error')
-                AND referencia->>'entidad' = $1
-                AND referencia->>'valorLocal' = $2
-                AND evento.operation_id <> $3
-           ) AS existe`,
-          [ref.entidad, ref.valorLocal, evento.operation_id],
+        const resultado = await clasificarReferencia(
+          pool,
+          ref,
+          evento,
+          maximosIniciales,
+          ENTIDAD_TABLA,
         );
-        if (creador.rows[0]?.existe) {
+        if (resultado.tipo === "espera") {
           debeEsperar = true;
           await pool.query(
             `UPDATE eventos_sincronizacion
@@ -276,22 +298,21 @@ try {
           );
           break;
         }
-
-        const tabla = entidadConTabla(ref.entidad)
-          ? ENTIDAD_TABLA[ref.entidad]
-          : undefined;
-        const maximoInicial = tabla ? maximosIniciales.get(tabla) : undefined;
-        let existiaAlIniciar = false;
-        if (maximoInicial !== undefined) {
-          try {
-            existiaAlIniciar = BigInt(ref.valorLocal) <= BigInt(maximoInicial);
-          } catch {
-            existiaAlIniciar = false;
-          }
-        }
-        if (!existiaAlIniciar) {
+        if (resultado.tipo === "conflicto") {
           conflictoReferencia = ref;
           break;
+        }
+        const valorResuelto =
+          resultado.tipo === "traducida"
+            ? resultado.valorRemoto
+            : ref.valorLocal;
+        mapaReferencias.set(clave, valorResuelto);
+        if (elemento.destino === "segmento") {
+          reemplazosSegmento.set(elemento.indice, valorResuelto);
+        } else if (elemento.destino === "marcador") {
+          reemplazosMarcador.set(elemento.marcador, valorResuelto);
+        } else if (elemento.destino === "propia") {
+          idPropioResuelto = valorResuelto;
         }
       }
       if (debeEsperar) continue;
@@ -309,24 +330,28 @@ try {
         continue;
       }
 
-      for (const segmento of regla.segmentos ?? []) {
-        const indice = segmentosEndpoint.indexOf(`:${segmento.parametro}`);
+      for (const [marcador, valor] of reemplazosMarcador) {
+        endpoint = endpoint.replace(marcador, valor);
+      }
+      for (const [indice, valor] of reemplazosSegmento) {
         const valorLocal = valoresEndpoint[indice];
-        if (indice < 0 || !valorLocal) continue;
-        const remoto = mapaReferencias.get(`${segmento.entidad}:${valorLocal}`);
-        if (remoto !== undefined) {
-          endpoint = resolverEndpoint(endpoint, valorLocal, remoto, indice).endpoint;
+        if (valorLocal) {
+          endpoint = resolverEndpoint(
+            endpoint,
+            valorLocal,
+            valor,
+            indice,
+          ).endpoint;
         }
       }
-      if (idRemoto) {
-        const indiceId = segmentosEndpoint.indexOf(":id");
+      if (idPropioResuelto !== undefined) {
         if (endpoint.includes("{id}")) {
-          endpoint = endpoint.replace("{id}", idRemoto);
+          endpoint = endpoint.replace("{id}", idPropioResuelto);
         } else if (indiceId >= 0) {
           endpoint = resolverEndpoint(
             endpoint,
             evento.entidad_id,
-            idRemoto,
+            idPropioResuelto,
             indiceId,
           ).endpoint;
         }

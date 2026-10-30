@@ -254,6 +254,36 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
     assert.equal(clientesSinCursor.rowCount, 0);
     assert.equal(acuseSinCursor.rowCount, 0);
 
+    const [maxClientesLocal, maxClientesRemoto] = await Promise.all([
+      localPool.query<{ maximo: number }>(
+        "SELECT COALESCE(MAX(id), 0)::int AS maximo FROM clientes",
+      ),
+      remotePool.query<{ maximo: number }>(
+        "SELECT COALESCE(MAX(id), 0)::int AS maximo FROM clientes",
+      ),
+    ]);
+    const clienteCompartidoId =
+      Math.max(
+        maxClientesLocal.rows[0]?.maximo ?? 0,
+        maxClientesRemoto.rows[0]?.maximo ?? 0,
+      ) + 1;
+    await Promise.all(
+      [localPool, remotePool].map(async (pool) => {
+        await pool.query(
+          "INSERT INTO clientes (id, nombre) VALUES ($1, $2)",
+          [clienteCompartidoId, `${prefix}-cliente-compartido`],
+        );
+        await pool.query(
+          `SELECT setval(
+             pg_get_serial_sequence('clientes', 'id'),
+             $1,
+             true
+           )`,
+          [clienteCompartidoId],
+        );
+      }),
+    );
+
     const inicializa = ejecutarScript(
       "iniciar-sincronizacion.ts",
       scriptEnv(localUrl),
@@ -284,6 +314,48 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
            FROM cursos_sincronizacion WHERE nombre = 'remoto'`,
     );
     assert.deepEqual(cursorSinPisar.rows[0], cursorInicial.rows[0]);
+
+    const vehiculoClienteAntiguo = await api<{ id: number }>(
+      localBase(),
+      `/clientes/${clienteCompartidoId}/vehiculos`,
+      "POST",
+      {
+        placa: `${prefix}-PLACA-CLIENTE-COMPARTIDO`,
+        descripcion: "Vehículo de cliente común previo al punto de partida",
+      },
+      `${prefix}-vehiculo-cliente-compartido`,
+    );
+    const sincronizaVehiculoClienteAntiguo = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      sincronizaVehiculoClienteAntiguo.status,
+      0,
+      sincronizaVehiculoClienteAntiguo.stderr ||
+        sincronizaVehiculoClienteAntiguo.stdout,
+    );
+    const vehiculoClienteRemoto = await remotePool.query<{
+      cliente_id: number;
+      placa: string;
+    }>(
+      `SELECT cliente_id, placa FROM vehiculos_cliente
+        WHERE placa = $1 AND cliente_id = $2`,
+      [
+        `${prefix}-PLACA-CLIENTE-COMPARTIDO`,
+        clienteCompartidoId,
+      ],
+    );
+    assert.equal(vehiculoClienteRemoto.rowCount, 1);
+    assert.equal(
+      vehiculoClienteRemoto.rows[0]?.cliente_id,
+      clienteCompartidoId,
+    );
+    assert.equal(
+      vehiculoClienteRemoto.rows[0]?.placa,
+      `${prefix}-PLACA-CLIENTE-COMPARTIDO`,
+    );
+    assert.ok(vehiculoClienteAntiguo.id > 0);
 
     const productoSombra = await api<{ id: number }>(
       remoteBase(),
