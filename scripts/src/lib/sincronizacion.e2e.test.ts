@@ -222,7 +222,9 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
              DELETE FROM eventos_sincronizacion;
              DELETE FROM operaciones_sincronizadas;
              DELETE FROM referencias_sincronizacion;
-             DELETE FROM cursos_sincronizacion;`,
+             DELETE FROM cursos_sincronizacion;
+             CREATE UNIQUE INDEX IF NOT EXISTS referencias_sincronizacion_entidad_remoto_uidx
+               ON referencias_sincronizacion (entidad, id_remoto);`,
         ),
       ),
     );
@@ -357,6 +359,181 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
     );
     assert.ok(vehiculoClienteAntiguo.id > 0);
 
+    const clienteLocalA = await api<{ id: number }>(
+      localBase(),
+      "/clientes",
+      "POST",
+      { nombre: `${prefix}-cliente-mapeo-a` },
+      `${prefix}-cliente-mapeo-a`,
+    );
+    const clienteLocalB = await api<{ id: number }>(
+      localBase(),
+      "/clientes",
+      "POST",
+      { nombre: `${prefix}-cliente-mapeo-b` },
+      `${prefix}-cliente-mapeo-b`,
+    );
+    const sincronizaClientesMapeados = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      sincronizaClientesMapeados.status,
+      0,
+      sincronizaClientesMapeados.stderr ||
+        sincronizaClientesMapeados.stdout,
+    );
+    const mapeosClientes = await localPool.query<{
+      id_local: string;
+      id_remoto: string;
+    }>(
+      `SELECT id_local, id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'cliente' AND id_local = ANY($1::text[])`,
+      [[String(clienteLocalA.id), String(clienteLocalB.id)]],
+    );
+    assert.equal(mapeosClientes.rowCount, 2);
+    assert.notEqual(
+      mapeosClientes.rows[0]?.id_remoto,
+      mapeosClientes.rows[1]?.id_remoto,
+    );
+    const relacionClienteB = mapeosClientes.rows.find(
+      (relacion) => relacion.id_local === String(clienteLocalB.id),
+    );
+    assert.ok(relacionClienteB);
+    await assert.rejects(
+      localPool.query(
+        `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
+         VALUES ('cliente', $1, $2)`,
+        [`${prefix}-cliente-duplicado`, relacionClienteB.id_remoto],
+      ),
+      (error: unknown) =>
+        error !== null &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "23505",
+    );
+    await api(
+      remoteBase(),
+      `/clientes/${relacionClienteB.id_remoto}`,
+      "PUT",
+      { nombre: `${prefix}-cliente-remoto-editado` },
+      `${prefix}-cliente-remoto-editado`,
+    );
+    await esperar(async () => {
+      const eventoRemoto = await remotePool.query(
+        `SELECT 1 FROM eventos_sincronizacion
+          WHERE operation_id = $1 AND origen = 'remoto'`,
+        [`${prefix}-cliente-remoto-editado`],
+      );
+      return eventoRemoto.rowCount === 1;
+    }, "El cambio del cliente no quedó registrado en Render");
+    await delay(2_100);
+    const descargaClienteEditado = ejecutarScript(
+      "sincronizar-remoto.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      descargaClienteEditado.status,
+      0,
+      descargaClienteEditado.stderr || descargaClienteEditado.stdout,
+    );
+    const clientesEditados = await localPool.query<{
+      id: number;
+      nombre: string;
+    }>(
+      `SELECT id, nombre FROM clientes WHERE id = ANY($1::int[])`,
+      [[clienteLocalA.id, clienteLocalB.id]],
+    );
+    assert.equal(
+      clientesEditados.rows.find((cliente) => cliente.id === clienteLocalA.id)
+        ?.nombre,
+      `${prefix}-cliente-mapeo-a`,
+    );
+    assert.equal(
+      clientesEditados.rows.find((cliente) => cliente.id === clienteLocalB.id)
+        ?.nombre,
+      `${prefix}-cliente-remoto-editado`,
+    );
+    const relacionClienteA = mapeosClientes.rows.find(
+      (relacion) => relacion.id_local === String(clienteLocalA.id),
+    );
+    assert.ok(relacionClienteA);
+    const cursorAntesDuplicado = await localPool.query<{
+      valor: string;
+      operacion_id: string | null;
+    }>(
+      `SELECT valor::text AS valor, operacion_id
+         FROM cursos_sincronizacion WHERE nombre = 'remoto'`,
+    );
+    await remotePool.query(
+      `INSERT INTO eventos_sincronizacion
+          (operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
+           origen, estado, creado_en)
+         VALUES ($1, 'cliente', $2, 'crear', 'POST', '/clientes',
+                 jsonb_build_object('nombre', $3::text),
+                 'remoto', 'sincronizado', now() AT TIME ZONE 'UTC')`,
+      [
+        `${prefix}-cliente-duplicado-remoto`,
+        relacionClienteA.id_remoto,
+        `${prefix}-cliente-duplicado-remoto`,
+      ],
+    );
+    await delay(2_100);
+    const pullDuplicadoUrl = new URL(`${remoteBase()}/api/sync/pull`);
+    pullDuplicadoUrl.searchParams.set(
+      "desde",
+      cursorAntesDuplicado.rows[0]!.valor,
+    );
+    if (cursorAntesDuplicado.rows[0]!.operacion_id) {
+      pullDuplicadoUrl.searchParams.set(
+        "desdeOperacion",
+        cursorAntesDuplicado.rows[0]!.operacion_id!,
+      );
+    }
+    const pullDuplicado = await fetch(pullDuplicadoUrl, {
+      headers: { "X-Sync-Token": token },
+    });
+    assert.equal(pullDuplicado.ok, true);
+    const paginaDuplicado = (await pullDuplicado.json()) as {
+      eventos: Array<{ operationId: string }>;
+    };
+    assert.ok(
+      paginaDuplicado.eventos.some(
+        (evento) =>
+          evento.operationId === `${prefix}-cliente-duplicado-remoto`,
+      ),
+      `El evento de equivalencia duplicada no apareció en /sync/pull desde ${JSON.stringify(cursorAntesDuplicado.rows[0])}`,
+    );
+    const equivalenciaDuplicada = ejecutarScript(
+      "sincronizar-remoto.ts",
+      scriptEnv(localUrl),
+    );
+    assert.notEqual(
+      equivalenciaDuplicada.status,
+      0,
+      `${equivalenciaDuplicada.stdout}\n${equivalenciaDuplicada.stderr}`,
+    );
+    assert.match(
+      `${equivalenciaDuplicada.stdout}\n${equivalenciaDuplicada.stderr}`,
+      /No se pudo guardar la equivalencia: ese ID remoto ya está asignado/,
+    );
+    const cursorTrasDuplicado = await localPool.query<{
+      valor: string;
+      operacion_id: string | null;
+    }>(
+      `SELECT valor::text AS valor, operacion_id
+         FROM cursos_sincronizacion WHERE nombre = 'remoto'`,
+    );
+    assert.deepEqual(cursorTrasDuplicado.rows[0], cursorAntesDuplicado.rows[0]);
+    await remotePool.query(
+      "DELETE FROM eventos_sincronizacion WHERE operation_id = $1",
+      [`${prefix}-cliente-duplicado-remoto`],
+    );
+    await remotePool.query(
+      "DELETE FROM eventos_sincronizacion WHERE operation_id = $1",
+      [`${prefix}-cliente-remoto-editado`],
+    );
+
     const productoSombra = await api<{ id: number }>(
       remoteBase(),
       "/inventario",
@@ -474,6 +651,9 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
             SET valor = $1::timestamp, operacion_id = NULL
           WHERE nombre = 'remoto'`,
       [fechaCursorPrueba.rows[0]?.fecha],
+    );
+    await remotePool.query(
+      "DELETE FROM cursos_sincronizacion WHERE nombre = 'acuse_local'",
     );
     await remotePool.query(
       `INSERT INTO eventos_sincronizacion
@@ -1223,6 +1403,18 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
       [`${prefix}-atomic-create`],
     );
     assert.equal(estadoFallido.rows[0]?.estado, "error");
+    for (const pool of [localPool, remotePool]) {
+      const duplicadosRemotos = await pool.query(
+        `SELECT entidad, id_remoto FROM referencias_sincronizacion
+          GROUP BY entidad, id_remoto HAVING count(*) > 1`,
+      );
+      const duplicadosLocales = await pool.query(
+        `SELECT entidad, id_local FROM referencias_sincronizacion
+          GROUP BY entidad, id_local HAVING count(*) > 1`,
+      );
+      assert.equal(duplicadosRemotos.rowCount, 0);
+      assert.equal(duplicadosLocales.rowCount, 0);
+    }
   } finally {
     try {
       if (localApi && remoteApi) {

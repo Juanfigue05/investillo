@@ -6,11 +6,15 @@ import {
   idsLineaCreditoEnPayload,
   relacionesDeRespuesta,
   endpointDeRecuperacion,
-  resolverEndpointConReferencias,
-  traducirIdRecursoEnEndpoint,
   traducirIdsLineaCredito,
 } from "./lib/credito-lineas-sync";
 import { verificarPuntoPartida } from "./lib/punto-partida";
+import { ENTIDAD_TABLA, encontrarRegla, extraerReferencias, resolverEndpoint, traducirPayload } from "./lib/referencias-payload";
+import {
+  clasificarReferenciaRemota,
+  mensajeErrorEquivalencia,
+} from "./lib/clasificar-referencia";
+import { TABLAS_HUELLA } from "@workspace/db/schema";
 
 const databaseUrl = process.env.DATABASE_URL;
 const remoteApiUrl = getRemoteApiUrl();
@@ -63,6 +67,18 @@ try {
     );
   }
   await verificarPuntoPartida(pool);
+  const baseInicial = await pool.query<{
+    tabla: string;
+    maximo_id: string;
+  }>("SELECT tabla, maximo_id::text FROM base_sincronizacion");
+  const maximosIniciales = new Map(
+    baseInicial.rows.map((fila) => [fila.tabla, fila.maximo_id]),
+  );
+  if (TABLAS_HUELLA.some((tabla) => !maximosIniciales.has(tabla))) {
+    throw new Error(
+      "Falta el punto de partida completo para traducir referencias; ejecuta `pnpm run sync:init` con las dos bases alineadas.",
+    );
+  }
 
   const pendientes = await pool.query<{ cantidad: string }>(
     `SELECT count(*)::text AS cantidad FROM eventos_sincronizacion
@@ -139,57 +155,151 @@ try {
           .map((referencia) => referencia.valorLocal),
       ),
     );
+    const creadoresDePagina = new Map<string, Set<string>>();
+    for (const evento of data.eventos) {
+      const referenciasCreadas = [
+        ...(evento.metodo === "POST"
+          ? [{ entidad: evento.entidad, valor: evento.entidadId }]
+          : []),
+        ...(evento.referenciasRespuesta ?? []).map((referencia) => ({
+          entidad: referencia.entidad,
+          valor: referencia.valorLocal,
+        })),
+      ];
+      for (const referencia of referenciasCreadas) {
+        const clave = `${referencia.entidad}:${referencia.valor}`;
+        const ids = creadoresDePagina.get(clave) ?? new Set<string>();
+        ids.add(evento.operationId);
+        creadoresDePagina.set(clave, ids);
+      }
+    }
 
     for (const evento of data.eventos) {
       let endpoint = evento.endpoint;
-      if (evento.referenciasEndpoint?.length) {
-        const idsDestino = new Map<string, string>();
-        for (const referencia of evento.referenciasEndpoint) {
-          const relacion = await pool.query<{ id_local: string }>(
-            `SELECT id_local FROM referencias_sincronizacion
-            WHERE entidad = $1 AND id_remoto = $2`,
-            [referencia.entidad, referencia.valorLocal],
-          );
-          if (relacion.rows[0]) {
-            idsDestino.set(
-              `${referencia.entidad}:${referencia.valorLocal}`,
-              relacion.rows[0].id_local,
-            );
-          }
-        }
-        endpoint = resolverEndpointConReferencias(
-          endpoint,
-          evento.referenciasEndpoint,
-          idsDestino,
+      const regla = encontrarRegla(evento.metodo, endpoint);
+      if (!regla) {
+        throw new Error(
+          `No existe regla de referencias para ${evento.metodo} ${endpoint}`,
         );
       }
-      if (endpoint.includes("{id}")) {
-        const relacion = await pool.query<{ id_local: string }>(
-          `SELECT id_local FROM referencias_sincronizacion
-          WHERE entidad = $1 AND id_remoto = $2`,
-          [evento.entidad, evento.entidadId],
-        );
-        const idLocal = relacion.rows[0]?.id_local;
-        if (!idLocal) {
+      const referencias = extraerReferencias(regla, evento.payload).filter(
+        (referencia) => referencia.entidad !== "credito_linea",
+      );
+      const ruta = endpoint.split("?", 1)[0] ?? endpoint;
+      const segmentosRegla = regla.endpoint.split("/");
+      const segmentosRuta = ruta.split("/");
+      const creadoresPendientes = new Set<string>();
+      for (const [clave, operationIds] of creadoresDePagina) {
+        if ([...operationIds].some((id) => id !== evento.operationId)) {
+          creadoresPendientes.add(clave);
+        }
+      }
+      const referenciasEndpoint = evento.referenciasEndpoint ?? [];
+      const referenciasAResolver = [
+        ...referencias.map((referencia) => ({
+          referencia,
+          destino: "payload" as const,
+        })),
+        ...(regla.segmentos ?? []).flatMap((segmento) => {
+          const indice = segmentosRegla.indexOf(`:${segmento.parametro}`);
+          const valor = segmentosRuta[indice];
+          return indice >= 0 && valor && !valor.startsWith("{")
+            ? [{
+                referencia: { entidad: segmento.entidad, valorLocal: valor },
+                destino: "segmento" as const,
+                indice,
+              }]
+            : [];
+        }),
+        ...referenciasEndpoint.map((referencia) => ({
+          referencia: {
+            entidad: referencia.entidad,
+            valorLocal: referencia.valorLocal,
+          },
+          destino: "padre" as const,
+          marcador: referencia.marcador,
+          indice: segmentosRegla.indexOf(
+            `:${referencia.marcador.slice(1, -1)}`,
+          ),
+        })),
+        ...((segmentosRegla.includes(":id") || endpoint.includes("{id}"))
+          ? [{
+              referencia: {
+                entidad: evento.entidad,
+                valorLocal: evento.entidadId,
+              },
+              destino: "propia" as const,
+              indice: segmentosRegla.indexOf(":id"),
+              ...(endpoint.includes("{id}") ? { marcador: "{id}" } : {}),
+            }]
+          : []),
+      ];
+      const mapaReferencias = new Map<string, string>();
+      const reemplazosEndpoint = new Map<string, {
+        valorRemoto: string;
+        valorLocal: string;
+        indice: number;
+      }>();
+      const resultadosReferencias = new Map<
+        string,
+        Awaited<ReturnType<typeof clasificarReferenciaRemota>>
+      >();
+      for (const elemento of referenciasAResolver) {
+        const clave = `${elemento.referencia.entidad}:${elemento.referencia.valorLocal}`;
+        let resultado = resultadosReferencias.get(clave);
+        if (!resultado) {
+          resultado = await clasificarReferenciaRemota(
+            pool,
+            elemento.referencia,
+            maximosIniciales,
+            ENTIDAD_TABLA,
+            creadoresPendientes,
+          );
+          resultadosReferencias.set(clave, resultado);
+        }
+        if (resultado.tipo === "espera") {
           throw new Error(
-            `No existe mapeo local para ${evento.entidad} remoto=${evento.entidadId}`,
+            `Espera la creación remota de ${elemento.referencia.entidad} ${elemento.referencia.valorLocal}; el cursor se detuvo antes de aplicar el evento.`,
           );
         }
-        endpoint = endpoint.replace("{id}", idLocal);
+        if (resultado.tipo === "conflicto") {
+          throw new Error(
+            `Referencia sin equivalente local: ${elemento.referencia.entidad} ${elemento.referencia.valorLocal}`,
+          );
+        }
+        const valorLocal =
+          resultado.tipo === "traducida"
+            ? resultado.valorRemoto
+            : elemento.referencia.valorLocal;
+        mapaReferencias.set(clave, valorLocal);
+        if (elemento.destino !== "payload") {
+          const segmentoOriginal = elemento.destino === "padre"
+            ? (segmentosRuta[elemento.indice]?.startsWith("{")
+                ? elemento.marcador
+                : segmentosRuta[elemento.indice] ?? elemento.marcador)
+            : elemento.destino === "propia" && elemento.marcador
+              ? elemento.marcador
+              : elemento.referencia.valorLocal;
+          reemplazosEndpoint.set(
+            `${segmentoOriginal}:${elemento.indice}`,
+            {
+              valorRemoto: segmentoOriginal,
+              valorLocal,
+              indice: elemento.indice,
+            },
+          );
+        }
       }
-      if (evento.metodo !== "POST" && !endpoint.includes("{")) {
-        const relacionRecurso = await pool.query<{ id_local: string }>(
-          `SELECT id_local FROM referencias_sincronizacion
-          WHERE entidad = $1 AND id_remoto = $2`,
-          [evento.entidad, evento.entidadId],
-        );
-        if (relacionRecurso.rows[0]) {
-          endpoint = traducirIdRecursoEnEndpoint(
-            endpoint,
-            evento.entidadId,
-            relacionRecurso.rows[0].id_local,
-          );
-        }
+      for (const reemplazo of reemplazosEndpoint.values()) {
+        endpoint = resolverEndpoint(
+          endpoint,
+          reemplazo.valorRemoto,
+          reemplazo.valorLocal,
+          reemplazo.indice,
+        ).endpoint;
+      }
+      if (endpoint.includes("{")) {
+        throw new Error(`Endpoint sin resolver por completo: ${endpoint}`);
       }
 
       const idsLineasCredito = idsLineaCreditoEnPayload(
@@ -220,8 +330,18 @@ try {
           `Dependencia pendiente: la(s) línea(s) remota(s) ${bloqueados.join(", ")} aún no tiene(n) relación local.`,
         );
       }
-      const payload = traducirIdsLineaCredito(
+      const payloadTraducido = traducirPayload(
+        {
+          ...regla,
+          campos: regla.campos.filter(
+            (campo) => campo.entidad !== "credito_linea",
+          ),
+        },
         evento.payload,
+        mapaReferencias,
+      );
+      const payload = traducirIdsLineaCredito(
+        payloadTraducido,
         evento.endpoint,
         mapaLineasCredito,
       );
@@ -346,7 +466,10 @@ try {
             rollbackError,
           );
         });
-        throw error;
+        throw new Error(
+          mensajeErrorEquivalencia(error) ??
+            (error instanceof Error ? error.message : String(error)),
+        );
       } finally {
         client.release();
       }

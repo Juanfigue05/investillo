@@ -113,7 +113,12 @@ export const REGLAS_REFERENCIAS: readonly ReglaReferencias[] = [
     endpoint: "/clientes/:clienteId/vehiculos/:id",
     campos: [],
   },
-  { metodo: "PUT", endpoint: "/clientes/:id", campos: [] },
+  {
+    metodo: "PUT",
+    endpoint: "/clientes/:id",
+    campos: [],
+    segmentos: [{ parametro: "id", entidad: "cliente" }],
+  },
   {
     metodo: "POST",
     endpoint: "/creditos",
@@ -207,7 +212,12 @@ export const REGLAS_REFERENCIAS: readonly ReglaReferencias[] = [
     campos: [],
   },
   { metodo: "POST", endpoint: "/clientes", campos: [] },
-  { metodo: "DELETE", endpoint: "/clientes/:id", campos: [] },
+  {
+    metodo: "DELETE",
+    endpoint: "/clientes/:id",
+    campos: [],
+    segmentos: [{ parametro: "id", entidad: "cliente" }],
+  },
   { metodo: ["PUT", "DELETE"], endpoint: "/obra-electronica/:id", campos: [] },
   { metodo: "POST", endpoint: "/remachadas", campos: [] },
   { metodo: ["PUT", "DELETE"], endpoint: "/remachadas/:id", campos: [] },

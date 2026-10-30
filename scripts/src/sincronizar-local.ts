@@ -12,7 +12,10 @@ import {
   clasificarRespuesta,
   type DecisionRespuesta,
 } from "./lib/clasificar-respuesta";
-import { clasificarReferencia } from "./lib/clasificar-referencia";
+import {
+  clasificarReferencia,
+  mensajeErrorEquivalencia,
+} from "./lib/clasificar-referencia";
 import {
   ENTIDAD_TABLA,
   encontrarRegla,
@@ -671,7 +674,8 @@ try {
           WHERE operation_id = $1`,
         [
           evento.operation_id,
-          error instanceof Error ? error.message : String(error),
+          mensajeErrorEquivalencia(error) ??
+            (error instanceof Error ? error.message : String(error)),
         ],
       );
       fallidas++;

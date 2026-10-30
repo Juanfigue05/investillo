@@ -625,6 +625,15 @@ Debe responder con un estado correcto. Si no responde, no programes todavía `sy
     maximo_id bigint NOT NULL,
     creado_en timestamp NOT NULL DEFAULT now()
   );
+
+  -- Revisa y resuelve manualmente cualquier duplicado antes de crear el índice.
+  SELECT entidad, id_remoto, array_agg(id_local ORDER BY id_local) AS ids_local
+  FROM referencias_sincronizacion
+  GROUP BY entidad, id_remoto
+  HAVING count(*) > 1;
+
+  CREATE UNIQUE INDEX IF NOT EXISTS referencias_sincronizacion_entidad_remoto_uidx
+    ON referencias_sincronizacion (entidad, id_remoto);
   ```
 
 - `sync:init` guarda una sola vez el cursor remoto y la huella inicial. Si las bases difieren, muestra las tablas y sus cantidades e IDs máximos; con el sistema en reposo, copia una base sobre la otra y repite el comando.

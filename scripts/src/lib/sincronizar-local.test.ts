@@ -57,6 +57,7 @@ const referenciasDePrueba: Array<[string, string]> = [
 ];
 const pool = new Pool({ connectionString: databaseUrl });
 let postCount = 0;
+let siguienteIdRemotoPrueba = 7000;
 let getCount = 0;
 let putCount = 0;
 let deleteCount = 0;
@@ -465,8 +466,7 @@ test("clasifica respuestas remotas y detecta conflictos antes de enviar", async 
     }
 
     solicitudesRecibidas.length = 0;
-    respuestaPost = (endpoint) =>
-      endpoint === "/inventario" ? { id: 7000 } : { id: 8000 };
+    respuestaPost = () => ({ id: siguienteIdRemotoPrueba++ });
     const crearProducto = await insertarEvento({
       nombre: "referencia-producto-creador",
       entidad: "producto",
@@ -528,10 +528,11 @@ test("clasifica respuestas remotas y detecta conflictos antes de enviar", async 
     });
     postCount = 0;
     const referenciaInicial = await ejecutarScript("sincronizar-local.ts");
+    const estadoReferenciaInicial = await estados([ventaConIdInicial]);
     assert.equal(
       referenciaInicial.status,
       0,
-      `${referenciaInicial.stdout}\n${referenciaInicial.stderr}`,
+      `${referenciaInicial.stdout}\n${referenciaInicial.stderr}\n${JSON.stringify(estadoReferenciaInicial)}`,
     );
     assert.deepEqual(solicitudesRecibidas.at(-1), {
       metodo: "POST",
