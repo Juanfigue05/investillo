@@ -1,0 +1,181 @@
+# Inventario de referencias para sincronización
+
+Este inventario describe los eventos con `origen: "local"` emitidos por las
+rutas del API. Los endpoints con `:id` describen segmentos numéricos ya
+interpolados al guardar el evento. Los literales `{id}` y `{...Id}` son
+marcadores guardados en el endpoint; los valores padre se resuelven mediante
+`referenciasEndpoint` y los marcadores de fila mediante `entidad_id`.
+
+## Emisores locales
+
+- `clientes.ts`
+  - `cliente`: POST `/clientes`, sin ID en la ruta; PUT y DELETE
+    `/clientes/${id}`, con `entidad_id` igual al segmento.
+  - `vehiculo`: POST `/clientes/{clienteId}/vehiculos`; PUT y DELETE
+    `/clientes/{clienteId}/vehiculos/{id}`. El marcador del cliente se mapea
+    en `referenciasEndpoint`; para editar o borrar, `{id}` es el ID del
+    vehículo y coincide con `entidad_id`. No se hallaron IDs foráneos en el
+    cuerpo de estas operaciones.
+- `creditos.ts`
+  - `creditos_orden`: PUT `/creditos/reordenar`; no tiene ID de fila en la
+    ruta y `entidad_id` es el `operationId`.
+  - `credito`: POST `/creditos`, sin ID en la ruta; PUT y DELETE
+    `/creditos/${id}`, con `entidad_id` igual al ID del crédito.
+  - `abono_credito`: POST `/creditos/{creditoId}/abono`; DELETE y PUT
+    `/creditos/{creditoId}/abono/{id}`. El crédito padre usa
+    `referenciasEndpoint`; `{id}` identifica el abono y coincide con
+    `entidad_id`.
+- `ventas.ts`
+  - `venta`: POST `/ventas`, sin ID en la ruta; PUT y DELETE
+    `/ventas/${id}`, con `entidad_id` igual al ID de la venta.
+  - `venta`: POST `/ventas/lote-pago-antiguo` y POST `/ventas/manoobra`, sin
+    ID de fila en la ruta; `entidad_id` es el `operationId` en el lote y el
+    ID de la venta creada en mano de obra.
+  - `ventas_orden`: PUT `/ventas/reordenar`; `entidad_id` es el `operationId`.
+  - `producto`: POST `/ventas/${id}/trasladar`; el segmento y `entidad_id`
+    identifican el producto trasladado, no una venta.
+- `compras.ts`
+  - `compra`: POST `/compras`; PUT y DELETE `/compras/${id}`; PATCH
+    `/compras/${id}/corregir`. En los métodos con segmento, `entidad_id`
+    coincide con el ID de la compra. POST `/compras/lote-llegada` usa la
+    entidad `compra_lote`, no tiene ID de fila en la ruta y usa
+    `operationId` como `entidad_id`.
+- `inventario.ts`
+  - `producto`: POST `/inventario`, sin ID en la ruta; PUT
+    `/inventario/${id}`, PUT `/inventario/${id}/stock`, DELETE
+    `/inventario/${id}` y PUT `/inventario/${id}/reactivar`. Los segmentos
+    numéricos y `entidad_id` corresponden al producto.
+- `trabajadores.ts`
+  - `trabajador`: POST `/trabajadores`; PUT `/trabajadores/${id}`. En PUT,
+    `entidad_id` coincide con el segmento.
+  - `pago_seguro`: POST `/trabajadores/{trabajadorId}/pagos-seguro` y DELETE
+    `/trabajadores/{trabajadorId}/pagos-seguro/{id}`. El trabajador padre
+    se resuelve mediante `referenciasEndpoint`; el marcador final de DELETE
+    es el pago y coincide con `entidad_id`.
+- `manoobra.ts`
+  - `mano_obra`: POST `/manoobra`; PUT y DELETE `/manoobra/${id}`. PUT y
+    DELETE tienen `entidad_id` igual al segmento.
+- `descuentos-inventario.ts`
+  - `descuento_inventario`: POST `/descuentos-inventario`, sin ID en la ruta
+    y con `operationId` como `entidad_id`; PUT y DELETE
+    `/descuentos-inventario/${id}`, con ID coincidente.
+- `grupos-trabajo.ts`
+  - `grupo_trabajo`: POST `/grupos-trabajo`; PATCH
+    `/grupos-trabajo/${id}/desactivar`. En PATCH, `entidad_id` coincide con
+    el segmento.
+- `cierre-diario.ts`
+  - `cierre_diario`: POST `/cierre-diario` para crear o actualizar un cierre,
+    con el ID del cierre como `entidad_id` aunque no esté en la ruta; DELETE
+    `/cierre-diario/${id}`, con ID coincidente.
+- `calculadora-cierre.ts`
+  - `calculadora_cierre`: PUT y DELETE `/calculadora-cierre`; entidad
+    singleton con `entidad_id: "1"` y sin ID en la ruta.
+- `conteo-monedas.ts`
+  - `conteo_monedas`: PUT `/conteo-monedas`; entidad singleton con
+    `entidad_id: "1"` y sin ID en la ruta.
+- `historial.ts`
+  - `historial`: POST `/historial`; PUT y DELETE `/historial/${id}`. En
+    edición y borrado, `entidad_id` coincide con el segmento.
+- `historial-precios.ts`
+  - `historial_precios`: DELETE `/historial-precios/producto/${productoId}`
+    y DELETE `/historial-precios/${id}`. El primer endpoint usa el ID del
+    producto asociado como `entidad_id`, no el ID de una fila de historial;
+    el segundo sí usa el ID de la fila.
+- `notas.ts`
+  - `nota`: PUT `/notas`; no incluye ID en la ruta y `entidad_id` es el ID
+    de la fila guardada.
+- `remachadas.ts`
+  - `remachada`: POST `/remachadas`; PUT y DELETE `/remachadas/${id}`. En
+    edición y borrado, `entidad_id` coincide con el segmento.
+- `obra-electronica.ts`
+  - `obra_electronica`: POST `/obra-electronica`; PUT y DELETE
+    `/obra-electronica/${id}`. En edición y borrado, `entidad_id` coincide
+    con el segmento.
+- `tensionadas.ts`
+  - `tensionada`: POST `/tensionadas`; PATCH y DELETE
+    `/tensionadas/${id}`. En PATCH y DELETE, `entidad_id` coincide con el
+    segmento.
+- `reportes.ts`
+  - `cierre_diario`: PATCH `/reportes/nomina/dia`; endpoint singleton sin ID,
+    con `entidad_id` igual al ID del cierre actualizado.
+- `clientes-import.ts`
+  - `clientes_import`: POST `/clientes-import/sincronizar` para importar y
+    resolver; sin ID de fila en la ruta y con `operationId` como
+    `entidad_id`.
+- `inventario-import.ts`
+  - `inventario_import`: POST `/inventario-import/sincronizar` para importar,
+    confirmar productos nuevos y resolver; POST
+    `/inventario-import/resolver-cantidades`; POST
+    `/inventario-import/aplicar-completo`. Todas son rutas sin ID de fila y
+    usan `operationId` como `entidad_id`.
+
+## IDs de otros registros en el payload
+
+Las rutas no enumeradas aquí no mostraron IDs foráneos en el payload de sus
+eventos locales; las referencias de entidades padre que aparecen en la ruta
+se guardan en `referenciasEndpoint`.
+
+- POST `/ventas` y POST `/compras`: `productoId` → `producto`.
+- POST `/ventas/lote-pago-antiguo`: `items[].productoId` → `producto`.
+- POST `/ventas/manoobra`, PUT `/ventas/:id` cuando incluye distribuciones,
+  y POST/PUT `/manoobra`: `distribuciones[].trabajadorId` → `trabajador`.
+- POST/PUT `/creditos`: `lineas[].productoId` → `producto`;
+  `manoObra.trabajadores[].id` → `trabajador`. En PUT,
+  `lineas[].id` identifica una línea existente → `credito_linea`.
+- POST/PUT `/creditos/:creditoId/abono/:id` (POST sin el segmento final):
+  `lineas[].lineaId` → `credito_linea`. DELETE envía `{}`; el crédito padre
+  se referencia en `referenciasEndpoint`.
+- POST `/compras/lote-llegada`: `items[].id` → `compra`.
+- POST `/descuentos-inventario`: `items[].productoId` → `producto`.
+- PUT `/ventas/reordenar` y PUT `/creditos/reordenar`: `ids[]` → `venta` o
+  `credito`, respectivamente.
+- POST `/grupos-trabajo`: `trabajadorIds[]` → `trabajador`.
+- POST `/obra-electronica` y PATCH `/reportes/nomina/dia`:
+  `trabajadorId` → `trabajador`.
+- POST `/cierre-diario`: `datos[].trabajadorId` o
+  `datos.trabajadores[].trabajadorId` → `trabajador`.
+- Los payloads de importación no contienen IDs de registros destino: las
+  filas de clientes se representan como datos de cliente y las filas de
+  inventario como códigos, nombres, referencias, precios y cantidades.
+
+## Respuestas de POST y IDs anidados
+
+- Una creación individual normalmente devuelve un objeto con `id`: clientes,
+  vehículos, créditos, abonos (incluido `_syncNuevoAbonoId`), ventas, ventas
+  de mano de obra, traslados de producto, compras, productos, trabajadores,
+  pagos de seguro, mano de obra, grupos, cierres, historial, remachadas,
+  obra electrónica y tensionadas.
+- Las operaciones por lote de ventas, compras y descuentos devuelven
+  colecciones con IDs de filas creadas. Las importaciones devuelven conteos,
+  estado y posibles datos de conflicto/nuevo producto, no IDs de filas.
+- Las respuestas de clientes incluyen IDs de vehículos. Las respuestas de
+  mano de obra incluyen IDs de distribuciones y trabajadores. Los mapeadores
+  de créditos incluyen IDs de líneas, mano de obra y abonos.
+- Los eventos solo configuran mapeo explícito de IDs anidados en
+  `referenciasRespuesta` para POST `/creditos` (`_syncNuevoAbonoId` y
+  `lineas.{index}.id` → `credito_linea`) y PUT `/creditos/:id`
+  (`lineas.{index}.id` de líneas nuevas). POST de abono devuelve
+  `_syncNuevoAbonoId`, pero no configura `referenciasRespuesta`. El resto de
+  respuestas con IDs anidados no los registra explícitamente como
+  `referenciasRespuesta`.
+
+## Dudas y casos raros
+
+- Las importaciones de clientes guardan el mismo endpoint
+  `/clientes-import/sincronizar` tanto al importar como al resolver
+  (`clientes-import.ts:146,188`); las importaciones de inventario también
+  usan `/inventario-import/sincronizar` para importar, confirmar productos
+  nuevos y resolver (`inventario-import.ts:279,326,354`).
+- `/ventas/manoobra` emite la entidad `venta` y devuelve la fila de venta,
+  aunque también crea mano de obra; el evento no registra el ID de esa fila
+  de mano de obra (`ventas.ts:295–341`).
+- `/cierre-diario` es POST pero puede actualizar un cierre existente o
+  crear uno nuevo (`cierre-diario.ts:149–157`).
+- El borrado de un abono emite `entidad: "abono_credito"` y el ID del abono,
+  pero la operación idempotente asociada se registra como tipo `credito`
+  con el ID del crédito (`creditos.ts:945–946`).
+- POST `/creditos/:creditoId/abono` devuelve `_syncNuevoAbonoId`, pero no
+  incluye `referenciasRespuesta` en el evento (`creditos.ts:873,878`).
+- El payload de cierre acepta dos formas para trabajadores; su tipo de
+  entrada es `unknown`, por lo que no está claro si hay otras formas
+  admitidas (`cierre-diario.ts:65,76–85`).

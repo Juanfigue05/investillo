@@ -265,7 +265,7 @@ describe.sequential("Rutas de sincronización", () => {
          'remoto', 'sincronizado', $8::timestamp),
         ($9, 'credito', '6', 'editar', 'PUT', '/creditos/6/detalle', '{}'::jsonb,
          'remoto', 'sincronizado', $10::timestamp),
-        ($11, 'test', '1', 'editar', 'PUT', '/items/aX', '{}'::jsonb,
+        ($11, 'test', '1', 'editar', 'PUT', '/items/aX/detalle', '{}'::jsonb,
          'remoto', 'sincronizado', $12::timestamp)`,
       [
         operationIds[0],
