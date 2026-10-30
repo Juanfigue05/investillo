@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
+import { db, TABLAS_HUELLA } from "@workspace/db";
 import { cursosSincronizacionTable } from "@workspace/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 
@@ -7,6 +7,35 @@ const router = Router();
 const DESDE_PREDETERMINADO = "1970-01-01 00:00:00";
 const FORMATO_FECHA =
   /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?$/;
+
+router.get("/huella", async (_req, res) => {
+  const tablas = Object.fromEntries(
+    await Promise.all(
+      TABLAS_HUELLA.map(async (tabla) => {
+        const { rows } = await db.execute(sql`
+          SELECT
+            count(*)::text AS total,
+            COALESCE(max(id), 0)::text AS "maximoId"
+          FROM ${sql.identifier(tabla)}
+        `);
+        const resultado = rows[0] as
+          | { total: string; maximoId: string }
+          | undefined;
+        if (!resultado) {
+          throw new Error(`No se pudo calcular la huella de ${tabla}`);
+        }
+        return [
+          tabla,
+          {
+            total: Number(resultado.total),
+            maximoId: Number(resultado.maximoId),
+          },
+        ] as const;
+      }),
+    ),
+  );
+  res.json({ tablas });
+});
 
 function fechaCursorValida(value: unknown): value is string {
   if (typeof value !== "string") return false;
@@ -121,8 +150,7 @@ router.get("/conflicto", async (req, res) => {
     endpointSinConsulta.length > 1 && endpointSinConsulta.endsWith("/")
       ? endpointSinConsulta.slice(0, -1)
       : endpointSinConsulta;
-  const prefijoSubruta =
-    endpointBase === "/" ? "/" : `${endpointBase}/`;
+  const prefijoSubruta = endpointBase === "/" ? "/" : `${endpointBase}/`;
   const { rows } = await db.execute(sql`
     SELECT
       operation_id AS "operationId",
@@ -151,11 +179,7 @@ router.get("/conflicto", async (req, res) => {
         endpoint: string;
       }
     | undefined;
-  res.json(
-    evento
-      ? { conflicto: true, evento }
-      : { conflicto: false },
-  );
+  res.json(evento ? { conflicto: true, evento } : { conflicto: false });
 });
 
 router.get("/ahora", async (_req, res) => {

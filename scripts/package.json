@@ -14,6 +14,7 @@
     "sync:pull": "tsx ./src/sincronizar-remoto.ts",
     "sync:all": "tsx ./src/sincronizar-todo.ts",
     "test": "tsx --test src/lib/credito-lineas-sync.test.ts src/lib/clasificar-respuesta.test.ts src/lib/referencias-payload.test.ts",
+    "test:sync-init": "tsx --test src/lib/iniciar-sincronizacion.test.ts",
     "test:sync-local": "tsx --test src/lib/sincronizar-local.test.ts",
     "test:sync-e2e": "pnpm --filter @workspace/api-server run build && tsx --test src/lib/sincronizacion.e2e.test.ts",
     "setup:local": "tsx ./src/preparar-local.ts",
@@ -27,6 +28,7 @@
     "tsx": "catalog:"
   },
   "dependencies": {
+    "@workspace/db": "workspace:*",
     "@aws-sdk/client-s3": "^3.1114.0",
     "pg": "^8.13.1"
   }

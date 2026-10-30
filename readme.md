@@ -610,7 +610,24 @@ Debe responder con un estado correcto. Si no responde, no programes todavía `sy
 
 - Configura `CLAVE_ACCESO_REMOTO` en Render para proteger la aplicación. Tras iniciar sesión, el navegador recibe una cookie `investillo_sesion` aleatoria, `HttpOnly`, `SameSite=Lax` y con expiración de 30 días; el servidor guarda solo el hash en `sesiones_acceso`. Cerrar sesión revoca la sesión de ese navegador/perfil. La tabla se crea automáticamente al iniciar sesión y la limpieza periódica de operaciones elimina sesiones vencidas.
 - Configura `SYNC_TOKEN` con el mismo secreto aleatorio en Render y `.env.local`. Genéralo con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` y no lo compartas ni lo subas a Git. Se necesita para subir y descargar cambios; los scripts lo envían mediante `X-Sync-Token` y, sin él, la API rechaza las solicitudes de sincronización.
-- Antes de descargar cambios por primera vez, ejecuta `pnpm run sync:init` en la PC local. En producción, agrega la columna nullable que permite reanudar entre eventos con la misma marca de tiempo: `ALTER TABLE cursos_sincronizacion ADD COLUMN IF NOT EXISTS operacion_id text;`.
+- Antes de la primera sincronización real, deja la base local y la de Render idénticas: con el sistema en reposo, copia una base sobre la otra. Después ejecuta `pnpm run sync:init` en la PC. El comando compara la cantidad de filas y el ID máximo de cada tabla de negocio; si no coinciden, no inicializa el cursor ni guarda el punto de partida. No hay una opción para saltarse esa comprobación.
+- En Render, prepara el cursor. En la base local, crea la tabla que guarda el punto de partida:
+
+  ```sql
+  -- En Render
+  ALTER TABLE cursos_sincronizacion
+    ADD COLUMN IF NOT EXISTS operacion_id text;
+
+  -- En la base local
+  CREATE TABLE IF NOT EXISTS base_sincronizacion (
+    tabla text PRIMARY KEY,
+    total bigint NOT NULL,
+    maximo_id bigint NOT NULL,
+    creado_en timestamp NOT NULL DEFAULT now()
+  );
+  ```
+
+- `sync:init` guarda una sola vez el cursor remoto y la huella inicial. Si las bases difieren, muestra las tablas y sus cantidades e IDs máximos; con el sistema en reposo, copia una base sobre la otra y repite el comando.
 - La descarga confirma a Render el último cursor aplicado (`/api/sync/ack`). El limpiador conserva los eventos remotos mientras no tengan acuse; una vez confirmados, quedan sujetos a la retención normal de 60 días. Esta confirmación está diseñada para una sola PC sincronizadora.
 - En Render configura `TRUST_PROXY_HOPS` con el número real de proxies confiables. Para la configuración habitual de Render se usa `1`; verifica el recorrido de red antes de habilitar el servicio. Es obligatorio en producción cuando `CLAVE_ACCESO_REMOTO` está activa. El límite de acceso es de cinco fallos por IP en 15 minutos y se mantiene en memoria, adecuado para una sola instancia.
 - La política CSP de Helmet se mantiene desactivada para no interferir con los estilos, fuentes ni PWA; se habilitan las demás cabeceras de seguridad y `Referrer-Policy: same-origin`.
@@ -841,6 +858,7 @@ Para que sepas qué esperar y qué no, por ahora:
 - No hay pruebas automáticas de integración que levanten PostgreSQL por sí solas; las pruebas del API necesitan una `DATABASE_URL` válida.
 - La prueba E2E de sincronización usa dos bases locales aisladas derivadas del respaldo. Configura `SYNC_TEST_DATABASE_LOCAL` y `SYNC_TEST_DATABASE_REMOTE` con las URL de `investillo_sync_local` e `investillo_sync_remote`, y ejecuta `pnpm --filter @workspace/scripts run test:sync-e2e`. La prueba limpia la metadata de sincronización de esas bases; no debe apuntarse a producción ni a una base de trabajo.
 - Las pruebas integrales de la subida usan el servidor HTTP falso y `investillo_sync_local`; configura `SYNC_TEST_DATABASE_LOCAL` con su URL local y ejecuta `pnpm --filter @workspace/scripts run test:sync-local`. La prueba limpia únicamente sus eventos identificados y el cursor remoto de la base aislada.
+- La prueba de `sync:init` también usa `investillo_sync_local` y un servidor falso; configura `SYNC_TEST_DATABASE_LOCAL` y ejecuta `pnpm --filter @workspace/scripts run test:sync-init`. Verifica la comparación de huellas, la inicialización sin cambios parciales y el caso de cursor existente.
 - El contrato OpenAPI y las rutas implementadas no son idénticos: las funciones que usan `fetch` manual deben probarse además de ejecutar el codegen.
 - La PWA usa `BASE_PATH` para `base`, `start_url`, `scope` y `navigateFallback`. Para desplegar bajo una subruta, configura esa variable durante el build y verifica que el proxy publique `/api` en la misma URL esperada por el frontend.
 

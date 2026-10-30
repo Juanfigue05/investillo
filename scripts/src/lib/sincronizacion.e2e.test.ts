@@ -213,6 +213,12 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
         pool.query(
           `ALTER TABLE cursos_sincronizacion
                ADD COLUMN IF NOT EXISTS operacion_id text;
+             CREATE TABLE IF NOT EXISTS base_sincronizacion (
+               tabla text PRIMARY KEY,
+               total bigint NOT NULL,
+               maximo_id bigint NOT NULL,
+               creado_en timestamp NOT NULL DEFAULT now()
+             );
              DELETE FROM eventos_sincronizacion;
              DELETE FROM operaciones_sincronizadas;
              DELETE FROM referencias_sincronizacion;

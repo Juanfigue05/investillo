@@ -48,11 +48,6 @@ export const REGLAS_REFERENCIAS: readonly ReglaReferencias[] = [
     endpoint: "/ventas/manoobra",
     campos: [{ ruta: "distribuciones[].trabajadorId", entidad: "trabajador" }],
   },
-  {
-    metodo: "PUT",
-    endpoint: "/ventas/reordenar",
-    campos: [{ ruta: "ids[]", entidad: "venta" }],
-  },
   { metodo: "POST", endpoint: "/ventas/:id/trasladar", campos: [] },
   {
     metodo: "POST",

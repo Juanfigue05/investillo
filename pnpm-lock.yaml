@@ -500,6 +500,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.1114.0
         version: 3.1114.0
+      '@workspace/db':
+        specifier: workspace:*
+        version: link:../lib/db
       pg:
         specifier: ^8.13.1
         version: 8.20.0

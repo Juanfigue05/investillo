@@ -49,6 +49,7 @@ async function crearApp() {
   app.use(cookieParser());
   app.use(bloqueoAccesoRemoto);
   app.get("/api/sync/pull", (_req, res) => res.json({ ok: true }));
+  app.get("/api/sync/huella", (_req, res) => res.json({ ok: true }));
   app.get("/api/datos", (_req, res) => res.json({ ok: true }));
   app.post("/api/datos", (_req, res) => res.json({ ok: true }));
   return app;
@@ -71,6 +72,10 @@ describe("bloqueoAccesoRemoto", () => {
       .set("X-Sync-Token", TOKEN)
       .expect(200, { ok: true });
     await request(app)
+      .get("/api/sync/huella")
+      .set("X-Sync-Token", TOKEN)
+      .expect(200, { ok: true });
+    await request(app)
       .get("/api/datos")
       .set("X-Sync-Token", TOKEN)
       .expect(200, { ok: true });
@@ -88,6 +93,9 @@ describe("bloqueoAccesoRemoto", () => {
 
     await request(app)
       .get("/api/sync/pull")
+      .expect(401, { error: "Autenticación de sincronización requerida" });
+    await request(app)
+      .get("/api/sync/huella")
       .expect(401, { error: "Autenticación de sincronización requerida" });
     await request(app)
       .post("/api/datos")
@@ -113,6 +121,9 @@ describe("bloqueoAccesoRemoto", () => {
     const app = await crearApp();
 
     await request(app).get("/api/sync/pull").expect(503, {
+      error: "La autenticación de sincronización no está configurada",
+    });
+    await request(app).get("/api/sync/huella").expect(503, {
       error: "La autenticación de sincronización no está configurada",
     });
   });

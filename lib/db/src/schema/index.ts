@@ -20,6 +20,7 @@ export * from "./obra_electronica";
 export * from "./calculadora_cierre";
 export * from "./eventos_sincronizacion";
 export * from "./referencias_sincronizacion";
+export * from "./base_sincronizacion";
 export * from "./curso_sincronizacion";
 export * from "./descuentos_inventario";
 export * from "./preferencias_usuario";

@@ -3,7 +3,7 @@ import "../lib/solo-base-de-pruebas";
 import express from "express";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
-import { pool } from "@workspace/db";
+import { pool, TABLAS_HUELLA } from "@workspace/db";
 import syncRouter from "./sync";
 
 const app = express();
@@ -62,6 +62,37 @@ afterAll(async () => {
 });
 
 describe.sequential("Rutas de sincronización", () => {
+  it("devuelve la huella de todas las tablas de negocio", async () => {
+    const respuesta = await request(app).get("/api/sync/huella").expect(200);
+    expect(Object.keys(respuesta.body.tablas).sort()).toEqual(
+      [...TABLAS_HUELLA].sort(),
+    );
+
+    for (const tabla of TABLAS_HUELLA) {
+      const { rows } = await pool.query<{
+        total: string;
+        maximo_id: string;
+      }>(
+        `SELECT count(*)::text AS total,
+                COALESCE(max(id), 0)::text AS maximo_id
+           FROM "${tabla}"`,
+      );
+      expect(respuesta.body.tablas[tabla]).toEqual({
+        total: Number(rows[0]?.total),
+        maximoId: Number(rows[0]?.maximo_id),
+      });
+    }
+
+    const tablaVacia = Object.values(
+      respuesta.body.tablas as Record<
+        string,
+        { total: number; maximoId: number }
+      >,
+    ).find((huella) => huella.total === 0);
+    expect(tablaVacia).toBeDefined();
+    expect(tablaVacia?.maximoId).toBe(0);
+  });
+
   it("valida desde y limita la entrega a eventos con más de dos segundos", async () => {
     for (const desde of [
       "ayer",
@@ -229,18 +260,20 @@ describe.sequential("Rutas de sincronización", () => {
   });
 
   it("detecta endpoints iguales y subrutas posteriores al cursor", async () => {
-    const [marcas] = await pool.query<{
-      desde: string;
-      anterior: string;
-      reciente: string;
-      recienteExacta: string;
-    }>(
-      `SELECT
+    const [marcas] = await pool
+      .query<{
+        desde: string;
+        anterior: string;
+        reciente: string;
+        recienteExacta: string;
+      }>(
+        `SELECT
          to_char(now() - interval '1 second', 'YYYY-MM-DD HH24:MI:SS.US') AS desde,
          to_char(now() - interval '2 seconds', 'YYYY-MM-DD HH24:MI:SS.US') AS anterior,
          to_char(now() - interval '100 milliseconds', 'YYYY-MM-DD HH24:MI:SS.US') AS reciente,
          to_char(now() - interval '100 milliseconds', 'YYYY-MM-DD HH24:MI:SS.US') AS "recienteExacta"`,
-    ).then((result) => result.rows);
+      )
+      .then((result) => result.rows);
     expect(marcas).toBeDefined();
     const operationIds = [
       `${prefix}-a-credit-abono`,
