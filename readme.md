@@ -610,36 +610,86 @@ Debe responder con un estado correcto. Si no responde, no programes todavía `sy
 
 - Configura `CLAVE_ACCESO_REMOTO` en Render para proteger la aplicación. Tras iniciar sesión, el navegador recibe una cookie `investillo_sesion` aleatoria, `HttpOnly`, `SameSite=Lax` y con expiración de 30 días; el servidor guarda solo el hash en `sesiones_acceso`. Cerrar sesión revoca la sesión de ese navegador/perfil. La tabla se crea automáticamente al iniciar sesión y la limpieza periódica de operaciones elimina sesiones vencidas.
 - Configura `SYNC_TOKEN` con el mismo secreto aleatorio en Render y `.env.local`. Genéralo con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` y no lo compartas ni lo subas a Git. Se necesita para subir y descargar cambios; los scripts lo envían mediante `X-Sync-Token` y, sin él, la API rechaza las solicitudes de sincronización.
-- Antes de la primera sincronización real, deja la base local y la de Render idénticas: con el sistema en reposo, copia una base sobre la otra. Después ejecuta `pnpm run sync:init` en la PC. El comando compara la cantidad de filas y el ID máximo de cada tabla de negocio; si no coinciden, no inicializa el cursor ni guarda el punto de partida. No hay una opción para saltarse esa comprobación.
-- En Render, prepara el cursor. En la base local, crea la tabla que guarda el punto de partida:
-
-  ```sql
-  -- En Render
-  ALTER TABLE cursos_sincronizacion
-    ADD COLUMN IF NOT EXISTS operacion_id text;
-
-  -- En la base local
-  CREATE TABLE IF NOT EXISTS base_sincronizacion (
-    tabla text PRIMARY KEY,
-    total bigint NOT NULL,
-    maximo_id bigint NOT NULL,
-    creado_en timestamp NOT NULL DEFAULT now()
-  );
-
-  -- Revisa y resuelve manualmente cualquier duplicado antes de crear el índice.
-  SELECT entidad, id_remoto, array_agg(id_local ORDER BY id_local) AS ids_local
-  FROM referencias_sincronizacion
-  GROUP BY entidad, id_remoto
-  HAVING count(*) > 1;
-
-  CREATE UNIQUE INDEX IF NOT EXISTS referencias_sincronizacion_entidad_remoto_uidx
-    ON referencias_sincronizacion (entidad, id_remoto);
-  ```
-
-- `sync:init` guarda una sola vez el cursor remoto y la huella inicial. Si las bases difieren, muestra las tablas y sus cantidades e IDs máximos; con el sistema en reposo, copia una base sobre la otra y repite el comando.
+- Para preparar la primera sincronización Aiven→PC, sigue completo el procedimiento **[Primer arranque de la sincronización (Aiven a PC)](#primer-arranque-de-la-sincronizaci%C3%B3n-aiven-a-pc)**. No basta con copiar los datos: también hay que migrar el esquema y reiniciar el estado antiguo de sincronización en ambas bases.
+- `sync:init` compara en las dos bases la cantidad de filas y el ID máximo de cada tabla de negocio. Solo guarda el cursor y las 21 huellas iniciales si coinciden. No hay una opción para saltarse esa comprobación; si ya hay cursor sin punto de partida completo, el comando se detiene sin borrar ni modificar datos.
+- `sync:status` informa si el punto de partida está ausente, incompleto o completo; muestra el cursor remoto, los eventos por origen y estado, y advierte si hay eventos anteriores a la fecha guardada en la huella base.
 - La descarga confirma a Render el último cursor aplicado (`/api/sync/ack`). El limpiador conserva los eventos remotos mientras no tengan acuse; una vez confirmados, quedan sujetos a la retención normal de 60 días. Esta confirmación está diseñada para una sola PC sincronizadora.
 - En Render configura `TRUST_PROXY_HOPS` con el número real de proxies confiables. Para la configuración habitual de Render se usa `1`; verifica el recorrido de red antes de habilitar el servicio. Es obligatorio en producción cuando `CLAVE_ACCESO_REMOTO` está activa. El límite de acceso es de cinco fallos por IP en 15 minutos y se mantiene en memoria, adecuado para una sola instancia.
 - La política CSP de Helmet se mantiene desactivada para no interferir con los estilos, fuentes ni PWA; se habilitan las demás cabeceras de seguridad y `Referrer-Policy: same-origin`.
+
+#### Primer arranque de la sincronización (Aiven a PC)
+
+Este procedimiento se usa una sola vez para preparar la sincronización bidireccional entre la base de Aiven (Render) y la copia de trabajo de la PC. No lo ejecutes con cambios pendientes ni con las bases desalineadas. El reinicio borra solo metadata de sincronización, no tablas de negocio.
+
+1. **Comprueba los requisitos.**
+   - Render ya debe tener desplegada la versión nueva de la aplicación, con `SYNC_CAPTURE_REMOTE=true` y `SYNC_TOKEN` configurado. Usa el mismo `SYNC_TOKEN` en Render y en `.env.local`; configura `SYNC_REMOTE_API_URL` con la URL del API de Render.
+   - La PC debe tener PostgreSQL 18 instalado, el código actualizado y sus variables locales correctas.
+   - Confirma que la base local de trabajo es la que vas a usar y que hay espacio suficiente para restaurar el respaldo.
+
+2. **Haz un respaldo de Aiven antes de cambiar nada.** Guarda el dump en una ubicación protegida fuera del repositorio y comprueba que el archivo se pueda leer. No compartas ni registres credenciales en comandos, capturas o logs.
+
+3. **Detén todas las escrituras.** Desde que se toma el respaldo hasta que `sync:init` termine correctamente, no se deben crear, editar ni borrar datos en Aiven/Render ni en la PC. Pausa también importaciones, tareas programadas y cualquier otra aplicación que escriba en esas bases.
+
+4. **Copia Aiven a la PC.** En el equipo local, si la base ya contiene tablas, elimina primero solo su esquema y restáuralo sin `--clean`. Ejemplo para la base local; sustituye la ruta por la ubicación protegida del dump:
+
+   ```sql
+   DROP SCHEMA public CASCADE;
+   ```
+
+   ```powershell
+   & 'C:\Program Files\PostgreSQL\18\bin\pg_restore.exe' --host localhost --port 5433 --username postgres --dbname investillo_sync_local --no-owner 'C:\ruta\protegida\aiven.dump'
+   ```
+
+   No ejecutes `pg_restore --clean`: el esquema se acaba de eliminar y el dump crea los objetos. Verifica que el destino sea la base local correcta. No restaures el dump encima de Aiven.
+
+5. **Aplica la migración en Aiven y en la PC.** En cada base, ejecuta primero este SQL. La consulta de duplicados debe devolver cero filas; si devuelve alguna, detente y resuelve los duplicados con respaldo antes de crear el índice único.
+
+   ```sql
+   ALTER TABLE cursos_sincronizacion
+     ADD COLUMN IF NOT EXISTS operacion_id text;
+
+   CREATE TABLE IF NOT EXISTS base_sincronizacion (
+     tabla text PRIMARY KEY,
+     total bigint NOT NULL,
+     maximo_id bigint NOT NULL,
+     creado_en timestamp NOT NULL DEFAULT now()
+   );
+
+   SELECT entidad, id_remoto, array_agg(id_local ORDER BY id_local) AS ids_local
+   FROM referencias_sincronizacion
+   GROUP BY entidad, id_remoto
+   HAVING count(*) > 1;
+
+   CREATE UNIQUE INDEX IF NOT EXISTS referencias_sincronizacion_entidad_remoto_uidx
+     ON referencias_sincronizacion (entidad, id_remoto);
+   ```
+
+6. **Reinicia la metadata antigua en las dos bases.** Ejecuta, tanto en Aiven como en la PC, estas sentencias en este orden y dentro de una transacción. No borres `operaciones_sincronizadas` ni ninguna tabla de negocio:
+
+   ```sql
+   BEGIN;
+   DELETE FROM cursos_sincronizacion;
+   DELETE FROM eventos_sincronizacion;
+   DELETE FROM referencias_sincronizacion;
+   DELETE FROM base_sincronizacion;
+   COMMIT;
+   ```
+
+   Comprueba que las cuatro tablas quedaron sin filas en ambas bases. Este paso evita reaplicar eventos del sistema anterior; no lo omitas ni ejecutes `sync:local` antes de inicializar.
+
+7. **Verifica la alineación con `sync:init`.** Mantén detenidas las escrituras y, desde la PC, ejecuta:
+
+   ```powershell
+   pnpm run sync:init
+   ```
+
+   El comando consulta la huella remota y la compara con la local para cada tabla: cantidad de filas e ID máximo. Esas medidas deben coincidir en las 21 tablas; no son un hash criptográfico del contenido. Si falta una tabla o una medida difiere, el comando falla y no guarda un cursor parcial. No fuerces el avance: vuelve a detener escrituras, identifica cuál base es la fuente correcta, alinéala y repite desde la copia y el reinicio.
+
+8. **Revisa el estado antes de reabrir escrituras.** Ejecuta `pnpm run sync:status` en la PC. Debe indicar punto de partida completo (21/21 tablas), cursor remoto y cantidades de eventos por origen/estado. Después del reinicio no deben quedar eventos viejos pendientes; si hay eventos con fecha anterior a la huella o cuya antigüedad no se puede determinar, detente e investiga.
+
+9. **Haz una prueba controlada.** Crea un registro de prueba identificable en Render, ejecuta `pnpm run sync:all` en la PC y comprueba que el registro y su equivalencia llegaron a la base local. Luego crea otro registro de prueba en la PC, vuelve a ejecutar `sync:all` y comprueba que llegó a Render. Ejecuta `sync:all` una segunda vez: no debe volver a aplicar ninguno de los cambios. Borra los registros de prueba mediante la aplicación sincronizada y verifica que ya no existan en ninguna base.
+
+10. **Reanuda las escrituras solo tras verificar ambos sentidos.** Si cualquier comprobación falla, detén la sincronización y conserva los respaldos y los mensajes de error. No borres cursores manualmente, no fuerces `sync:init`, no vuelvas a ejecutar una subida sobre una base desalineada y no reanudes las escrituras hasta confirmar cuál es la copia válida y volver a alinear las bases.
 
 ### 8.3 Desplegar en Railway
 

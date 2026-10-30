@@ -13,7 +13,7 @@
     "sync:init": "tsx ./src/iniciar-sincronizacion.ts",
     "sync:pull": "tsx ./src/sincronizar-remoto.ts",
     "sync:all": "tsx ./src/sincronizar-todo.ts",
-    "test": "tsx --test src/lib/credito-lineas-sync.test.ts src/lib/clasificar-respuesta.test.ts src/lib/referencias-payload.test.ts",
+    "test": "tsx --test src/lib/credito-lineas-sync.test.ts src/lib/clasificar-respuesta.test.ts src/lib/estado-sincronizacion.test.ts src/lib/referencias-payload.test.ts",
     "test:sync-init": "tsx --test src/lib/iniciar-sincronizacion.test.ts",
     "test:sync-local": "tsx --test src/lib/sincronizar-local.test.ts",
     "test:sync-remote": "tsx --test src/lib/sincronizar-remoto.test.ts",

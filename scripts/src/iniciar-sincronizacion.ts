@@ -1,5 +1,6 @@
 import pg from "pg";
 import { TABLAS_HUELLA, type TablaHuella } from "@workspace/db/schema";
+import { evaluarEstadoBase } from "./lib/estado-sincronizacion";
 import { getSyncHeaders } from "./sync-auth";
 import { getRemoteApiUrl } from "./remote-api-url";
 
@@ -107,11 +108,35 @@ try {
        FROM cursos_sincronizacion WHERE nombre = 'remoto'`,
   );
   if (existente.rows[0]) {
-    await client.query("COMMIT");
-    transaccionAbierta = false;
-    console.log(
-      `El cursor remoto ya está inicializado en ${existente.rows[0].valor}; no se modificó.`,
+    const base = await client.query<{ tabla: string }>(
+      "SELECT tabla FROM base_sincronizacion",
     );
+    const estadoBase = evaluarEstadoBase(
+      TABLAS_HUELLA,
+      base.rows.map(({ tabla }) => tabla),
+    );
+    if (estadoBase.estado !== "completo") {
+      await client.query("ROLLBACK");
+      transaccionAbierta = false;
+      console.error(
+        [
+          "Hay un cursor de una instalación anterior sin punto de partida completo.",
+          `Estado del punto de partida: ${estadoBase.estado}.`,
+          ...(estadoBase.faltantes.length > 0
+            ? [`Faltan tablas: ${estadoBase.faltantes.join(", ")}.`]
+            : []),
+          'Debe reiniciarse el estado de sincronización (consulta la sección "Primer arranque de la sincronización (Aiven a PC)" del readme) con las dos bases alineadas y en reposo; luego repite sync:init.',
+          "No se modificó ningún dato.",
+        ].join(" "),
+      );
+      process.exitCode = 1;
+    } else {
+      await client.query("COMMIT");
+      transaccionAbierta = false;
+      console.log(
+        `El cursor remoto ya está inicializado en ${existente.rows[0].valor} y el punto de partida está completo; no se modificó.`,
+      );
+    }
   } else {
     const huellaLocal = await calcularHuellaLocal(client);
     const huellaRemota = validarHuellaRemota(

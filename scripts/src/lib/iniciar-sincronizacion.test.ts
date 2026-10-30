@@ -192,6 +192,98 @@ test(
       llamadasHuella = 0;
       llamadasAhora = 0;
 
+      await pool.query(
+        `INSERT INTO cursos_sincronizacion (nombre, valor, operacion_id)
+         VALUES ('remoto', '1969-12-31 19:00:00'::timestamp, NULL)`,
+      );
+      const cursorLegado = await ejecutarScript();
+      const salidaCursorLegado =
+        `${cursorLegado.stdout}\n${cursorLegado.stderr}`;
+      assert.equal(cursorLegado.status, 1, salidaCursorLegado);
+      assert.match(
+        salidaCursorLegado,
+        /cursor de una instalación anterior sin punto de partida/i,
+      );
+      assert.match(
+        salidaCursorLegado,
+        /debe reiniciarse el estado de sincronización.*readme/i,
+      );
+      assert.equal(llamadasHuella, 0);
+      assert.equal(llamadasAhora, 0);
+      assert.equal(
+        (
+          await pool.query(
+            "SELECT 1 FROM cursos_sincronizacion WHERE nombre = 'remoto'",
+          )
+        ).rowCount,
+        1,
+      );
+      assert.equal((await pool.query("SELECT 1 FROM base_sincronizacion")).rowCount, 0);
+
+      const tablaParcial = TABLAS_HUELLA[0];
+      const tablaFaltante = TABLAS_HUELLA[1];
+      assert.ok(tablaParcial);
+      assert.ok(tablaFaltante);
+      await pool.query(
+        `INSERT INTO base_sincronizacion (tabla, total, maximo_id)
+         VALUES ($1, 0, 0)`,
+        [tablaParcial],
+      );
+      const cursorConBaseIncompleta = await ejecutarScript();
+      const salidaBaseIncompleta =
+        `${cursorConBaseIncompleta.stdout}\n${cursorConBaseIncompleta.stderr}`;
+      assert.equal(cursorConBaseIncompleta.status, 1, salidaBaseIncompleta);
+      assert.match(
+        salidaBaseIncompleta,
+        /cursor de una instalación anterior sin punto de partida/i,
+      );
+      assert.match(salidaBaseIncompleta, new RegExp(tablaFaltante));
+      assert.equal(llamadasHuella, 0);
+      assert.equal(llamadasAhora, 0);
+      assert.equal(
+        (await pool.query("SELECT count(*)::int AS n FROM base_sincronizacion"))
+          .rows[0]?.n,
+        1,
+      );
+
+      await pool.query("DELETE FROM base_sincronizacion");
+      for (const tabla of TABLAS_HUELLA) {
+        await pool.query(
+          `INSERT INTO base_sincronizacion (tabla, total, maximo_id)
+           VALUES ($1, 0, 0)`,
+          [tabla],
+        );
+      }
+      const cursorConBaseCompleta = await pool.query<Cursor>(
+        `SELECT nombre, valor, operacion_id, actualizado_en
+           FROM cursos_sincronizacion WHERE nombre = 'remoto'`,
+      );
+      llamadasHuella = 0;
+      llamadasAhora = 0;
+      const cursorCompleto = await ejecutarScript();
+      assert.equal(cursorCompleto.status, 0, cursorCompleto.stderr || cursorCompleto.stdout);
+      assert.equal(llamadasHuella, 0);
+      assert.equal(llamadasAhora, 0);
+      assert.deepEqual(
+        (
+          await pool.query<Cursor>(
+            `SELECT nombre, valor, operacion_id, actualizado_en
+               FROM cursos_sincronizacion WHERE nombre = 'remoto'`,
+          )
+        ).rows,
+        cursorConBaseCompleta.rows,
+      );
+      assert.equal(
+        (
+          await pool.query("SELECT count(*)::int AS n FROM base_sincronizacion")
+        ).rows[0]?.n,
+        TABLAS_HUELLA.length,
+      );
+
+      await limpiarEstado();
+      llamadasHuella = 0;
+      llamadasAhora = 0;
+
       const inicializa = await ejecutarScript();
       assert.equal(
         inicializa.status,
