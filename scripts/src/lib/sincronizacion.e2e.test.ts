@@ -726,6 +726,120 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
     );
     assert.notEqual(ventaProductoRemota.rows[0]?.producto_id, productoSombra.id);
 
+    const compraCreada = await api<{ id: number }>(
+      localBase(),
+      "/compras",
+      "POST",
+      { productoId: productoLocal.id },
+      `${prefix}-compra-e2e`,
+    );
+    const sincronizaCompraCreada = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      sincronizaCompraCreada.status,
+      0,
+      sincronizaCompraCreada.stderr || sincronizaCompraCreada.stdout,
+    );
+    const equivalenciaCompra = await localPool.query<{ id_remoto: string }>(
+      `SELECT id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'compra' AND id_local = $1`,
+      [String(compraCreada.id)],
+    );
+    assert.ok(equivalenciaCompra.rows[0]?.id_remoto);
+    const productoMapeadoCompra = await localPool.query<{
+      id_remoto: string;
+    }>(
+      `SELECT id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'producto' AND id_local = $1`,
+      [String(productoLocal.id)],
+    );
+    const stockAntesLlegada = await remotePool.query<{ stock: string }>(
+      "SELECT stock_actual AS stock FROM productos WHERE id = $1",
+      [productoMapeadoCompra.rows[0]?.id_remoto],
+    );
+    const llegadaCompra = await api<{
+      _syncHistorialPrecioId: number;
+    }>(
+      localBase(),
+      `/compras/${compraCreada.id}`,
+      "PUT",
+      {
+        estado: "llegado",
+        cantidadRecibida: 3,
+        cantidadLocal: 2,
+        cantidadBodega: 1,
+        nuevoPrecioCompra: 11000,
+        nuevoPrecioVentaSinIva: 16000,
+        tieneIva: false,
+        proveedor: `${prefix}-proveedor`,
+      },
+      `${prefix}-compra-llegada-e2e`,
+    );
+    assert.ok(llegadaCompra._syncHistorialPrecioId > 0);
+    const sincronizaLlegadaCompra = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      sincronizaLlegadaCompra.status,
+      0,
+      sincronizaLlegadaCompra.stderr || sincronizaLlegadaCompra.stdout,
+    );
+    const equivalenciaHistorial = await localPool.query<{
+      id_remoto: string;
+    }>(
+      `SELECT id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'historial_precios' AND id_local = $1`,
+      [String(llegadaCompra._syncHistorialPrecioId)],
+    );
+    assert.ok(equivalenciaHistorial.rows[0]?.id_remoto);
+    const historialLlegadaRemoto = await remotePool.query<{
+      id: string;
+      compra_id: number;
+    }>(
+      `SELECT id::text, compra_id FROM historial_precios
+        WHERE id = $1 AND compra_id = $2`,
+      [
+        equivalenciaHistorial.rows[0]?.id_remoto,
+        Number(equivalenciaCompra.rows[0]?.id_remoto),
+      ],
+    );
+    assert.equal(historialLlegadaRemoto.rowCount, 1);
+    const stockTrasLlegada = await remotePool.query<{ stock: string }>(
+      "SELECT stock_actual AS stock FROM productos WHERE id = $1",
+      [productoMapeadoCompra.rows[0]?.id_remoto],
+    );
+    assert.equal(
+      Number(stockTrasLlegada.rows[0]?.stock) -
+        Number(stockAntesLlegada.rows[0]?.stock),
+      3,
+    );
+    const reintentoLlegadaCompra = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      reintentoLlegadaCompra.status,
+      0,
+      reintentoLlegadaCompra.stderr || reintentoLlegadaCompra.stdout,
+    );
+    assert.equal(
+      (
+        await remotePool.query(
+          "SELECT 1 FROM historial_precios WHERE compra_id = $1",
+          [Number(equivalenciaCompra.rows[0]?.id_remoto)],
+        )
+      ).rowCount,
+      1,
+    );
+    const stockTrasReintento = await remotePool.query<{ stock: string }>(
+      "SELECT stock_actual AS stock FROM productos WHERE id = $1",
+      [productoMapeadoCompra.rows[0]?.id_remoto],
+    );
+    assert.equal(stockTrasReintento.rows[0]?.stock, stockTrasLlegada.rows[0]?.stock);
+
     const codigoProductoCompartido = `${prefix}-COD-IMPORT-COMPARTIDO`;
     const productoCompartidoRemoto = await api<{
       id: number;
@@ -2656,6 +2770,21 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
             "DELETE FROM ventas_diarias WHERE referencia LIKE $1",
             [`${prefix}%`],
           );
+          const comprasPrueba = await pool.query<{ id: number }>(
+            "SELECT id FROM compras WHERE producto_codigo LIKE $1",
+            [`${prefix}%`],
+          );
+          if (comprasPrueba.rows.length > 0) {
+            const idsCompras = comprasPrueba.rows.map(({ id }) => id);
+            await pool.query(
+              "DELETE FROM historial_precios WHERE compra_id = ANY($1::int[])",
+              [idsCompras],
+            );
+            await pool.query(
+              "DELETE FROM compras WHERE id = ANY($1::int[])",
+              [idsCompras],
+            );
+          }
           await pool.query("DELETE FROM productos WHERE nombre LIKE $1", [
             `${prefix}%`,
           ]);

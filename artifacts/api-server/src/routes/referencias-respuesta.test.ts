@@ -550,18 +550,19 @@ describe("referencias de respuesta en filas secundarias", () => {
     const operationCompra = operationId();
     const operationIndividual = operationId();
     const operationLote = operationId();
+    const operationCompraLote = operationId();
     const productoId = await crearProducto(`SYNC-COMPRA-${operationIndividual}`);
-    let compraId: number | undefined;
+    const compraIds: number[] = [];
     try {
       const compra = await request(app)
         .post("/api/compras")
         .set("X-Operation-Id", operationCompra)
         .send({ productoId });
       expect(compra.status).toBe(201);
-      compraId = compra.body.id as number;
+      compraIds.push(compra.body.id as number);
 
       const llegada = await request(app)
-        .put(`/api/compras/${compraId}`)
+        .put(`/api/compras/${compraIds[0]}`)
         .set("X-Operation-Id", operationIndividual)
         .send({
           estado: "llegado",
@@ -583,6 +584,13 @@ describe("referencias de respuesta en filas secundarias", () => {
         },
       ]);
 
+      const compraLote = await request(app)
+        .post("/api/compras")
+        .set("X-Operation-Id", operationCompraLote)
+        .send({ productoId });
+      expect(compraLote.status).toBe(201);
+      compraIds.push(compraLote.body.id as number);
+
       const lote = await request(app)
         .post("/api/compras/lote-llegada")
         .set("X-Operation-Id", operationLote)
@@ -590,7 +598,7 @@ describe("referencias de respuesta en filas secundarias", () => {
           proveedor: "Proveedor sync",
           fechaLlegada: "2026-10-30",
           items: [{
-            id: compraId,
+            id: compraIds[1],
             cantidadRecibida: 1,
             cantidadLocal: 1,
             cantidadBodega: 0,
@@ -612,11 +620,11 @@ describe("referencias de respuesta en filas secundarias", () => {
         },
       ]);
     } finally {
-      if (compraId !== undefined) {
+      if (compraIds.length > 0) {
         await db.delete(historialPreciosTable).where(
-          eq(historialPreciosTable.compraId, compraId),
+          inArray(historialPreciosTable.compraId, compraIds),
         );
-        await db.delete(comprasTable).where(eq(comprasTable.id, compraId));
+        await db.delete(comprasTable).where(inArray(comprasTable.id, compraIds));
       }
       await db.delete(productosTable).where(eq(productosTable.id, productoId));
     }
