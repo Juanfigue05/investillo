@@ -244,10 +244,6 @@ try {
           );
         }
         urlConflicto.searchParams.set("endpoint", endpoint);
-        if (idRemoto) {
-          urlConflicto.searchParams.set("entidad", evento.entidad);
-          urlConflicto.searchParams.set("entidadId", idRemoto);
-        }
         let respuestaConflicto: Response;
         try {
           respuestaConflicto = await fetch(urlConflicto, {

@@ -38,16 +38,12 @@ type CreditResponse = {
 
 function assertTestDatabase(databaseUrl: string, expectedName: string): void {
   const parsed = new URL(databaseUrl);
-  const nombreAislado =
-    expectedName === "investillo_sync_local"
-      ? "investillo_order8_sync_local"
-      : "investillo_order8_sync_remote";
   if (
     !["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname) ||
-    ![`/${expectedName}`, `/${nombreAislado}`].includes(parsed.pathname)
+    parsed.pathname !== `/${expectedName}`
   ) {
     throw new Error(
-      `E2E bloqueado: se requiere una base loopback de pruebas para ${expectedName}`,
+      `E2E bloqueado: se requiere una base loopback llamada ${expectedName}`,
     );
   }
 }

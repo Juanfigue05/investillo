@@ -228,100 +228,135 @@ describe.sequential("Rutas de sincronización", () => {
     expect(ackSinRetroceso.rows[0]?.valor).toBe(ackGuardado.rows[0]?.valor);
   });
 
-  it("detecta cambios remotos posteriores por endpoint o recurso, sin margen temporal", async () => {
+  it("detecta endpoints iguales y subrutas posteriores al cursor", async () => {
     const [marcas] = await pool.query<{
       desde: string;
       anterior: string;
       reciente: string;
-      igual: string;
+      recienteExacta: string;
     }>(
       `SELECT
          to_char(now() - interval '1 second', 'YYYY-MM-DD HH24:MI:SS.US') AS desde,
          to_char(now() - interval '2 seconds', 'YYYY-MM-DD HH24:MI:SS.US') AS anterior,
          to_char(now() - interval '100 milliseconds', 'YYYY-MM-DD HH24:MI:SS.US') AS reciente,
-         to_char(now() - interval '3 seconds', 'YYYY-MM-DD HH24:MI:SS.US') AS igual`,
+         to_char(now() - interval '100 milliseconds', 'YYYY-MM-DD HH24:MI:SS.US') AS "recienteExacta"`,
     ).then((result) => result.rows);
     expect(marcas).toBeDefined();
     const operationIds = [
-      `${prefix}-endpoint-match`,
-      `${prefix}-entity-match`,
+      `${prefix}-a-credit-abono`,
+      `${prefix}-b-credit-50`,
+      `${prefix}-client-query`,
       `${prefix}-older`,
-      `${prefix}-cursor-a`,
+      `${prefix}-cursor-b`,
+      `${prefix}-wildcard`,
     ];
     await pool.query(
       `INSERT INTO eventos_sincronizacion
         (operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
          origen, estado, creado_en)
        VALUES
-        ($1, 'venta', '7', 'editar', 'PUT', '/ventas/7?fuente=remota', '{}'::jsonb,
+        ($1, 'credito', '5', 'editar', 'PUT', '/creditos/5/abono?origen=remoto', '{}'::jsonb,
          'remoto', 'sincronizado', $2::timestamp),
-        ($3, 'cliente', '55', 'editar', 'PUT', '/clientes/55', '{}'::jsonb,
+        ($3, 'credito', '50', 'editar', 'PUT', '/creditos/50', '{}'::jsonb,
          'remoto', 'sincronizado', $4::timestamp),
-        ($5, 'producto', '9', 'editar', 'PUT', '/productos/9', '{}'::jsonb,
+        ($5, 'cliente', '55', 'editar', 'PUT', '/clientes/55?origen=remoto', '{}'::jsonb,
          'remoto', 'sincronizado', $6::timestamp),
-        ($7, 'venta', '8', 'editar', 'PUT', '/ventas/8', '{}'::jsonb,
-         'remoto', 'sincronizado', $8::timestamp)`,
-        [
-          operationIds[0],
-          marcas!.reciente,
-          operationIds[1],
-          marcas!.reciente,
-          operationIds[2],
-          marcas!.anterior,
-          operationIds[3],
-          marcas!.igual,
-        ],
-      );
+        ($7, 'producto', '9', 'editar', 'PUT', '/productos/9', '{}'::jsonb,
+         'remoto', 'sincronizado', $8::timestamp),
+        ($9, 'credito', '6', 'editar', 'PUT', '/creditos/6/detalle', '{}'::jsonb,
+         'remoto', 'sincronizado', $10::timestamp),
+        ($11, 'test', '1', 'editar', 'PUT', '/items/aX', '{}'::jsonb,
+         'remoto', 'sincronizado', $12::timestamp)`,
+      [
+        operationIds[0],
+        marcas!.reciente,
+        operationIds[1],
+        marcas!.reciente,
+        operationIds[2],
+        marcas!.reciente,
+        operationIds[3],
+        marcas!.anterior,
+        operationIds[4],
+        marcas!.recienteExacta,
+        operationIds[5],
+        marcas!.reciente,
+      ],
+    );
 
-    const endpointMatch = await request(app)
+    const subruta = await request(app)
       .get("/api/sync/conflicto")
       .query({
         desde: marcas!.desde,
-        endpoint: "/ventas/7?fuente=local",
+        endpoint: "/creditos/5",
       })
       .expect(200);
-    expect(endpointMatch.body.conflicto).toBe(true);
-    expect(endpointMatch.body.evento).toMatchObject({
-      operationId: `${prefix}-endpoint-match`,
+    expect(subruta.body.conflicto).toBe(true);
+    expect(subruta.body.evento).toMatchObject({
+      operationId: operationIds[0],
       metodo: "PUT",
-      endpoint: "/ventas/7?fuente=remota",
+      endpoint: "/creditos/5/abono?origen=remoto",
     });
-    expect(endpointMatch.body.evento.creadoEn).toMatch(
+    expect(subruta.body.evento.creadoEn).toMatch(
       /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$/,
     );
 
-    const entityMatch = await request(app)
+    const subcadenaNoValida = await request(app)
+      .get("/api/sync/conflicto")
+      .query({
+        desde: marcas!.recienteExacta,
+        desdeOperacion: operationIds[0],
+        endpoint: "/creditos/5",
+      })
+      .expect(200);
+    expect(subcadenaNoValida.body.conflicto).toBe(false);
+
+    const endpointConConsulta = await request(app)
       .get("/api/sync/conflicto")
       .query({
         desde: marcas!.desde,
-        endpoint: "/clientes/otro",
-        entidad: "cliente",
-        entidadId: "55",
+        endpoint: "/clientes/55?x=1",
       })
       .expect(200);
-    expect(entityMatch.body.conflicto).toBe(true);
-    expect(entityMatch.body.evento.operationId).toBe(
-      `${prefix}-entity-match`,
-    );
+    expect(endpointConConsulta.body.conflicto).toBe(true);
+    expect(endpointConConsulta.body.evento.operationId).toBe(operationIds[2]);
 
-    const noAnterior = await request(app)
+    const subrutaConBarraFinal = await request(app)
+      .get("/api/sync/conflicto")
+      .query({
+        desde: marcas!.desde,
+        endpoint: "/creditos/5/",
+      })
+      .expect(200);
+    expect(subrutaConBarraFinal.body.conflicto).toBe(true);
+
+    const anterior = await request(app)
       .get("/api/sync/conflicto")
       .query({
         desde: marcas!.desde,
         endpoint: "/productos/9",
       })
       .expect(200);
-    expect(noAnterior.body.conflicto).toBe(false);
+    expect(anterior.body.conflicto).toBe(false);
 
     const cursorCompuesto = await request(app)
       .get("/api/sync/conflicto")
       .query({
-        desde: marcas!.igual,
-        desdeOperacion: `${prefix}-tie-m`,
-        endpoint: "/ventas/8",
+        desde: marcas!.recienteExacta,
+        desdeOperacion: `${prefix}-cursor-a`,
+        endpoint: "/creditos/6",
       })
       .expect(200);
-    expect(cursorCompuesto.body.conflicto).toBe(false);
+    expect(cursorCompuesto.body.conflicto).toBe(true);
+    expect(cursorCompuesto.body.evento.operationId).toBe(operationIds[4]);
+
+    const sinCoincidenciaWildcards = await request(app)
+      .get("/api/sync/conflicto")
+      .query({
+        desde: marcas!.desde,
+        endpoint: "/items/a_",
+      })
+      .expect(200);
+    expect(sinCoincidenciaWildcards.body.conflicto).toBe(false);
 
     for (const query of [
       { endpoint: "/ventas/1" },
@@ -337,6 +372,11 @@ describe.sequential("Rutas de sincronización", () => {
         desde: marcas!.desde,
         endpoint: "/ventas/1",
         entidad: "venta",
+      },
+      {
+        desde: marcas!.desde,
+        endpoint: "/ventas/1",
+        entidadId: "1",
       },
     ]) {
       await request(app).get("/api/sync/conflicto").query(query).expect(400);

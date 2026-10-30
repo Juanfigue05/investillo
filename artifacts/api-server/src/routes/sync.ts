@@ -99,8 +99,6 @@ router.get("/conflicto", async (req, res) => {
   const desde = req.query.desde;
   const desdeOperacion = req.query.desdeOperacion;
   const endpoint = req.query.endpoint;
-  const entidad = req.query.entidad;
-  const entidadId = req.query.entidadId;
   if (
     !fechaCursorValida(desde) ||
     (desdeOperacion !== undefined &&
@@ -110,13 +108,8 @@ router.get("/conflicto", async (req, res) => {
     typeof endpoint !== "string" ||
     !endpoint.startsWith("/") ||
     endpoint.length > 500 ||
-    (entidad !== undefined &&
-      (typeof entidad !== "string" || entidad.length === 0 || entidad.length > 100)) ||
-    (entidadId !== undefined &&
-      (typeof entidadId !== "string" ||
-        entidadId.length === 0 ||
-        entidadId.length > 200)) ||
-    ((entidad === undefined) !== (entidadId === undefined))
+    req.query.entidad !== undefined ||
+    req.query.entidadId !== undefined
   ) {
     res.status(400).json({ error: "Parámetros de conflicto inválidos" });
     return;
@@ -124,6 +117,12 @@ router.get("/conflicto", async (req, res) => {
 
   const desdeTexto = fechaSql(desde);
   const endpointSinConsulta = endpoint.split("?", 1)[0]!;
+  const endpointBase =
+    endpointSinConsulta.length > 1 && endpointSinConsulta.endsWith("/")
+      ? endpointSinConsulta.slice(0, -1)
+      : endpointSinConsulta;
+  const prefijoSubruta =
+    endpointBase === "/" ? "/" : `${endpointBase}/`;
   const { rows } = await db.execute(sql`
     SELECT
       operation_id AS "operationId",
@@ -138,12 +137,8 @@ router.get("/conflicto", async (req, res) => {
           : sql`(creado_en, operation_id) > (${desdeTexto}::timestamp, ${desdeOperacion})`
       }
       AND (
-        split_part(endpoint, '?', 1) = ${endpointSinConsulta}
-        OR (
-          ${entidad ?? null}::text IS NOT NULL
-          AND entidad = ${entidad ?? null}
-          AND entidad_id = ${entidadId ?? null}
-        )
+        split_part(endpoint, '?', 1) = ${endpointBase}
+        OR starts_with(split_part(endpoint, '?', 1), ${prefijoSubruta})
       )
     ORDER BY creado_en, operation_id
     LIMIT 1

@@ -16,12 +16,10 @@ if (!databaseUrl) {
 const database = new URL(databaseUrl);
 if (
   !["localhost", "127.0.0.1", "::1", "[::1]"].includes(database.hostname) ||
-  !["/investillo_sync_local", "/investillo_order8_sync_local"].includes(
-    database.pathname,
-  )
+  database.pathname !== "/investillo_sync_local"
 ) {
   throw new Error(
-    "Prueba bloqueada: SYNC_TEST_DATABASE_LOCAL debe ser una base local de pruebas",
+    "Prueba bloqueada: SYNC_TEST_DATABASE_LOCAL debe ser la base local investillo_sync_local",
   );
 }
 
@@ -37,6 +35,13 @@ let putCount = 0;
 let deleteCount = 0;
 let pullCount = 0;
 let conflictoCount = 0;
+const conflictoSolicitudes: Array<{
+  desde: string | null;
+  desdeOperacion: string | null;
+  endpoint: string | null;
+  entidad: string | null;
+  entidadId: string | null;
+}> = [];
 let conflictoStatusPorLlamada: (numero: number) => number = () => conflictoStatus;
 let postStatus: (numero: number) => number = () => 200;
 let putStatus: (numero: number) => number = () => 200;
@@ -66,6 +71,14 @@ const server = createServer(
     }
     if (path === "/api/sync/conflicto") {
       conflictoCount++;
+      const url = new URL(request.url ?? "/", `http://127.0.0.1:${port}`);
+      conflictoSolicitudes.push({
+        desde: url.searchParams.get("desde"),
+        desdeOperacion: url.searchParams.get("desdeOperacion"),
+        endpoint: url.searchParams.get("endpoint"),
+        entidad: url.searchParams.get("entidad"),
+        entidadId: url.searchParams.get("entidadId"),
+      });
       const status = conflictoStatusPorLlamada(conflictoCount);
       response.writeHead(status).end(
         JSON.stringify(
@@ -88,7 +101,7 @@ const server = createServer(
       );
       return;
     }
-    if (path === "/api/test" && request.method === "GET") {
+    if (path?.startsWith("/api/test") && request.method === "GET") {
       getCount++;
       response.writeHead(404).end("{}");
       return;
@@ -98,12 +111,12 @@ const server = createServer(
       response.writeHead(postStatus(postCount)).end("{}");
       return;
     }
-    if (path === "/api/test" && request.method === "PUT") {
+    if (path?.startsWith("/api/test") && request.method === "PUT") {
       putCount++;
       response.writeHead(putStatus(putCount)).end("{}");
       return;
     }
-    if (path === "/api/test" && request.method === "DELETE") {
+    if (path?.startsWith("/api/test") && request.method === "DELETE") {
       deleteCount++;
       response.writeHead(deleteStatus(deleteCount)).end("{}");
       return;
@@ -285,9 +298,22 @@ test("clasifica respuestas remotas y detecta conflictos antes de enviar", async 
     await borrarEventos();
 
     const [idPutNoExistente] = await insertarEventos(1, "put-404", "PUT");
+    await pool.query(
+      "UPDATE eventos_sincronizacion SET endpoint = $2 WHERE operation_id = $1",
+      [idPutNoExistente, `/test/${idPutNoExistente}`],
+    );
+    await pool.query(
+      `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
+       VALUES ('test', $1, '777')`,
+      [idPutNoExistente],
+    );
+    const cursorSinOperacion = await pool.query<{ valor: string }>(
+      `SELECT valor::text AS valor FROM cursos_sincronizacion WHERE nombre = 'remoto'`,
+    );
     getCount = 0;
     putCount = 0;
     conflictoCount = 0;
+    conflictoSolicitudes.length = 0;
     conflictoStatus = 200;
     conflictoRemoto = false;
     putStatus = () => 200;
@@ -297,7 +323,54 @@ test("clasifica respuestas remotas y detecta conflictos antes de enviar", async 
     assert.equal(conflictoCount, 1, "No se consultó /sync/conflicto");
     assert.equal(putCount, 1, "El PUT real no llegó al servidor remoto");
     assert.equal((await estados([idPutNoExistente!]))[0]?.estado, "sincronizado");
+    assert.deepEqual(conflictoSolicitudes[0], {
+      desde: cursorSinOperacion.rows[0]?.valor,
+      desdeOperacion: null,
+      endpoint: "/test/777",
+      entidad: null,
+      entidadId: null,
+    });
     await borrarEventos();
+
+    const cursorOperacion = `${prefix}-cursor-op`;
+    await pool.query(
+      "UPDATE cursos_sincronizacion SET operacion_id = $1 WHERE nombre = 'remoto'",
+      [cursorOperacion],
+    );
+    const [idPutConConsulta] = await insertarEventos(
+      1,
+      "put-query",
+      "PUT",
+      "/test?a=1",
+    );
+    const cursorCompuesto = await pool.query<{
+      valor: string;
+      operacion_id: string;
+    }>(
+      `SELECT valor::text AS valor, operacion_id
+         FROM cursos_sincronizacion WHERE nombre = 'remoto'`,
+    );
+    conflictoSolicitudes.length = 0;
+    conflictoCount = 0;
+    putCount = 0;
+    const putConConsulta = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(
+      putConConsulta.status,
+      0,
+      `${putConConsulta.stdout}\n${putConConsulta.stderr}`,
+    );
+    assert.deepEqual(conflictoSolicitudes[0], {
+      desde: cursorCompuesto.rows[0]?.valor,
+      desdeOperacion: cursorOperacion,
+      endpoint: "/test?a=1",
+      entidad: null,
+      entidadId: null,
+    });
+    assert.equal(putCount, 1);
+    await borrarEventos();
+    await pool.query(
+      "UPDATE cursos_sincronizacion SET operacion_id = NULL WHERE nombre = 'remoto'",
+    );
 
     const [idDeleteNoExistente] = await insertarEventos(
       1,
