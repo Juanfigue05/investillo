@@ -45,7 +45,8 @@ type Cursor = {
   actualizado_en: Date;
 };
 
-let modoHuella: "normal" | "total" | "maximo" = "normal";
+let modoHuella: "normal" | "total" | "maximo" | "faltante" | "invalida" =
+  "normal";
 let errorHuella = false;
 let llamadasHuella = 0;
 let llamadasAhora = 0;
@@ -69,6 +70,13 @@ const server = createServer((request, response) => {
       } else if (modoHuella === "maximo") {
         const tablaMaximo = TABLAS_HUELLA[1];
         if (tablaMaximo) tablas[tablaMaximo]!.maximoId++;
+      } else if (modoHuella === "faltante") {
+        Reflect.deleteProperty(tablas, TABLAS_HUELLA[0]);
+      } else if (modoHuella === "invalida") {
+        Reflect.set(tablas, TABLAS_HUELLA[0], {
+          total: -1,
+          maximoId: 0,
+        });
       }
       response.writeHead(200).end(JSON.stringify({ tablas }));
     });
@@ -275,6 +283,37 @@ test(
         assert.ok(tablaDiferente);
         assert.match(salida, new RegExp(`${tablaDiferente}: local total=`));
         assert.equal(llamadasHuella, 1);
+        assert.equal(
+          (
+            await pool.query(
+              `SELECT 1 FROM cursos_sincronizacion WHERE nombre = 'remoto'`,
+            )
+          ).rowCount,
+          0,
+        );
+        assert.equal(
+          (await pool.query("SELECT 1 FROM base_sincronizacion")).rowCount,
+          0,
+        );
+      }
+
+      for (const modo of ["faltante", "invalida"] as const) {
+        await limpiarEstado();
+        modoHuella = modo;
+        llamadasHuella = 0;
+        llamadasAhora = 0;
+        const respuestaIncompleta = await ejecutarScript();
+        const salida = `${respuestaIncompleta.stdout}\n${respuestaIncompleta.stderr}`;
+        assert.equal(respuestaIncompleta.status, 1, salida);
+        assert.match(salida, /Las bases no están alineadas/);
+        assert.match(
+          salida,
+          new RegExp(
+            `${TABLAS_HUELLA[0]}: local total=.*Render no reportó esta tabla`,
+          ),
+        );
+        assert.equal(llamadasHuella, 1);
+        assert.equal(llamadasAhora, 0);
         assert.equal(
           (
             await pool.query(

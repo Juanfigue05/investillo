@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import { TABLAS_HUELLA } from "@workspace/db/schema";
 import {
+  ENTIDADES_SIN_TABLA,
+  ENTIDAD_TABLA,
+  REGLAS_REFERENCIAS,
+  TABLAS_SIN_ENTIDAD,
   encontrarRegla,
   extraerReferencias,
   resolverEndpoint,
@@ -138,4 +144,78 @@ test("resuelve solo segmentos iguales al ID local y conserva la consulta", () =>
     endpoint: "/ventas/99?x=1",
     cambiado: true,
   });
+});
+
+test("cada tabla y entidad referenciada tiene un destino de huella", () => {
+  const destinos = [...new Set(Object.values(ENTIDAD_TABLA))];
+  const excepciones = Object.keys(TABLAS_SIN_ENTIDAD);
+  assert.deepEqual(
+    destinos.filter((tabla) => excepciones.includes(tabla)),
+    [],
+  );
+  assert.deepEqual(
+    [...destinos, ...excepciones].sort(),
+    [...TABLAS_HUELLA].sort(),
+  );
+  const entidadesUsadas = new Set(
+    REGLAS_REFERENCIAS.flatMap((regla) => [
+      ...regla.campos.map((campo) => campo.entidad),
+      ...(regla.segmentos ?? []).map((segmento) => segmento.entidad),
+    ]),
+  );
+  for (const entidad of entidadesUsadas) {
+    assert.ok(
+      entidad in ENTIDAD_TABLA || entidad in ENTIDADES_SIN_TABLA,
+      `La entidad ${entidad} no tiene tabla ni excepción documentada`,
+    );
+  }
+});
+
+test("traduce el parámetro de producto independiente de la entidad del evento", () => {
+  const regla = encontrarRegla(
+    "DELETE",
+    "/historial-precios/producto/12",
+  );
+  assert.ok(regla);
+  assert.deepEqual(regla.segmentos, [
+    { parametro: "productoId", entidad: "producto" },
+  ]);
+  assert.deepEqual(resolverEndpoint("/historial-precios/producto/12", "12", "99", 3), {
+    endpoint: "/historial-precios/producto/99",
+    cambiado: true,
+  });
+  assert.deepEqual(resolverEndpoint("/historial-precios/producto/12", "12", "99", 2), {
+    endpoint: "/historial-precios/producto/12",
+    cambiado: false,
+  });
+});
+
+test("cada emisor del manifiesto tiene una regla específica de método y endpoint", () => {
+  const clavesReglas = REGLAS_REFERENCIAS.flatMap((regla) =>
+    (typeof regla.metodo === "string" ? [regla.metodo] : regla.metodo).map(
+      (metodo) => `${metodo} ${regla.endpoint}`,
+    ),
+  );
+  assert.equal(new Set(clavesReglas).size, clavesReglas.length);
+
+  const documento = readFileSync(
+    new URL("../../../docs/referencias-sincronizacion.md", import.meta.url),
+    "utf8",
+  );
+  const bloque = documento.match(
+    /<!-- sync-emitters:start -->([\s\S]*?)<!-- sync-emitters:end -->/,
+  )?.[1];
+  assert.ok(bloque, "Falta el manifiesto delimitado en el inventario");
+  const emisores = bloque
+    .split(/\r?\n/)
+    .map((linea) => linea.trim())
+    .filter((linea) => /^[A-Z]+ \//.test(linea));
+  assert.ok(emisores.length > 0, "El manifiesto no enumera emisores");
+  for (const emisor of emisores) {
+    const [metodo, endpoint] = emisor.split(" ", 2);
+    assert.ok(
+      metodo && endpoint && encontrarRegla(metodo, endpoint),
+      `El emisor ${emisor} no tiene regla`,
+    );
+  }
 });

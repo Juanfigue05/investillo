@@ -1,5 +1,12 @@
+import type { TablaHuella } from "@workspace/db/schema";
+
 export type CampoReferencia = {
   ruta: string;
+  entidad: string;
+};
+
+export type SegmentoReferencia = {
+  parametro: string;
   entidad: string;
 };
 
@@ -7,7 +14,46 @@ export type ReglaReferencias = {
   metodo: string | readonly string[];
   endpoint: string;
   campos: readonly CampoReferencia[];
+  segmentos?: readonly SegmentoReferencia[];
 };
+
+export const ENTIDAD_TABLA = {
+  producto: "productos",
+  cliente: "clientes",
+  vehiculo: "vehiculos_cliente",
+  credito: "creditos",
+  credito_linea: "credito_lineas",
+  abono_credito: "abonos_creditos",
+  venta: "ventas_diarias",
+  compra: "compras",
+  trabajador: "trabajadores",
+  pago_seguro: "pagos_seguro",
+  mano_obra: "mano_obra",
+  grupo_trabajo: "grupos_trabajo_default",
+  descuento_inventario: "descuentos_inventario",
+  historial_precios: "historial_precios",
+  obra_electronica: "obra_electronica",
+  remachada: "remachadas",
+  tensionada: "tensionadas",
+  nota: "notas",
+  historial: "historial_dias",
+  cierre_diario: "cierre_diario",
+} as const satisfies Readonly<Record<string, TablaHuella>>;
+
+export const TABLAS_SIN_ENTIDAD = {
+  distribuciones_mano_obra:
+    "filas anidadas de mano_obra; ningún endpoint ni cuerpo de evento usa su id; se crean y se borran junto con su mano de obra o su venta",
+} as const satisfies Partial<Record<TablaHuella, string>>;
+
+export const ENTIDADES_SIN_TABLA = {
+  calculadora_cierre: "singleton de configuración con ID fijo",
+  conteo_monedas: "singleton de configuración con ID fijo",
+  compra_lote: "operación de lote identificada por operationId",
+  creditos_orden: "operación de reordenamiento identificada por operationId",
+  ventas_orden: "operación de reordenamiento identificada por operationId",
+  clientes_import: "operación de importación identificada por operationId",
+  inventario_import: "operación de importación identificada por operationId",
+} as const;
 
 export type ReferenciaPayload = {
   entidad: string;
@@ -31,7 +77,7 @@ export const REGLAS_REFERENCIAS: readonly ReglaReferencias[] = [
     campos: [{ ruta: "ids[]", entidad: "venta" }],
   },
   {
-    metodo: "PUT",
+    metodo: ["PUT", "DELETE"],
     endpoint: "/ventas/:id",
     campos: [
       { ruta: "productoId", entidad: "producto" },
@@ -82,7 +128,7 @@ export const REGLAS_REFERENCIAS: readonly ReglaReferencias[] = [
     campos: [{ ruta: "ids[]", entidad: "credito" }],
   },
   {
-    metodo: "PUT",
+    metodo: ["PUT", "DELETE"],
     endpoint: "/creditos/:id",
     campos: [
       { ruta: "lineas[].id", entidad: "credito_linea" },
@@ -142,6 +188,61 @@ export const REGLAS_REFERENCIAS: readonly ReglaReferencias[] = [
     metodo: ["PUT", "DELETE"],
     endpoint: "/manoobra/:id",
     campos: [{ ruta: "distribuciones[].trabajadorId", entidad: "trabajador" }],
+  },
+  { metodo: "POST", endpoint: "/inventario", campos: [] },
+  { metodo: "PUT", endpoint: "/inventario/:id", campos: [] },
+  { metodo: "PUT", endpoint: "/inventario/:id/stock", campos: [] },
+  { metodo: "PUT", endpoint: "/inventario/:id/reactivar", campos: [] },
+  { metodo: "DELETE", endpoint: "/inventario/:id", campos: [] },
+  { metodo: "POST", endpoint: "/trabajadores", campos: [] },
+  { metodo: "PUT", endpoint: "/trabajadores/:id", campos: [] },
+  {
+    metodo: "POST",
+    endpoint: "/trabajadores/:trabajadorId/pagos-seguro",
+    campos: [],
+  },
+  {
+    metodo: "DELETE",
+    endpoint: "/trabajadores/:trabajadorId/pagos-seguro/:id",
+    campos: [],
+  },
+  { metodo: "POST", endpoint: "/clientes", campos: [] },
+  { metodo: "DELETE", endpoint: "/clientes/:id", campos: [] },
+  { metodo: ["PUT", "DELETE"], endpoint: "/obra-electronica/:id", campos: [] },
+  { metodo: "POST", endpoint: "/remachadas", campos: [] },
+  { metodo: ["PUT", "DELETE"], endpoint: "/remachadas/:id", campos: [] },
+  { metodo: "POST", endpoint: "/tensionadas", campos: [] },
+  { metodo: ["PATCH", "DELETE"], endpoint: "/tensionadas/:id", campos: [] },
+  { metodo: "POST", endpoint: "/historial", campos: [] },
+  { metodo: ["PUT", "DELETE"], endpoint: "/historial/:id", campos: [] },
+  { metodo: "DELETE", endpoint: "/historial-precios/:id", campos: [] },
+  {
+    metodo: "DELETE",
+    endpoint: "/historial-precios/producto/:productoId",
+    campos: [],
+    segmentos: [{ parametro: "productoId", entidad: "producto" }],
+  },
+  { metodo: "PUT", endpoint: "/notas", campos: [] },
+  { metodo: "DELETE", endpoint: "/cierre-diario/:id", campos: [] },
+  { metodo: "PUT", endpoint: "/calculadora-cierre", campos: [] },
+  { metodo: "DELETE", endpoint: "/calculadora-cierre", campos: [] },
+  { metodo: "PUT", endpoint: "/conteo-monedas", campos: [] },
+  { metodo: "POST", endpoint: "/clientes-import/sincronizar", campos: [] },
+  { metodo: "POST", endpoint: "/inventario-import/sincronizar", campos: [] },
+  {
+    metodo: "POST",
+    endpoint: "/inventario-import/resolver-cantidades",
+    campos: [],
+  },
+  {
+    metodo: "POST",
+    endpoint: "/inventario-import/aplicar-completo",
+    campos: [],
+  },
+  {
+    metodo: "PATCH",
+    endpoint: "/grupos-trabajo/:id/desactivar",
+    campos: [],
   },
 ] as const;
 
@@ -282,6 +383,7 @@ export function resolverEndpoint(
   endpoint: string,
   entidadIdLocal: string,
   idRemoto: string,
+  indiceSegmento?: number,
 ): ResultadoResolucionEndpoint {
   const indiceConsulta = endpoint.indexOf("?");
   const ruta =
@@ -289,8 +391,11 @@ export function resolverEndpoint(
   const consulta = indiceConsulta < 0 ? "" : endpoint.slice(indiceConsulta);
   const segmentos = ruta.split("/");
   let cambiado = false;
-  const resueltos = segmentos.map((segmento) => {
-    if (segmento !== entidadIdLocal) return segmento;
+  const resueltos = segmentos.map((segmento, indice) => {
+    if (
+      segmento !== entidadIdLocal ||
+      (indiceSegmento !== undefined && indice !== indiceSegmento)
+    ) return segmento;
     cambiado = true;
     return idRemoto;
   });

@@ -179,3 +179,79 @@ se guardan en `referenciasEndpoint`.
 - El payload de cierre acepta dos formas para trabajadores; su tipo de
   entrada es `unknown`, por lo que no está claro si hay otras formas
   admitidas (`cierre-diario.ts:65,76–85`).
+
+## Manifiesto de cobertura de emisores
+
+Cada par método-endpoint de este bloque debe tener una regla en
+`scripts/src/lib/referencias-payload.ts`. Los marcadores `:id` y `:parametro`
+representan segmentos completos.
+
+<!-- sync-emitters:start -->
+POST /clientes
+PUT /clientes/:id
+DELETE /clientes/:id
+POST /clientes/:clienteId/vehiculos
+PUT /clientes/:clienteId/vehiculos/:id
+DELETE /clientes/:clienteId/vehiculos/:id
+POST /creditos
+PUT /creditos/:id
+DELETE /creditos/:id
+PUT /creditos/reordenar
+POST /creditos/:creditoId/abono
+PUT /creditos/:creditoId/abono/:id
+DELETE /creditos/:creditoId/abono/:id
+POST /ventas
+PUT /ventas/:id
+DELETE /ventas/:id
+POST /ventas/lote-pago-antiguo
+POST /ventas/manoobra
+PUT /ventas/reordenar
+POST /ventas/:id/trasladar
+POST /compras
+PUT /compras/:id
+DELETE /compras/:id
+PATCH /compras/:id/corregir
+POST /compras/lote-llegada
+POST /inventario
+PUT /inventario/:id
+PUT /inventario/:id/stock
+PUT /inventario/:id/reactivar
+DELETE /inventario/:id
+POST /trabajadores
+PUT /trabajadores/:id
+POST /trabajadores/:trabajadorId/pagos-seguro
+DELETE /trabajadores/:trabajadorId/pagos-seguro/:id
+POST /manoobra
+PUT /manoobra/:id
+DELETE /manoobra/:id
+POST /descuentos-inventario
+PUT /descuentos-inventario/:id
+DELETE /descuentos-inventario/:id
+POST /grupos-trabajo
+PATCH /grupos-trabajo/:id/desactivar
+POST /obra-electronica
+PUT /obra-electronica/:id
+DELETE /obra-electronica/:id
+POST /remachadas
+PUT /remachadas/:id
+DELETE /remachadas/:id
+POST /tensionadas
+PATCH /tensionadas/:id
+DELETE /tensionadas/:id
+POST /historial
+PUT /historial/:id
+DELETE /historial/:id
+DELETE /historial-precios/producto/:productoId
+DELETE /historial-precios/:id
+PUT /notas
+POST /cierre-diario
+DELETE /cierre-diario/:id
+PUT /calculadora-cierre
+DELETE /calculadora-cierre
+PUT /conteo-monedas
+PATCH /reportes/nomina/dia
+POST /clientes-import/sincronizar
+POST /inventario-import/sincronizar
+POST /inventario-import/resolver-cantidades
+POST /inventario-import/aplicar-completo
+<!-- sync-emitters:end -->

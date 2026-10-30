@@ -12,6 +12,14 @@ import {
   clasificarRespuesta,
   type DecisionRespuesta,
 } from "./lib/clasificar-respuesta";
+import {
+  ENTIDAD_TABLA,
+  encontrarRegla,
+  extraerReferencias,
+  resolverEndpoint,
+  traducirPayload,
+} from "./lib/referencias-payload";
+import { verificarPuntoPartida } from "./lib/punto-partida";
 
 const { Pool } = pg;
 const databaseUrl = process.env.DATABASE_URL;
@@ -49,6 +57,12 @@ function detenerPorRespuesta(decision: DecisionRespuesta): boolean {
   return true;
 }
 
+function entidadConTabla(
+  entidad: string,
+): entidad is keyof typeof ENTIDAD_TABLA {
+  return Object.prototype.hasOwnProperty.call(ENTIDAD_TABLA, entidad);
+}
+
 try {
   const cursorResult = await pool.query<{
     valor: string;
@@ -64,6 +78,14 @@ try {
       "No existe un punto de partida remoto; ejecuta primero `pnpm run sync:init`.",
     );
   }
+  await verificarPuntoPartida(pool);
+  const baselineResult = await pool.query<{
+    tabla: string;
+    maximo_id: string;
+  }>("SELECT tabla, maximo_id::text FROM base_sincronizacion");
+  const maximosIniciales = new Map(
+    baselineResult.rows.map((fila) => [fila.tabla, fila.maximo_id]),
+  );
 
   let health: Response;
   try {
@@ -183,15 +205,136 @@ try {
           endpoint = endpoint.replace(ref.marcador, valor);
         }
         if (idRemoto) endpoint = endpoint.replace("{id}", idRemoto);
-        if (endpoint.includes("{")) {
-          throw new Error(
-            `Endpoint sin resolver por completo: ${endpoint}. Se reintentará.`,
-          );
+      }
+
+      const regla = encontrarRegla(evento.metodo, endpoint);
+      if (!regla) {
+        throw new Error(
+          `No existe regla de referencias para ${evento.metodo} ${endpoint}`,
+        );
+      }
+
+      const referencias = extraerReferencias(regla, evento.payload).filter(
+        (ref) => ref.entidad !== "credito_linea",
+      );
+      const segmentosEndpoint = regla.endpoint.split("/");
+      const rutaEndpoint = endpoint.split("?", 1)[0] ?? endpoint;
+      const valoresEndpoint = rutaEndpoint.split("/");
+      for (const segmento of regla.segmentos ?? []) {
+        const indice = segmentosEndpoint.indexOf(`:${segmento.parametro}`);
+        const valorLocal = valoresEndpoint[indice];
+        if (indice >= 0 && valorLocal && !valorLocal.startsWith("{")) {
+          referencias.push({ entidad: segmento.entidad, valorLocal });
         }
-      } else {
-        endpoint = idRemoto
-          ? evento.endpoint.replaceAll(`/${evento.entidad_id}`, `/${idRemoto}`)
-          : evento.endpoint;
+      }
+
+      const mapaReferencias = new Map<string, string>();
+      let debeEsperar = false;
+      let conflictoReferencia: { entidad: string; valorLocal: string } | undefined;
+      for (const ref of referencias) {
+        const existente = await pool.query<{ id_remoto: string }>(
+          `SELECT id_remoto FROM referencias_sincronizacion
+            WHERE entidad = $1 AND id_local = $2`,
+          [ref.entidad, ref.valorLocal],
+        );
+        const remoto = existente.rows[0]?.id_remoto;
+        if (remoto !== undefined) {
+          mapaReferencias.set(`${ref.entidad}:${ref.valorLocal}`, remoto);
+          continue;
+        }
+
+        const creador = await pool.query(
+          `SELECT EXISTS (
+             SELECT 1 FROM eventos_sincronizacion
+              WHERE origen = 'local'
+                AND estado IN ('pendiente', 'error')
+                AND metodo = 'POST'
+                AND entidad = $1 AND entidad_id = $2
+                AND operation_id <> $3
+             UNION ALL
+             SELECT 1
+               FROM eventos_sincronizacion evento,
+                    jsonb_array_elements(COALESCE(evento.referencias_respuesta, '[]'::jsonb)) referencia
+              WHERE evento.origen = 'local'
+                AND evento.estado IN ('pendiente', 'error')
+                AND referencia->>'entidad' = $1
+                AND referencia->>'valorLocal' = $2
+                AND evento.operation_id <> $3
+           ) AS existe`,
+          [ref.entidad, ref.valorLocal, evento.operation_id],
+        );
+        if (creador.rows[0]?.existe) {
+          debeEsperar = true;
+          await pool.query(
+            `UPDATE eventos_sincronizacion
+                SET estado = 'pendiente', ultimo_error = $2
+              WHERE operation_id = $1`,
+            [
+              evento.operation_id,
+              `Espera la creación de ${ref.entidad} ${ref.valorLocal}`,
+            ],
+          );
+          break;
+        }
+
+        const tabla = entidadConTabla(ref.entidad)
+          ? ENTIDAD_TABLA[ref.entidad]
+          : undefined;
+        const maximoInicial = tabla ? maximosIniciales.get(tabla) : undefined;
+        let existiaAlIniciar = false;
+        if (maximoInicial !== undefined) {
+          try {
+            existiaAlIniciar = BigInt(ref.valorLocal) <= BigInt(maximoInicial);
+          } catch {
+            existiaAlIniciar = false;
+          }
+        }
+        if (!existiaAlIniciar) {
+          conflictoReferencia = ref;
+          break;
+        }
+      }
+      if (debeEsperar) continue;
+      if (conflictoReferencia) {
+        await pool.query(
+          `UPDATE eventos_sincronizacion
+              SET estado = 'conflicto', intentos = intentos + 1, ultimo_error = $2
+            WHERE operation_id = $1`,
+          [
+            evento.operation_id,
+            `Referencia sin equivalente remoto: ${conflictoReferencia.entidad} ${conflictoReferencia.valorLocal}`,
+          ],
+        );
+        conflictos++;
+        continue;
+      }
+
+      for (const segmento of regla.segmentos ?? []) {
+        const indice = segmentosEndpoint.indexOf(`:${segmento.parametro}`);
+        const valorLocal = valoresEndpoint[indice];
+        if (indice < 0 || !valorLocal) continue;
+        const remoto = mapaReferencias.get(`${segmento.entidad}:${valorLocal}`);
+        if (remoto !== undefined) {
+          endpoint = resolverEndpoint(endpoint, valorLocal, remoto, indice).endpoint;
+        }
+      }
+      if (idRemoto) {
+        const indiceId = segmentosEndpoint.indexOf(":id");
+        if (endpoint.includes("{id}")) {
+          endpoint = endpoint.replace("{id}", idRemoto);
+        } else if (indiceId >= 0) {
+          endpoint = resolverEndpoint(
+            endpoint,
+            evento.entidad_id,
+            idRemoto,
+            indiceId,
+          ).endpoint;
+        }
+      }
+      if (endpoint.includes("{")) {
+        throw new Error(
+          `Endpoint sin resolver por completo: ${endpoint}. Se reintentará.`,
+        );
       }
 
       const idsLineasCredito = idsLineaCreditoEnPayload(evento.payload, endpoint);
@@ -228,8 +371,18 @@ try {
           );
         }
       }
-      const payload = traducirIdsLineaCredito(
+      const payloadTraducido = traducirPayload(
+        {
+          ...regla,
+          campos: regla.campos.filter(
+            (campo) => campo.entidad !== "credito_linea",
+          ),
+        },
         evento.payload,
+        mapaReferencias,
+      );
+      const payload = traducirIdsLineaCredito(
+        payloadTraducido,
         endpoint,
         mapaLineasCredito,
       );

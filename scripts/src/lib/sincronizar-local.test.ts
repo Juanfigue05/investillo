@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import test from "node:test";
+import { TABLAS_HUELLA } from "@workspace/db/schema";
 
 const databaseUrl = process.env.SYNC_TEST_DATABASE_LOCAL;
 if (!databaseUrl) {
@@ -28,6 +29,17 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const scriptsRoot = join(repoRoot, "scripts");
 const token = randomBytes(32).toString("hex");
 const prefix = `sync-local-test-${randomUUID()}`;
+const referenciasDePrueba: Array<[string, string]> = [
+  ["producto", "2000"],
+  ["producto", "999"],
+  ["producto", "2001"],
+  ["producto", "2002"],
+  ["producto", "400"],
+  ["producto", "401"],
+  ["trabajador", "50"],
+  ["trabajador", "51"],
+  ["venta", "1"],
+];
 const pool = new Pool({ connectionString: databaseUrl });
 let postCount = 0;
 let getCount = 0;
@@ -48,11 +60,39 @@ let putStatus: (numero: number) => number = () => 200;
 let deleteStatus: (numero: number) => number = () => 200;
 let conflictoStatus = 200;
 let conflictoRemoto = false;
+let respuestaPost: (endpoint: string, payload: unknown) => unknown = () => ({});
+const solicitudesRecibidas: Array<{
+  metodo: string;
+  endpoint: string;
+  payload: unknown;
+}> = [];
 
 const server = createServer(
-  (request: IncomingMessage, response: ServerResponse) => {
+  async (request: IncomingMessage, response: ServerResponse) => {
+    const bodyChunks: Buffer[] = [];
+    for await (const chunk of request) bodyChunks.push(Buffer.from(chunk));
+    const bodyText = Buffer.concat(bodyChunks).toString("utf8");
     response.setHeader("Content-Type", "application/json");
     const path = request.url?.split("?")[0];
+    if (
+      path?.startsWith("/api/") &&
+      !path.startsWith("/api/sync/") &&
+      ["POST", "PUT", "PATCH", "DELETE"].includes(request.method ?? "")
+    ) {
+      let payload: unknown = {};
+      if (bodyText) {
+        try {
+          payload = JSON.parse(bodyText);
+        } catch {
+          payload = bodyText;
+        }
+      }
+      solicitudesRecibidas.push({
+        metodo: request.method ?? "",
+        endpoint: request.url?.slice(4) ?? "",
+        payload,
+      });
+    }
     if (path === "/api/healthz") {
       response.writeHead(200).end("{}");
       return;
@@ -106,17 +146,23 @@ const server = createServer(
       response.writeHead(404).end("{}");
       return;
     }
-    if (path === "/api/test" && request.method === "POST") {
+    if (request.method === "POST" && path?.startsWith("/api/") && !path.startsWith("/api/sync/")) {
       postCount++;
-      response.writeHead(postStatus(postCount)).end("{}");
+      const resultado = respuestaPost(
+        request.url?.slice(4) ?? "",
+        solicitudesRecibidas.at(-1)?.payload,
+      );
+      response
+        .writeHead(postStatus(postCount))
+        .end(JSON.stringify(resultado));
       return;
     }
-    if (path?.startsWith("/api/test") && request.method === "PUT") {
+    if (request.method === "PUT" && path?.startsWith("/api/") && !path.startsWith("/api/sync/")) {
       putCount++;
       response.writeHead(putStatus(putCount)).end("{}");
       return;
     }
-    if (path?.startsWith("/api/test") && request.method === "DELETE") {
+    if (request.method === "DELETE" && path?.startsWith("/api/") && !path.startsWith("/api/sync/")) {
       deleteCount++;
       response.writeHead(deleteStatus(deleteCount)).end("{}");
       return;
@@ -171,7 +217,7 @@ async function insertarEventos(
   cantidad: number,
   nombre: string,
   metodo = "POST",
-  endpoint = "/test",
+  endpoint?: string,
 ): Promise<string[]> {
   const ids = Array.from({ length: cantidad }, (_, index) =>
     `${prefix}-${nombre}-${index + 1}`,
@@ -181,12 +227,59 @@ async function insertarEventos(
       `INSERT INTO eventos_sincronizacion
         (operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
          origen, estado, creado_en)
-       VALUES ($1, 'test', $1, 'crear', $3, $4, '{}'::jsonb,
+       VALUES ($1, 'venta', $1, 'crear', $3, $4, '{}'::jsonb,
                'local', 'pendiente', now() + ($2::int * interval '1 millisecond'))`,
-      [ids[index], index, metodo, endpoint],
+      [
+        ids[index],
+        index,
+        metodo,
+        endpoint === undefined
+          ? metodo === "POST"
+            ? "/ventas"
+            : `/ventas/${ids[index]}`
+          : endpoint.startsWith("/test")
+            ? metodo === "POST"
+              ? `/ventas${endpoint.slice("/test".length)}`
+              : `/ventas/${ids[index]}${endpoint.slice("/test".length)}`
+            : endpoint,
+      ],
     );
   }
   return ids;
+}
+
+async function insertarEvento(payload: {
+  nombre: string;
+  entidad: string;
+  entidadId: string;
+  metodo: string;
+  endpoint: string;
+  cuerpo: unknown;
+  desplazamientoMs?: number;
+  referenciasRespuesta?: unknown;
+}): Promise<string> {
+  const operationId = `${prefix}-${payload.nombre}`;
+  await pool.query(
+    `INSERT INTO eventos_sincronizacion
+      (operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
+       referencias_respuesta, origen, estado, creado_en)
+     VALUES ($1, $2, $3, 'crear', $4, $5, $6::jsonb, $7::jsonb,
+             'local', 'pendiente',
+             now() + ($8::int * interval '1 millisecond'))`,
+    [
+      operationId,
+      payload.entidad,
+      payload.entidadId,
+      payload.metodo,
+      payload.endpoint,
+      JSON.stringify(payload.cuerpo),
+      payload.referenciasRespuesta
+        ? JSON.stringify(payload.referenciasRespuesta)
+        : null,
+      payload.desplazamientoMs ?? 0,
+    ],
+  );
+  return operationId;
 }
 
 async function estados(ids: string[]): Promise<
@@ -217,6 +310,12 @@ async function borrarEventos(): Promise<void> {
   );
 }
 
+function valoresReferenciasSql(): string {
+  return `VALUES ${referenciasDePrueba
+    .map((_, indice) => `($${indice * 2 + 1}, $${indice * 2 + 2})`)
+    .join(", ")}`;
+}
+
 test("clasifica respuestas remotas y detecta conflictos antes de enviar", async () => {
   const anteriores = await pool.query<{
     valor: string;
@@ -236,6 +335,46 @@ test("clasifica respuestas remotas y detecta conflictos antes de enviar", async 
     0,
     "La base aislada contiene operaciones pendientes ajenas a esta prueba",
   );
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS base_sincronizacion (
+      tabla text PRIMARY KEY,
+      total bigint NOT NULL,
+      maximo_id bigint NOT NULL,
+      creado_en timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  const baseAnterior = await pool.query<{
+    tabla: string;
+    total: string;
+    maximo_id: string;
+    creado_en: Date;
+  }>(
+    `SELECT tabla, total::text, maximo_id::text, creado_en
+       FROM base_sincronizacion`,
+  );
+  const referenciasAnteriores = await pool.query<{
+    entidad: string;
+    id_local: string;
+    id_remoto: string;
+  }>(
+    `SELECT entidad, id_local, id_remoto
+       FROM referencias_sincronizacion
+      WHERE (entidad, id_local) IN (${valoresReferenciasSql()})`,
+    referenciasDePrueba.flat(),
+  );
+  await pool.query(
+    `DELETE FROM referencias_sincronizacion
+      WHERE (entidad, id_local) IN (${valoresReferenciasSql()})`,
+    referenciasDePrueba.flat(),
+  );
+  await pool.query("DELETE FROM base_sincronizacion");
+  for (const tabla of TABLAS_HUELLA) {
+    await pool.query(
+      `INSERT INTO base_sincronizacion (tabla, total, maximo_id)
+       VALUES ($1, 0, 1000)`,
+      [tabla],
+    );
+  }
 
   await new Promise<void>((resolveListen, reject) => {
     server.once("error", reject);
@@ -267,6 +406,273 @@ test("clasifica respuestas remotas y detecta conflictos antes de enviar", async 
       `INSERT INTO cursos_sincronizacion (nombre, valor, operacion_id)
        VALUES ('remoto', '2000-01-01 00:00:00'::timestamp, NULL)`,
     );
+
+    const [idSinBase] = await insertarEventos(1, "sin-base");
+    await pool.query("DELETE FROM base_sincronizacion");
+    const solicitudesAntesSinBase = solicitudesRecibidas.length;
+    const sinBase = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(sinBase.status, 1);
+    assert.match(
+      `${sinBase.stdout}\n${sinBase.stderr}`,
+      /Falta el punto de partida/,
+    );
+    assert.equal(solicitudesRecibidas.length, solicitudesAntesSinBase);
+    assert.deepEqual(
+      (await estados([idSinBase!])).map((evento) => [
+        evento.estado,
+        evento.intentos,
+      ]),
+      [["pendiente", 0]],
+    );
+    const pullAntesSinBase = pullCount;
+    const descargaSinBase = await ejecutarScript("sincronizar-remoto.ts");
+    assert.equal(descargaSinBase.status, 1);
+    assert.match(
+      `${descargaSinBase.stdout}\n${descargaSinBase.stderr}`,
+      /Falta el punto de partida/,
+    );
+    assert.equal(pullCount, pullAntesSinBase);
+    await borrarEventos();
+    for (const tabla of TABLAS_HUELLA) {
+      await pool.query(
+        `INSERT INTO base_sincronizacion (tabla, total, maximo_id)
+         VALUES ($1, 0, 1000)`,
+        [tabla],
+      );
+    }
+
+    solicitudesRecibidas.length = 0;
+    respuestaPost = (endpoint) =>
+      endpoint === "/inventario" ? { id: 7000 } : { id: 8000 };
+    const crearProducto = await insertarEvento({
+      nombre: "referencia-producto-creador",
+      entidad: "producto",
+      entidadId: "2000",
+      metodo: "POST",
+      endpoint: "/inventario",
+      cuerpo: { nombre: "Producto local" },
+    });
+    const crearVenta = await insertarEvento({
+      nombre: "referencia-producto-venta",
+      entidad: "venta",
+      entidadId: "3000",
+      metodo: "POST",
+      endpoint: "/ventas",
+      cuerpo: { productoId: 2000, cantidad: 1 },
+      desplazamientoMs: 1,
+    });
+    postCount = 0;
+    const mapeado = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(mapeado.status, 0, `${mapeado.stdout}\n${mapeado.stderr}`);
+    assert.deepEqual(
+      solicitudesRecibidas.map(({ metodo, endpoint, payload }) => [
+        metodo,
+        endpoint,
+        payload,
+      ]),
+      [
+        ["POST", "/inventario", { nombre: "Producto local" }],
+        ["POST", "/ventas", { productoId: 7000, cantidad: 1 }],
+      ],
+    );
+    assert.deepEqual(
+      (
+        await pool.query<{ id_remoto: string }>(
+          `SELECT id_remoto FROM referencias_sincronizacion
+            WHERE entidad = 'producto' AND id_local = '2000'`,
+        )
+      ).rows.map((fila) => fila.id_remoto),
+      ["7000"],
+    );
+    assert.deepEqual(
+      (await estados([crearProducto, crearVenta])).map((evento) => evento.estado),
+      ["sincronizado", "sincronizado"],
+    );
+    await borrarEventos();
+
+    solicitudesRecibidas.length = 0;
+    await pool.query(
+      `DELETE FROM referencias_sincronizacion
+        WHERE entidad = 'producto' AND id_local IN ('999', '2001')`,
+    );
+    const ventaConIdInicial = await insertarEvento({
+      nombre: "referencia-producto-inicial",
+      entidad: "venta",
+      entidadId: "3001",
+      metodo: "POST",
+      endpoint: "/ventas",
+      cuerpo: { productoId: 999 },
+    });
+    postCount = 0;
+    const referenciaInicial = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(
+      referenciaInicial.status,
+      0,
+      `${referenciaInicial.stdout}\n${referenciaInicial.stderr}`,
+    );
+    assert.deepEqual(solicitudesRecibidas.at(-1), {
+      metodo: "POST",
+      endpoint: "/ventas",
+      payload: { productoId: 999 },
+    });
+    await borrarEventos();
+
+    solicitudesRecibidas.length = 0;
+    const ventaSinMapeo = await insertarEvento({
+      nombre: "referencia-producto-sin-mapeo",
+      entidad: "venta",
+      entidadId: "3002",
+      metodo: "POST",
+      endpoint: "/ventas",
+      cuerpo: { productoId: 2001 },
+    });
+    postCount = 0;
+    const referenciaSinMapeo = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(referenciaSinMapeo.status, 3);
+    assert.equal(solicitudesRecibidas.length, 0);
+    assert.deepEqual(
+      (await estados([ventaSinMapeo])).map((evento) => [
+        evento.estado,
+        evento.intentos,
+        evento.ultimo_error,
+      ]),
+      [[
+        "conflicto",
+        1,
+        "Referencia sin equivalente remoto: producto 2001",
+      ]],
+    );
+    await borrarEventos();
+
+    solicitudesRecibidas.length = 0;
+    const ventaEnEspera = await insertarEvento({
+      nombre: "referencia-producto-espera-venta",
+      entidad: "venta",
+      entidadId: "3003",
+      metodo: "POST",
+      endpoint: "/ventas",
+      cuerpo: { productoId: 2002 },
+      desplazamientoMs: -1,
+    });
+    const productoEnEspera = await insertarEvento({
+      nombre: "referencia-producto-espera-creador",
+      entidad: "producto",
+      entidadId: "2002",
+      metodo: "POST",
+      endpoint: "/inventario",
+      cuerpo: { nombre: "Producto en espera" },
+      desplazamientoMs: 1,
+    });
+    postCount = 0;
+    const espera = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(espera.status, 0, `${espera.stdout}\n${espera.stderr}`);
+    assert.deepEqual(
+      solicitudesRecibidas.map(({ metodo, endpoint }) => [metodo, endpoint]),
+      [["POST", "/inventario"]],
+    );
+    assert.deepEqual(
+      (await estados([ventaEnEspera])).map((evento) => [
+        evento.estado,
+        evento.intentos,
+        evento.ultimo_error,
+      ]),
+      [["pendiente", 0, "Espera la creación de producto 2002"]],
+    );
+    assert.equal((await estados([productoEnEspera]))[0]?.estado, "sincronizado");
+    await borrarEventos();
+
+    await pool.query(
+      `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
+       VALUES ('producto', '400', '1400'), ('producto', '401', '1401'),
+              ('trabajador', '50', '1500'), ('trabajador', '51', '1501'),
+              ('venta', '1', '99')
+       ON CONFLICT (entidad, id_local) DO UPDATE SET id_remoto = EXCLUDED.id_remoto`,
+    );
+    solicitudesRecibidas.length = 0;
+    const eventosArreglos = [
+      await insertarEvento({
+        nombre: "referencia-arreglo-productos",
+        entidad: "venta",
+        entidadId: "3100",
+        metodo: "POST",
+        endpoint: "/ventas/lote-pago-antiguo",
+        cuerpo: { items: [{ productoId: 400 }] },
+      }),
+      await insertarEvento({
+        nombre: "referencia-arreglo-distribuciones",
+        entidad: "venta",
+        entidadId: "3101",
+        metodo: "POST",
+        endpoint: "/ventas/manoobra",
+        cuerpo: { distribuciones: [{ trabajadorId: 50 }] },
+      }),
+      await insertarEvento({
+        nombre: "referencia-arreglo-trabajadores",
+        entidad: "grupo_trabajo",
+        entidadId: "3102",
+        metodo: "POST",
+        endpoint: "/grupos-trabajo",
+        cuerpo: { trabajadorIds: [50, 51] },
+      }),
+      await insertarEvento({
+        nombre: "referencia-segmento-precio",
+        entidad: "historial_precios",
+        entidadId: "401",
+        metodo: "DELETE",
+        endpoint: "/historial-precios/producto/401",
+        cuerpo: {},
+      }),
+      await insertarEvento({
+        nombre: "referencia-endpoint-segmento-exacto",
+        entidad: "venta",
+        entidadId: "1",
+        metodo: "PUT",
+        endpoint: "/ventas/12",
+        cuerpo: {},
+      }),
+    ];
+    postCount = 0;
+    putCount = 0;
+    deleteCount = 0;
+    conflictoCount = 0;
+    const arreglosYEndpoint = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(
+      arreglosYEndpoint.status,
+      0,
+      `${arreglosYEndpoint.stdout}\n${arreglosYEndpoint.stderr}`,
+    );
+    assert.deepEqual(
+      solicitudesRecibidas.map(({ metodo, endpoint, payload }) => [
+        metodo,
+        endpoint,
+        payload,
+      ]),
+      [
+        [
+          "POST",
+          "/ventas/lote-pago-antiguo",
+          { items: [{ productoId: 1400 }] },
+        ],
+        [
+          "POST",
+          "/ventas/manoobra",
+          { distribuciones: [{ trabajadorId: 1500 }] },
+        ],
+        ["POST", "/grupos-trabajo", { trabajadorIds: [1500, 1501] }],
+        ["DELETE", "/historial-precios/producto/1401", {}],
+        ["PUT", "/ventas/12", {}],
+      ],
+    );
+    await borrarEventos();
+    await pool.query(
+      `DELETE FROM referencias_sincronizacion
+        WHERE (entidad, id_local) IN (
+          ('producto', '400'), ('producto', '401'),
+          ('trabajador', '50'), ('trabajador', '51'),
+          ('venta', '1')
+        )`,
+    );
+    respuestaPost = () => ({});
 
     const idsServicioCaido = await insertarEventos(2, "503");
     postCount = 0;
@@ -300,11 +706,11 @@ test("clasifica respuestas remotas y detecta conflictos antes de enviar", async 
     const [idPutNoExistente] = await insertarEventos(1, "put-404", "PUT");
     await pool.query(
       "UPDATE eventos_sincronizacion SET endpoint = $2 WHERE operation_id = $1",
-      [idPutNoExistente, `/test/${idPutNoExistente}`],
+      [idPutNoExistente, `/ventas/${idPutNoExistente}`],
     );
     await pool.query(
       `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
-       VALUES ('test', $1, '777')`,
+       VALUES ('venta', $1, '777')`,
       [idPutNoExistente],
     );
     const cursorSinOperacion = await pool.query<{ valor: string }>(
@@ -326,7 +732,7 @@ test("clasifica respuestas remotas y detecta conflictos antes de enviar", async 
     assert.deepEqual(conflictoSolicitudes[0], {
       desde: cursorSinOperacion.rows[0]?.valor,
       desdeOperacion: null,
-      endpoint: "/test/777",
+      endpoint: "/ventas/777",
       entidad: null,
       entidadId: null,
     });
@@ -362,7 +768,7 @@ test("clasifica respuestas remotas y detecta conflictos antes de enviar", async 
     assert.deepEqual(conflictoSolicitudes[0], {
       desde: cursorCompuesto.rows[0]?.valor,
       desdeOperacion: cursorOperacion,
-      endpoint: "/test?a=1",
+      endpoint: `/ventas/${idPutConConsulta}?a=1`,
       entidad: null,
       entidadId: null,
     });
@@ -573,6 +979,31 @@ test("clasifica respuestas remotas y detecta conflictos antes de enviar", async 
     await pool.query(
       "DELETE FROM cursos_sincronizacion WHERE nombre = 'remoto'",
     );
+    await pool.query("DELETE FROM base_sincronizacion");
+    for (const baseline of baseAnterior.rows) {
+      await pool.query(
+        `INSERT INTO base_sincronizacion (tabla, total, maximo_id, creado_en)
+         VALUES ($1, $2::bigint, $3::bigint, $4)`,
+        [
+          baseline.tabla,
+          baseline.total,
+          baseline.maximo_id,
+          baseline.creado_en,
+        ],
+      );
+    }
+    await pool.query(
+      `DELETE FROM referencias_sincronizacion
+        WHERE (entidad, id_local) IN (${valoresReferenciasSql()})`,
+      referenciasDePrueba.flat(),
+    );
+    for (const referencia of referenciasAnteriores.rows) {
+      await pool.query(
+        `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
+         VALUES ($1, $2, $3)`,
+        [referencia.entidad, referencia.id_local, referencia.id_remoto],
+      );
+    }
     await new Promise<void>((resolveClose, reject) => {
       server.close((error) => (error ? reject(error) : resolveClose()));
     });

@@ -10,6 +10,7 @@ import {
   traducirIdRecursoEnEndpoint,
   traducirIdsLineaCredito,
 } from "./lib/credito-lineas-sync";
+import { verificarPuntoPartida } from "./lib/punto-partida";
 
 const databaseUrl = process.env.DATABASE_URL;
 const remoteApiUrl = getRemoteApiUrl();
@@ -61,6 +62,7 @@ try {
       "No existe un punto de partida para la descarga remota. Ejecuta primero `pnpm run sync:init`.",
     );
   }
+  await verificarPuntoPartida(pool);
 
   const pendientes = await pool.query<{ cantidad: string }>(
     `SELECT count(*)::text AS cantidad FROM eventos_sincronizacion

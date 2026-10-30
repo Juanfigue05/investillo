@@ -285,6 +285,97 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
     );
     assert.deepEqual(cursorSinPisar.rows[0], cursorInicial.rows[0]);
 
+    const productoSombra = await api<{ id: number }>(
+      remoteBase(),
+      "/inventario",
+      "POST",
+      {
+        nombre: `${prefix}-producto-remoto-sombra`,
+        codigo: `${prefix}-COD-SOMBRA`,
+        precioCompra: 10000,
+        precioVentaSinIva: 15000,
+        tieneIva: false,
+        stockActual: 10,
+        stockMinimo: 0,
+      },
+      `${prefix}-producto-remoto-sombra`,
+      true,
+    );
+    const productoLocal = await api<{
+      id: number;
+      nombre: string;
+      codigo: string;
+      marca: string | null;
+    }>(
+      localBase(),
+      "/inventario",
+      "POST",
+      {
+        nombre: `${prefix}-producto-local`,
+        codigo: `${prefix}-COD-LOCAL`,
+        precioCompra: 10000,
+        precioVentaSinIva: 15000,
+        tieneIva: false,
+        stockActual: 10,
+        stockMinimo: 0,
+      },
+      `${prefix}-producto-local`,
+    );
+    const sincronizaProducto = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      sincronizaProducto.status,
+      0,
+      sincronizaProducto.stderr || sincronizaProducto.stdout,
+    );
+    await api<{ id: number }>(
+      localBase(),
+      "/ventas",
+      "POST",
+      {
+        fecha: new Date().toISOString().slice(0, 10),
+        referencia: `${prefix}-venta-producto-local`,
+        tipoLinea: "venta",
+        productoId: productoLocal.id,
+        productoNombre: productoLocal.nombre,
+        productoCodigo: productoLocal.codigo,
+        productoMarca: productoLocal.marca,
+        cantidad: 1,
+        precioCompraUnidad: 10000,
+        precioVentaUnidad: 15000,
+        precioVentaTotal: 15000,
+        beneficio: 5000,
+      },
+      `${prefix}-venta-producto-local`,
+    );
+    const sincronizaVentaProducto = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      sincronizaVentaProducto.status,
+      0,
+      sincronizaVentaProducto.stderr || sincronizaVentaProducto.stdout,
+    );
+    const ventaProductoRemota = await remotePool.query<{
+      producto_id: number;
+      nombre: string;
+    }>(
+      `SELECT venta.producto_id, producto.nombre
+         FROM ventas_diarias venta
+         JOIN productos producto ON producto.id = venta.producto_id
+        WHERE venta.referencia = $1`,
+      [`${prefix}-venta-producto-local`],
+    );
+    assert.equal(ventaProductoRemota.rowCount, 1);
+    assert.equal(
+      ventaProductoRemota.rows[0]?.nombre,
+      `${prefix}-producto-local`,
+    );
+    assert.notEqual(ventaProductoRemota.rows[0]?.producto_id, productoSombra.id);
+
     const [fechaGrupo] = await remotePool
       .query<{ fecha: string }>(
         `SELECT to_char(
@@ -1106,6 +1197,17 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
                DELETE FROM cursos_sincronizacion;`,
           ),
         ),
+      );
+      await Promise.all(
+        [localPool, remotePool].map(async (pool) => {
+          await pool.query(
+            "DELETE FROM ventas_diarias WHERE referencia LIKE $1",
+            [`${prefix}%`],
+          );
+          await pool.query("DELETE FROM productos WHERE nombre LIKE $1", [
+            `${prefix}%`,
+          ]);
+        }),
       );
     } finally {
       detenerApi(localApi);
