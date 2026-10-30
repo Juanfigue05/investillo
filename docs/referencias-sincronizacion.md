@@ -134,9 +134,9 @@ se guardan en `referenciasEndpoint`.
   `trabajadorId` → `trabajador`.
 - POST `/cierre-diario`: `datos[].trabajadorId` o
   `datos.trabajadores[].trabajadorId` → `trabajador`.
-- Los payloads de importación no contienen IDs de registros destino: las
-  filas de clientes se representan como datos de cliente y las filas de
-  inventario como códigos, nombres, referencias, precios y cantidades.
+- Los payloads de importación representan productos por `codigo` y clientes
+  por sus datos en el orden de entrada. Las respuestas de las rutas que crean
+  o actualizan esas filas incluyen sus IDs para registrar las equivalencias.
 
 ## Respuestas de POST y IDs anidados
 
@@ -146,8 +146,9 @@ se guardan en `referenciasEndpoint`.
   pagos de seguro, mano de obra, grupos, cierres, historial, remachadas,
   obra electrónica y tensionadas.
 - Las operaciones por lote de ventas, compras y descuentos devuelven
-  colecciones con IDs de filas creadas. Las importaciones devuelven conteos,
-  estado y posibles datos de conflicto/nuevo producto, no IDs de filas.
+  colecciones con IDs de filas creadas. Las respuestas de importación
+  conservan sus conteos, estado y datos de conflicto, y agregan los IDs de las
+  filas afectadas en `_syncProductos` o `_syncClientes` cuando corresponde.
 - Las respuestas de clientes incluyen IDs de vehículos. Las respuestas de
   mano de obra incluyen IDs de distribuciones y trabajadores. Los mapeadores
   de créditos incluyen IDs de líneas, mano de obra y abonos.
@@ -165,6 +166,18 @@ se guardan en `referenciasEndpoint`.
   - POST/PUT `/creditos/:id/abono` → filas de ventas generadas en
     `_syncVentasGeneradas.{index}.id` (`venta`). POST `/creditos` mantiene
     además `_syncNuevoAbonoId` para el abono inicial.
+  - POST `/inventario-import`, `/inventario-import/sincronizar`,
+    `/inventario-import/confirmar-nuevos`, `/inventario-import/resolver`,
+    `/inventario-import/resolver-cantidades` y
+    `/inventario-import/aplicar-completo` → productos afectados en
+    `_syncProductos.{index}.id` (`producto`). Los IDs se correlacionan en el
+    orden de las filas afectadas; si un producto ya existe en el destino, se
+    actualiza por `codigo` y se devuelve su ID existente, sin duplicarlo.
+  - POST `/clientes-import`, `/clientes-import/sincronizar` y
+    `/clientes-import/resolver-telefonos` → clientes insertados en
+    `_syncClientes.{index}.id` (`cliente`). Se insertan en una transacción,
+    fila por fila, para garantizar que el orden de IDs coincida con el orden
+    del payload. En clientes no hay clave natural para correlacionar filas.
 - Las respuestas conservan sus campos previos. Los IDs que antes no estaban
   disponibles para una correlación de sincronización se exponen como campos
   adicionales con prefijo `_sync`.
@@ -187,20 +200,20 @@ se guardan en `referenciasEndpoint`.
 | PUT `/compras/:id` y POST `/compras/lote-llegada` | Cada llegada puede crear una `historial_precios`; se agrega `_syncHistorialPrecioId` a la respuesta o al resultado del lote. | Sí: DELETE `/historial-precios/:id`. |
 | POST `/descuentos-inventario` | Varias `descuentos_inventario`; la respuesta ya incluye el ID de cada elemento. | Sí: PUT/DELETE `/descuentos-inventario/:id`. |
 
-Las rutas de importación se revisaron por separado: crean o actualizan las
-entidades principales de sus lotes (`clientes` o `productos`), no filas
-secundarias asociadas a una fila principal. Los borradores del cierre diario
-son filas temporales de otra tabla sin ID usado por los endpoints de
-sincronización. Las distribuciones de mano de obra se dejan fuera porque son
-filas dependientes sin endpoint que acepte su ID.
+Las rutas de importación crean o actualizan las entidades principales de sus
+lotes (`clientes` o `productos`) y ahora publican IDs para mantener su
+equivalencia. Los borradores del cierre diario son filas temporales de otra
+tabla sin ID usado por los endpoints de sincronización. Las distribuciones de
+mano de obra se dejan fuera porque son filas dependientes sin endpoint que
+acepte su ID.
 
 ## Dudas y casos raros
 
-- Las importaciones de clientes guardan el mismo endpoint
-  `/clientes-import/sincronizar` tanto al importar como al resolver
-  (`clientes-import.ts:146,188`); las importaciones de inventario también
-  usan `/inventario-import/sincronizar` para importar, confirmar productos
-  nuevos y resolver (`inventario-import.ts:279,326,354`).
+- Las importaciones de clientes y las operaciones de inventario que se
+  reproducen mediante `/clientes-import/sincronizar` o
+  `/inventario-import/sincronizar` guardan sus IDs de respuesta en
+  `referenciasRespuesta`; la resolución de cantidades y la aplicación
+  completa de inventario conservan sus propios endpoints.
 - `/cierre-diario` es POST pero puede actualizar un cierre existente o
   crear uno nuevo (`cierre-diario.ts:149–157`).
 - El borrado de un abono emite `entidad: "abono_credito"` y el ID del abono,

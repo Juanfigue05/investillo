@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import ExcelJS from "exceljs";
-import { eventosSincronizacionTable, operacionesSincronizadasTable } from "@workspace/db/schema";
+import { operacionesSincronizadasTable } from "@workspace/db/schema";
 import { pool, db } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import {
@@ -19,6 +19,16 @@ function soloDigitos(v: string): string {
 interface ConflictoTelefono extends ParsedCliente {
   conflictoTelefono?: string; // cuál de los 2 números choca
   conflictoCon?: string;      // nombre del cliente (nuevo o existente) que ya lo tiene
+}
+
+type ClienteImportado = { nombre: string; id: number };
+
+function referenciasRespuestaClientes(clientes: ClienteImportado[]) {
+  return clientes.map((cliente, index) => ({
+    campo: `_syncClientes.${index}.id`,
+    entidad: "cliente",
+    valorLocal: String(cliente.id),
+  }));
 }
 
 function dedupeDentroDelArchivo(rows: ParsedCliente[]): { unicos: ParsedCliente[]; duplicadosArchivo: number } {
@@ -97,20 +107,64 @@ async function separarConflictosDeTelefono(rows: ParsedCliente[]): Promise<{ val
   return { validos, conflictos };
 }
 
-async function insertRows(items: ParsedCliente[]) {
-  if (!items.length) return;
-  const n = items.map((x) => x.nombre);
-  const t = items.map((x) => x.telefono);
-  const t2 = items.map((x) => x.telefono2);
-  const c = items.map((x) => x.correo);
-  const no = items.map((x) => x.notas);
+async function insertRows(
+  items: ParsedCliente[],
+  operationId: string,
+  tipoEvento?: "importar" | "resolver",
+): Promise<ClienteImportado[]> {
   const client = await pool.connect();
   try {
+    await client.query("BEGIN");
+    const insertados: ClienteImportado[] = [];
+    for (const item of items) {
+      const resultado = await client.query<{ id: number }>(
+        `INSERT INTO clientes (nombre, telefono, telefono2, correo, notas)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [
+          item.nombre,
+          item.telefono,
+          item.telefono2,
+          item.correo,
+          item.notas,
+        ],
+      );
+      const id = resultado.rows[0]?.id;
+      if (id === undefined) {
+        throw new Error("No se pudo obtener el ID de una fila importada");
+      }
+      insertados.push({ nombre: item.nombre, id });
+    }
+    if (tipoEvento !== undefined) {
+      await client.query(
+        `INSERT INTO eventos_sincronizacion
+           (operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
+            referencias_respuesta, origen)
+         VALUES ($1, 'clientes_import', $1, $2, 'POST',
+                 '/clientes-import/sincronizar', $3::jsonb, $4::jsonb, 'local')`,
+        [
+          operationId,
+          tipoEvento,
+          JSON.stringify({ items }),
+          JSON.stringify(referenciasRespuestaClientes(insertados)),
+        ],
+      );
+    }
     await client.query(
-      `INSERT INTO clientes (nombre, telefono, telefono2, correo, notas)
-       SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[], $4::text[], $5::text[])`,
-      [n, t, t2, c, no],
+      `INSERT INTO operaciones_sincronizadas (operation_id, tipo, recurso_id)
+       VALUES ($1, 'clientes_import', NULL)
+       ON CONFLICT (operation_id) DO NOTHING`,
+      [operationId],
     );
+    await client.query("COMMIT");
+    return insertados;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      console.error("No se pudo revertir la importación de clientes:", rollbackError);
+    }
+    throw error;
   } finally {
     client.release();
   }
@@ -142,9 +196,11 @@ router.post("/", upload.single("archivo"), async (req, res) => {
     const { nuevos, duplicadosBD } = await filtrarExistentesEnBD(unicos);
     const { validos, conflictos } = await separarConflictosDeTelefono(nuevos);
 
-    await insertRows(validos);
-    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "clientes_import", entidadId: operationId, tipo: "importar", metodo: "POST", endpoint: "/clientes-import/sincronizar", payload: { items: validos }, origen: "local" });
-    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "clientes_import", recursoId: null }).onConflictDoNothing();
+    const clientes = await insertRows(
+      validos,
+      operationId,
+      req.header("x-sync-apply") ? undefined : "importar",
+    );
 
     res.json({
       ok: true,
@@ -153,6 +209,7 @@ router.post("/", upload.single("archivo"), async (req, res) => {
       omitidos: omitidos.length,
       duplicados: duplicadosArchivo + duplicadosBD,
       conflictosTelefono: conflictos.length > 0 ? conflictos : undefined,
+      ...(clientes.length > 0 ? { _syncClientes: clientes } : {}),
     });
   } catch (err: any) {
     console.error("Error importando clientes:", err?.message ?? err);
@@ -167,9 +224,12 @@ router.post("/sincronizar", async (req, res) => {
   if (ya) { res.json({ ok: true, yaProcesado: true }); return; }
   const items = req.body?.items as ParsedCliente[];
   if (!Array.isArray(items)) { res.status(400).json({ error: "items requerido" }); return; }
-  await insertRows(items);
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "clientes_import", recursoId: null }).onConflictDoNothing();
-  res.json({ ok: true, procesados: items.length });
+  const clientes = await insertRows(items, operationId);
+  res.json({
+    ok: true,
+    procesados: items.length,
+    ...(clientes.length > 0 ? { _syncClientes: clientes } : {}),
+  });
 });
 
 // ─── POST /resolver-telefonos — aplica lo que el usuario decidió para cada conflicto ──
@@ -184,14 +244,17 @@ router.post("/resolver-telefonos", async (req, res) => {
 
     // Vuelve a revisar por si el usuario dejó, sin querer, otro número ya repetido
     const { validos, conflictos } = await separarConflictosDeTelefono(items);
-    await insertRows(validos);
-    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "clientes_import", entidadId: operationId, tipo: "resolver", metodo: "POST", endpoint: "/clientes-import/sincronizar", payload: { items: validos }, origen: "local" });
-    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "clientes_import", recursoId: null }).onConflictDoNothing();
+    const clientes = await insertRows(
+      validos,
+      operationId,
+      req.header("x-sync-apply") ? undefined : "resolver",
+    );
 
     res.json({
       ok: true,
       procesados: validos.length,
       conflictosTelefono: conflictos.length > 0 ? conflictos : undefined,
+      ...(clientes.length > 0 ? { _syncClientes: clientes } : {}),
     });
   } catch (err: any) {
     res.status(500).json({ error: (err?.message ?? String(err)).split("\n")[0].substring(0, 400) });

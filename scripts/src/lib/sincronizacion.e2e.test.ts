@@ -663,6 +663,387 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
     );
     assert.notEqual(ventaProductoRemota.rows[0]?.producto_id, productoSombra.id);
 
+    const codigoProductoCompartido = `${prefix}-COD-IMPORT-COMPARTIDO`;
+    const productoCompartidoRemoto = await api<{
+      id: number;
+      nombre: string;
+      codigo: string;
+      marca: string | null;
+    }>(
+      remoteBase(),
+      "/inventario",
+      "POST",
+      {
+        nombre: `${prefix}-producto-importado-compartido`,
+        codigo: codigoProductoCompartido,
+        precioCompra: 10000,
+        precioVentaSinIva: 15000,
+        tieneIva: false,
+        stockActual: 10,
+        stockMinimo: 0,
+      },
+      `${prefix}-producto-importado-compartido-remoto`,
+      true,
+    );
+    const importacionProductoLocal = await api<{
+      _syncProductos: Array<{ codigo: string; id: number }>;
+    }>(
+      localBase(),
+      "/inventario-import/confirmar-nuevos",
+      "POST",
+      {
+        items: [
+          {
+            codigo: codigoProductoCompartido,
+            nombre: productoCompartidoRemoto.nombre,
+            referencia: null,
+            marca: null,
+            precioCompra: "10000",
+            precioVentaSinIva: "15000",
+            precioVentaConIva: "17850",
+            cantidad: 10,
+          },
+        ],
+      },
+      `${prefix}-importar-producto-compartido-local`,
+    );
+    const productoCompartidoLocal = importacionProductoLocal._syncProductos[0];
+    assert.ok(productoCompartidoLocal);
+    assert.notEqual(productoCompartidoLocal.id, productoCompartidoRemoto.id);
+    await delay(2_100);
+    const sincronizaProductoImportado = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      sincronizaProductoImportado.status,
+      0,
+      sincronizaProductoImportado.stderr || sincronizaProductoImportado.stdout,
+    );
+    const equivalenciaProductoImportado = await localPool.query<{
+      id_remoto: string;
+    }>(
+      `SELECT id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'producto' AND id_local = $1`,
+      [String(productoCompartidoLocal.id)],
+    );
+    assert.equal(
+      equivalenciaProductoImportado.rows[0]?.id_remoto,
+      String(productoCompartidoRemoto.id),
+    );
+    const productoReintentado = await api<{
+      yaProcesado?: boolean;
+    }>(
+      localBase(),
+      "/inventario-import/confirmar-nuevos",
+      "POST",
+      {
+        items: [
+          {
+            codigo: codigoProductoCompartido,
+            nombre: productoCompartidoRemoto.nombre,
+            referencia: null,
+            marca: null,
+            precioCompra: "10000",
+            precioVentaSinIva: "15000",
+            precioVentaConIva: "17850",
+            cantidad: 10,
+          },
+        ],
+      },
+      `${prefix}-importar-producto-compartido-local`,
+    );
+    assert.equal(productoReintentado.yaProcesado, true);
+    const equivalenciasProductoReintentado = await localPool.query(
+      `SELECT 1 FROM referencias_sincronizacion
+        WHERE entidad = 'producto' AND id_local = $1 AND id_remoto = $2`,
+      [
+        String(productoCompartidoLocal.id),
+        String(productoCompartidoRemoto.id),
+      ],
+    );
+    assert.equal(equivalenciasProductoReintentado.rowCount, 1);
+    const productosCompartidos = await remotePool.query(
+      "SELECT id FROM productos WHERE codigo = $1",
+      [codigoProductoCompartido],
+    );
+    assert.equal(
+      productosCompartidos.rowCount,
+      1,
+      "El producto existente por codigo no debe duplicarse en el remoto",
+    );
+
+    const importacionClienteLocal = await api<{
+      _syncClientes: Array<{ nombre: string; id: number }>;
+    }>(
+      localBase(),
+      "/clientes-import/resolver-telefonos",
+      "POST",
+      {
+        items: [
+          {
+            nombre: `${prefix}-cliente-importado-local`,
+            telefono: null,
+            telefono2: null,
+            correo: null,
+            notas: null,
+          },
+        ],
+      },
+      `${prefix}-importar-cliente-local`,
+    );
+    const clienteImportadoLocal = importacionClienteLocal._syncClientes[0];
+    assert.ok(clienteImportadoLocal);
+    await delay(2_100);
+    const sincronizaClienteImportado = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      sincronizaClienteImportado.status,
+      0,
+      sincronizaClienteImportado.stderr || sincronizaClienteImportado.stdout,
+    );
+    const equivalenciaClienteImportado = await localPool.query<{
+      id_remoto: string;
+    }>(
+      `SELECT id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'cliente' AND id_local = $1`,
+      [String(clienteImportadoLocal.id)],
+    );
+    assert.ok(equivalenciaClienteImportado.rows[0]?.id_remoto);
+    const clienteReintentado = await api<{
+      yaProcesado?: boolean;
+    }>(
+      localBase(),
+      "/clientes-import/resolver-telefonos",
+      "POST",
+      {
+        items: [
+          {
+            nombre: `${prefix}-cliente-importado-local`,
+            telefono: null,
+            telefono2: null,
+            correo: null,
+            notas: null,
+          },
+        ],
+      },
+      `${prefix}-importar-cliente-local`,
+    );
+    assert.equal(clienteReintentado.yaProcesado, true);
+    const equivalenciasClienteReintentado = await localPool.query(
+      `SELECT 1 FROM referencias_sincronizacion
+        WHERE entidad = 'cliente' AND id_local = $1 AND id_remoto = $2`,
+      [
+        String(clienteImportadoLocal.id),
+        equivalenciaClienteImportado.rows[0]?.id_remoto,
+      ],
+    );
+    assert.equal(equivalenciasClienteReintentado.rowCount, 1);
+
+    await api(
+      localBase(),
+      "/ventas",
+      "POST",
+      {
+        fecha: new Date().toISOString().slice(0, 10),
+        referencia: `${prefix}-venta-producto-importado-local`,
+        tipoLinea: "venta",
+        productoId: productoCompartidoLocal.id,
+        productoNombre: productoCompartidoRemoto.nombre,
+        productoCodigo: codigoProductoCompartido,
+        productoMarca: productoCompartidoRemoto.marca,
+        cantidad: 1,
+        precioCompraUnidad: 10000,
+        precioVentaUnidad: 15000,
+        precioVentaTotal: 15000,
+        beneficio: 5000,
+      },
+      `${prefix}-venta-producto-importado-local`,
+    );
+    await api(
+      localBase(),
+      `/clientes/${clienteImportadoLocal.id}/vehiculos`,
+      "POST",
+      { placa: `${prefix}-PLACA-CLIENTE-IMPORTADO-LOCAL` },
+      `${prefix}-vehiculo-cliente-importado-local`,
+    );
+    await delay(2_100);
+    const sincronizaUsoImportadoLocal = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      sincronizaUsoImportadoLocal.status,
+      0,
+      sincronizaUsoImportadoLocal.stderr || sincronizaUsoImportadoLocal.stdout,
+    );
+    const ventaImportadaRemota = await remotePool.query<{
+      producto_id: number;
+    }>(
+      `SELECT producto_id FROM ventas_diarias WHERE referencia = $1`,
+      [`${prefix}-venta-producto-importado-local`],
+    );
+    assert.equal(ventaImportadaRemota.rows[0]?.producto_id, productoCompartidoRemoto.id);
+    const vehiculoClienteImportadoRemoto = await remotePool.query<{
+      cliente_id: number;
+    }>(
+      `SELECT cliente_id FROM vehiculos_cliente
+        WHERE placa = $1`,
+      [`${prefix}-PLACA-CLIENTE-IMPORTADO-LOCAL`],
+    );
+    assert.equal(
+      vehiculoClienteImportadoRemoto.rows[0]?.cliente_id,
+      Number(equivalenciaClienteImportado.rows[0]?.id_remoto),
+    );
+
+    const codigoProductoImportadoRemoto = `${prefix}-COD-IMPORT-REMOTO`;
+    const importacionProductoRemoto = await api<{
+      _syncProductos: Array<{ codigo: string; id: number }>;
+    }>(
+      remoteBase(),
+      "/inventario-import/confirmar-nuevos",
+      "POST",
+      {
+        items: [
+          {
+            codigo: codigoProductoImportadoRemoto,
+            nombre: `${prefix}-producto-importado-remoto`,
+            referencia: null,
+            marca: null,
+            precioCompra: "10000",
+            precioVentaSinIva: "15000",
+            precioVentaConIva: "17850",
+            cantidad: 10,
+          },
+        ],
+      },
+      `${prefix}-importar-producto-remoto`,
+    );
+    const productoImportadoRemoto = importacionProductoRemoto._syncProductos[0];
+    assert.ok(productoImportadoRemoto);
+    const importacionClienteRemoto = await api<{
+      _syncClientes: Array<{ nombre: string; id: number }>;
+    }>(
+      remoteBase(),
+      "/clientes-import/resolver-telefonos",
+      "POST",
+      {
+        items: [
+          {
+            nombre: `${prefix}-cliente-importado-remoto`,
+            telefono: null,
+            telefono2: null,
+            correo: null,
+            notas: null,
+          },
+        ],
+      },
+      `${prefix}-importar-cliente-remoto`,
+    );
+    const clienteImportadoRemoto = importacionClienteRemoto._syncClientes[0];
+    assert.ok(clienteImportadoRemoto);
+    await delay(2_100);
+    const descargaImportaciones = ejecutarScript(
+      "sincronizar-remoto.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      descargaImportaciones.status,
+      0,
+      descargaImportaciones.stderr || descargaImportaciones.stdout,
+    );
+    const [equivalenciaProductoRemoto, equivalenciaClienteRemoto] =
+      await Promise.all([
+        localPool.query<{ id_local: string }>(
+          `SELECT id_local FROM referencias_sincronizacion
+            WHERE entidad = 'producto' AND id_remoto = $1`,
+          [String(productoImportadoRemoto.id)],
+        ),
+        localPool.query<{ id_local: string }>(
+          `SELECT id_local FROM referencias_sincronizacion
+            WHERE entidad = 'cliente' AND id_remoto = $1`,
+          [String(clienteImportadoRemoto.id)],
+        ),
+      ]);
+    assert.ok(equivalenciaProductoRemoto.rows[0]?.id_local);
+    assert.ok(equivalenciaClienteRemoto.rows[0]?.id_local);
+    assert.notEqual(
+      Number(equivalenciaProductoRemoto.rows[0]?.id_local),
+      productoImportadoRemoto.id,
+    );
+    assert.notEqual(
+      Number(equivalenciaClienteRemoto.rows[0]?.id_local),
+      clienteImportadoRemoto.id,
+    );
+
+    await api(
+      localBase(),
+      "/ventas",
+      "POST",
+      {
+        fecha: new Date().toISOString().slice(0, 10),
+        referencia: `${prefix}-venta-producto-importado-remoto`,
+        tipoLinea: "venta",
+        productoId: Number(equivalenciaProductoRemoto.rows[0]?.id_local),
+        productoNombre: `${prefix}-producto-importado-remoto`,
+        productoCodigo: codigoProductoImportadoRemoto,
+        cantidad: 1,
+        precioCompraUnidad: 10000,
+        precioVentaUnidad: 15000,
+        precioVentaTotal: 15000,
+        beneficio: 5000,
+      },
+      `${prefix}-venta-producto-importado-remoto`,
+    );
+    await api(
+      localBase(),
+      `/clientes/${equivalenciaClienteRemoto.rows[0]?.id_local}/vehiculos`,
+      "POST",
+      { placa: `${prefix}-PLACA-CLIENTE-IMPORTADO-REMOTO` },
+      `${prefix}-vehiculo-cliente-importado-remoto`,
+    );
+    await delay(2_100);
+    const sincronizaUsoImportadoRemoto = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      sincronizaUsoImportadoRemoto.status,
+      0,
+      sincronizaUsoImportadoRemoto.stderr || sincronizaUsoImportadoRemoto.stdout,
+    );
+    const ventaProductoRemotoImportado = await remotePool.query<{
+      producto_id: number;
+    }>(
+      `SELECT producto_id FROM ventas_diarias WHERE referencia = $1`,
+      [`${prefix}-venta-producto-importado-remoto`],
+    );
+    assert.equal(
+      ventaProductoRemotoImportado.rows[0]?.producto_id,
+      productoImportadoRemoto.id,
+    );
+    const vehiculoClienteRemotoImportado = await remotePool.query<{
+      cliente_id: number;
+    }>(
+      `SELECT cliente_id FROM vehiculos_cliente WHERE placa = $1`,
+      [`${prefix}-PLACA-CLIENTE-IMPORTADO-REMOTO`],
+    );
+    assert.equal(
+      vehiculoClienteRemotoImportado.rows[0]?.cliente_id,
+      clienteImportadoRemoto.id,
+    );
+    await remotePool.query(
+      `DELETE FROM eventos_sincronizacion WHERE operation_id = ANY($1::text[])`,
+      [
+        [
+          `${prefix}-importar-producto-remoto`,
+          `${prefix}-importar-cliente-remoto`,
+        ],
+      ],
+    );
+
     const [fechaGrupo] = await remotePool
       .query<{ fecha: string }>(
         `SELECT to_char(

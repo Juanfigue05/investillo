@@ -1,5 +1,6 @@
 import "../lib/solo-base-de-pruebas";
 import { randomUUID } from "node:crypto";
+import ExcelJS from "exceljs";
 import { afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { db } from "@workspace/db";
@@ -73,6 +74,324 @@ async function crearProducto(codigo: string) {
 }
 
 describe("referencias de respuesta en filas secundarias", () => {
+  it("mapea los productos importados en el orden de entrada y no duplica el reintento", async () => {
+    const operation = operationId();
+    const items = [
+      {
+        codigo: `SYNC-${operation.slice(0, 8)}-B`,
+        nombre: "Producto importado B",
+        referencia: null,
+        marca: null,
+        precioCompra: "100",
+        precioVentaSinIva: "200",
+        precioVentaConIva: "238",
+        cantidad: null,
+      },
+      {
+        codigo: `SYNC-${operation.slice(0, 8)}-A`,
+        nombre: "Producto importado A",
+        referencia: null,
+        marca: null,
+        precioCompra: "100",
+        precioVentaSinIva: "200",
+        precioVentaConIva: "238",
+        cantidad: null,
+      },
+    ];
+    try {
+      const creado = await request(app)
+        .post("/api/inventario-import/confirmar-nuevos")
+        .set("X-Operation-Id", operation)
+        .send({ items });
+
+      expect(creado.status).toBe(200);
+      const productos = creado.body._syncProductos as Array<{
+        codigo: string;
+        id: number;
+      }>;
+      expect(productos.map(({ codigo }) => codigo)).toEqual(
+        items.map(({ codigo }) => codigo),
+      );
+      expect(productos.every(({ id }) => Number.isInteger(id))).toBe(true);
+      expect(await referencias(operation)).toEqual(
+        productos.map((producto, index) => ({
+          campo: `_syncProductos.${index}.id`,
+          entidad: "producto",
+          valorLocal: String(producto.id),
+        })),
+      );
+
+      const repetido = await request(app)
+        .post("/api/inventario-import/confirmar-nuevos")
+        .set("X-Operation-Id", operation)
+        .send({ items });
+      expect(repetido.body.yaProcesado).toBe(true);
+      expect(repetido.body._syncProductos).toBeUndefined();
+      expect(
+        await db
+          .select({ id: productosTable.id })
+          .from(productosTable)
+          .where(inArray(productosTable.codigo, items.map(({ codigo }) => codigo))),
+      ).toHaveLength(items.length);
+    } finally {
+      await db
+        .delete(productosTable)
+        .where(inArray(productosTable.codigo, items.map(({ codigo }) => codigo)));
+    }
+  });
+
+  it("mapea los clientes importados en el orden de entrada y no duplica el reintento", async () => {
+    const operation = operationId();
+    const items = [
+      { nombre: `Cliente B ${operation}`, telefono: null, telefono2: null, correo: null, notas: null },
+      { nombre: `Cliente A ${operation}`, telefono: null, telefono2: null, correo: null, notas: null },
+    ];
+    try {
+      const creado = await request(app)
+        .post("/api/clientes-import/resolver-telefonos")
+        .set("X-Operation-Id", operation)
+        .send({ items });
+
+      expect(creado.status).toBe(200);
+      const clientes = creado.body._syncClientes as Array<{
+        nombre: string;
+        id: number;
+      }>;
+      expect(clientes.map(({ nombre }) => nombre)).toEqual(
+        items.map(({ nombre }) => nombre),
+      );
+      expect(clientes.every(({ id }) => Number.isInteger(id))).toBe(true);
+      expect(await referencias(operation)).toEqual(
+        clientes.map((cliente, index) => ({
+          campo: `_syncClientes.${index}.id`,
+          entidad: "cliente",
+          valorLocal: String(cliente.id),
+        })),
+      );
+
+      const repetido = await request(app)
+        .post("/api/clientes-import/resolver-telefonos")
+        .set("X-Operation-Id", operation)
+        .send({ items });
+      expect(repetido.body.yaProcesado).toBe(true);
+      expect(repetido.body._syncClientes).toBeUndefined();
+      expect(
+        await db
+          .select({ id: clientesTable.id })
+          .from(clientesTable)
+          .where(inArray(clientesTable.nombre, items.map(({ nombre }) => nombre))),
+      ).toHaveLength(items.length);
+    } finally {
+      await db
+        .delete(clientesTable)
+        .where(inArray(clientesTable.nombre, items.map(({ nombre }) => nombre)));
+    }
+  });
+
+  it("devuelve IDs ordenados en todas las rutas de inventario que aplican filas", async () => {
+    const operation = operationId();
+    const codigos = [
+      `SYNC-${operation.slice(0, 8)}-UPLOAD`,
+      `SYNC-${operation.slice(0, 8)}-SYNC`,
+      `SYNC-${operation.slice(0, 8)}-CONFIRM`,
+      `SYNC-${operation.slice(0, 8)}-RESOLVE`,
+      `SYNC-${operation.slice(0, 8)}-QUANTITY`,
+      `SYNC-${operation.slice(0, 8)}-COMPLETE`,
+    ];
+    const item = (codigo: string) => ({
+      codigo,
+      nombre: `Producto ${codigo}`,
+      referencia: null,
+      marca: null,
+      precioCompra: "100",
+      precioVentaSinIva: "200",
+      precioVentaConIva: "238",
+      cantidad: null,
+    });
+    const libro = new ExcelJS.Workbook();
+    libro.addWorksheet("Productos").addRows([
+      [
+        "CODIGO",
+        "NOMBRE",
+        "REFERENCIA",
+        "REFERENCIA 2",
+        "MARCA",
+        "SE COMPRA",
+        "SE VENDE A",
+        "CANTIDAD",
+      ],
+      [codigos[0], "Producto importado", null, null, null, 100, 200, null],
+    ]);
+
+    try {
+      const idExistente = await crearProducto(codigos[0]!);
+      const importado = await request(app)
+        .post("/api/inventario-import")
+        .set("X-Operation-Id", operation)
+        .attach(
+          "archivo",
+          Buffer.from(await libro.xlsx.writeBuffer()),
+          "productos.xlsx",
+        );
+      expect(importado.status).toBe(200);
+      expect(importado.body._syncProductos).toEqual([
+        { codigo: codigos[0], id: idExistente },
+      ]);
+      expect(await referencias(operation)).toEqual([
+        {
+          campo: "_syncProductos.0.id",
+          entidad: "producto",
+          valorLocal: String(idExistente),
+        },
+      ]);
+
+      const casos = [
+        {
+          endpoint: "/api/inventario-import/sincronizar",
+          operationId: operationId(),
+          body: { items: [item(codigos[1]!), item(`${codigos[1]}-2`)] },
+          codigos: [codigos[1]!, `${codigos[1]}-2`],
+        },
+        {
+          endpoint: "/api/inventario-import/confirmar-nuevos",
+          operationId: operationId(),
+          body: { items: [item(codigos[2]!)] },
+          codigos: [codigos[2]!],
+        },
+        {
+          endpoint: "/api/inventario-import/resolver",
+          operationId: operationId(),
+          body: { items: [item(codigos[3]!)] },
+          codigos: [codigos[3]!],
+        },
+        {
+          endpoint: "/api/inventario-import/resolver-cantidades",
+          operationId: operationId(),
+          body: {
+            modo: "reemplazar",
+            items: [{ codigo: codigos[4], cantidadArchivo: 3 }],
+          },
+          codigos: [codigos[4]!],
+        },
+        {
+          endpoint: "/api/inventario-import/aplicar-completo",
+          operationId: operationId(),
+          body: {
+            filas: [
+              {
+                codigo: codigos[5],
+                nombre: `Producto ${codigos[5]}`,
+                marca: null,
+                tipo: null,
+                referencia: null,
+                adicional: null,
+                precioCompra: 100,
+                precioVentaSinIva: 200,
+                tieneIva: false,
+                stockLocal: 1,
+                stockBodega: 0,
+                stockMinimo: 0,
+              },
+            ],
+          },
+          codigos: [codigos[5]!],
+        },
+      ];
+      await crearProducto(codigos[4]!);
+      for (const caso of casos) {
+        const respuesta = await request(app)
+          .post(caso.endpoint)
+          .set("X-Operation-Id", caso.operationId)
+          .send(caso.body);
+        expect(respuesta.status).toBe(200);
+        const productos = respuesta.body._syncProductos as Array<{
+          codigo: string;
+          id: number;
+        }>;
+        expect(productos.length).toBeGreaterThan(0);
+        expect(productos.map(({ codigo }) => codigo)).toEqual(caso.codigos);
+        if (caso.endpoint === "/api/inventario-import/sincronizar") {
+          expect(await referencias(caso.operationId)).toBeUndefined();
+        } else {
+          expect(await referencias(caso.operationId)).toEqual(
+            productos.map((producto, index) => ({
+              campo: `_syncProductos.${index}.id`,
+              entidad: "producto",
+              valorLocal: String(producto.id),
+            })),
+          );
+        }
+      }
+    } finally {
+      await db
+        .delete(productosTable)
+        .where(inArray(productosTable.codigo, codigos));
+    }
+  });
+
+  it("devuelve clientes en orden tanto al importar Excel como al aplicar el payload", async () => {
+    const operation = operationId();
+    const nombres = [
+      `Cliente Excel B ${operation}`,
+      `Cliente Excel A ${operation}`,
+      `Cliente payload B ${operation}`,
+      `Cliente payload A ${operation}`,
+    ];
+    const libro = new ExcelJS.Workbook();
+    libro.addWorksheet("Clientes").addRows([
+      ["NOMBRE", "TELEFONO", "CORREO", "NOTAS"],
+      [nombres[0], null, null, null],
+      [nombres[1], null, null, null],
+    ]);
+    try {
+      const importado = await request(app)
+        .post("/api/clientes-import")
+        .set("X-Operation-Id", operation)
+        .attach(
+          "archivo",
+          Buffer.from(await libro.xlsx.writeBuffer()),
+          "clientes.xlsx",
+        );
+      expect(importado.status).toBe(200);
+      const clientesExcel = importado.body._syncClientes as Array<{
+        nombre: string;
+        id: number;
+      }>;
+      expect(clientesExcel.map(({ nombre }) => nombre)).toEqual(nombres.slice(0, 2));
+      expect(await referencias(operation)).toEqual(
+        clientesExcel.map((cliente, index) => ({
+          campo: `_syncClientes.${index}.id`,
+          entidad: "cliente",
+          valorLocal: String(cliente.id),
+        })),
+      );
+
+      const operationSync = operationId();
+      const respuestaSync = await request(app)
+        .post("/api/clientes-import/sincronizar")
+        .set("X-Operation-Id", operationSync)
+        .send({
+          items: nombres.slice(2).map((nombre) => ({
+            nombre,
+            telefono: null,
+            telefono2: null,
+            correo: null,
+            notas: null,
+          })),
+        });
+      expect(respuestaSync.status).toBe(200);
+      const clientesSync = respuestaSync.body._syncClientes as Array<{
+        nombre: string;
+        id: number;
+      }>;
+      expect(clientesSync.map(({ nombre }) => nombre)).toEqual(nombres.slice(2));
+    } finally {
+      await db
+        .delete(clientesTable)
+        .where(inArray(clientesTable.nombre, nombres));
+    }
+  });
+
   it("mapea los vehículos creados junto con un cliente", async () => {
     const operation = operationId();
     let clienteId: number | undefined;

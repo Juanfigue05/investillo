@@ -47,10 +47,34 @@ interface ProductoNuevo {
   cantidad: number | null;
 }
 
+type ProductoImportado = { codigo: string; id: number };
+
+function referenciasRespuestaProductos(productos: ProductoImportado[]) {
+  return productos.map((producto, index) => ({
+    campo: `_syncProductos.${index}.id`,
+    entidad: "producto",
+    valorLocal: String(producto.id),
+  }));
+}
+
+function productosEnOrden(
+  codigos: string[],
+  filas: ProductoImportado[],
+): ProductoImportado[] {
+  const idsPorCodigo = new Map(filas.map(({ codigo, id }) => [codigo, id]));
+  return codigos.flatMap((codigo) => {
+    const id = idsPorCodigo.get(codigo);
+    return id === undefined ? [] : [{ codigo, id }];
+  });
+}
+
 async function upsertRows(
   items: ParsedRow[],
-): Promise<{ conflictosCantidad: ConflictoCantidad[] }> {
-  if (!items.length) return { conflictosCantidad: [] };
+): Promise<{
+  conflictosCantidad: ConflictoCantidad[];
+  productos: ProductoImportado[];
+}> {
+  if (!items.length) return { conflictosCantidad: [], productos: [] };
 
   const client = await pool.connect();
   try {
@@ -121,7 +145,15 @@ async function upsertRows(
       [n, c, m, r, pc, pvs, pvc, cantidadFinal],
     );
 
-    return { conflictosCantidad };
+    const encontrados = await client.query<{ codigo: string; id: number }>(
+      `SELECT codigo, id FROM productos WHERE codigo = ANY($1::text[])`,
+      [items.map((item) => item.codigo)],
+    );
+    const productos = productosEnOrden(
+      items.map((item) => item.codigo),
+      encontrados.rows,
+    );
+    return { conflictosCantidad, productos };
   } finally {
     client.release();
   }
@@ -275,8 +307,8 @@ router.post("/", upload.single("archivo"), async (req, res) => {
       codigosExistentes.has(item.codigo),
     );
 
-    const { conflictosCantidad } = await upsertRows(filasExistentes);
-    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "importar", metodo: "POST", endpoint: "/inventario-import/sincronizar", payload: { items: filasExistentes }, origen: "local" });
+    const { conflictosCantidad, productos } = await upsertRows(filasExistentes);
+    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "importar", metodo: "POST", endpoint: "/inventario-import/sincronizar", payload: { items: filasExistentes }, referenciasRespuesta: referenciasRespuestaProductos(productos), origen: "local" });
     await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "inventario_import", recursoId: null }).onConflictDoNothing();
 
     res.json({
@@ -288,6 +320,7 @@ router.post("/", upload.single("archivo"), async (req, res) => {
       conflictosCantidad:
         conflictosCantidad.length > 0 ? conflictosCantidad : undefined,
       productosNuevos: productosNuevos.length > 0 ? productosNuevos : undefined,
+      ...(productos.length > 0 ? { _syncProductos: productos } : {}),
     });
   } catch (err: any) {
     console.error("Error importando Excel:", err?.message ?? err);
@@ -306,9 +339,13 @@ router.post("/sincronizar", async (req, res) => {
   if (ya) { res.json({ ok: true, yaProcesado: true }); return; }
   const items = req.body?.items as ParsedRow[];
   if (!Array.isArray(items)) { res.status(400).json({ error: "items requerido" }); return; }
-  await upsertRows(items);
+  const { productos } = await upsertRows(items);
   await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "inventario_import", recursoId: null }).onConflictDoNothing();
-  res.json({ ok: true, procesados: items.length });
+  res.json({
+    ok: true,
+    procesados: items.length,
+    ...(productos.length > 0 ? { _syncProductos: productos } : {}),
+  });
 });
 
 // POST /confirmar-nuevos — crea únicamente los productos aprobados por el usuario.
@@ -322,10 +359,14 @@ router.post("/confirmar-nuevos", async (req, res) => {
       res.status(400).json({ error: "items requerido" });
       return;
     }
-    await upsertRows(items);
-    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "confirmar_nuevos", metodo: "POST", endpoint: "/inventario-import/sincronizar", payload: { items }, origen: "local" });
+    const { productos } = await upsertRows(items);
+    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "confirmar_nuevos", metodo: "POST", endpoint: "/inventario-import/sincronizar", payload: { items }, referenciasRespuesta: referenciasRespuestaProductos(productos), origen: "local" });
     await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "inventario_import", recursoId: null }).onConflictDoNothing();
-    res.json({ ok: true, procesados: items.length });
+    res.json({
+      ok: true,
+      procesados: items.length,
+      ...(productos.length > 0 ? { _syncProductos: productos } : {}),
+    });
   } catch (err: any) {
     res
       .status(500)
@@ -350,10 +391,14 @@ router.post("/resolver", async (req, res) => {
       res.status(400).json({ error: "items requerido" });
       return;
     }
-    await upsertRows(items);
-    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "resolver", metodo: "POST", endpoint: "/inventario-import/sincronizar", payload: { items }, origen: "local" });
+    const { productos } = await upsertRows(items);
+    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "resolver", metodo: "POST", endpoint: "/inventario-import/sincronizar", payload: { items }, referenciasRespuesta: referenciasRespuestaProductos(productos), origen: "local" });
     await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "inventario_import", recursoId: null }).onConflictDoNothing();
-    res.json({ ok: true, procesados: items.length });
+    res.json({
+      ok: true,
+      procesados: items.length,
+      ...(productos.length > 0 ? { _syncProductos: productos } : {}),
+    });
   } catch (err: any) {
     console.error("Error resolviendo conflictos:", err?.message ?? err);
     res
@@ -394,9 +439,21 @@ router.post("/resolver-cantidades", async (req, res) => {
           );
         }
       }
-      if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "resolver_cantidades", metodo: "POST", endpoint: "/inventario-import/resolver-cantidades", payload: req.body, origen: "local" });
+      const encontrados = await client.query<{ codigo: string; id: number }>(
+        `SELECT codigo, id FROM productos WHERE codigo = ANY($1::text[])`,
+        [items.map((item) => item.codigo)],
+      );
+      const productos = productosEnOrden(
+        items.map((item) => item.codigo),
+        encontrados.rows,
+      );
+      if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "resolver_cantidades", metodo: "POST", endpoint: "/inventario-import/resolver-cantidades", payload: req.body, referenciasRespuesta: referenciasRespuestaProductos(productos), origen: "local" });
       await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "inventario_import", recursoId: null }).onConflictDoNothing();
-      res.json({ ok: true, procesados: items.length });
+      res.json({
+        ok: true,
+        procesados: items.length,
+        ...(productos.length > 0 ? { _syncProductos: productos } : {}),
+      });
     } finally {
       client.release();
     }
@@ -673,9 +730,22 @@ router.post("/aplicar-completo", async (req, res) => {
         );
       }
 
-      if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "aplicar_completo", metodo: "POST", endpoint: "/inventario-import/aplicar-completo", payload: req.body, origen: "local" });
+      const encontrados = await client.query<{ codigo: string; id: number }>(
+        `SELECT codigo, id FROM productos WHERE codigo = ANY($1::text[])`,
+        [filas.map((fila) => fila.codigo)],
+      );
+      const productos = productosEnOrden(
+        filas.map((fila) => fila.codigo),
+        encontrados.rows,
+      );
+      if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "aplicar_completo", metodo: "POST", endpoint: "/inventario-import/aplicar-completo", payload: req.body, referenciasRespuesta: referenciasRespuestaProductos(productos), origen: "local" });
       await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "inventario_import", recursoId: null }).onConflictDoNothing();
-      res.json({ ok: true, actualizados: existentesFilas.length, creados: nuevas.length });
+      res.json({
+        ok: true,
+        actualizados: existentesFilas.length,
+        creados: nuevas.length,
+        ...(productos.length > 0 ? { _syncProductos: productos } : {}),
+      });
     } finally {
       client.release();
     }
