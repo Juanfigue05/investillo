@@ -6,6 +6,7 @@ import {
   idsLineaCreditoEnPayload,
   relacionesDeRespuesta,
   endpointDeRecuperacion,
+  idPrincipalDeRespuesta,
   traducirIdsLineaCredito,
 } from "./lib/credito-lineas-sync";
 import {
@@ -588,13 +589,10 @@ try {
         }
         if (recuperada.ok) respuestaParaMapear = await recuperada.json();
       }
-      const idNuevo =
-        respuestaParaMapear && typeof respuestaParaMapear === "object"
-          ? ((respuestaParaMapear as { _syncNuevoAbonoId?: number | string })
-              ._syncNuevoAbonoId ??
-            (respuestaParaMapear as { id?: number | string }).id ??
-            (respuestaParaMapear as { recursoId?: number | string }).recursoId)
-          : undefined;
+      const idNuevo = idPrincipalDeRespuesta(
+        evento.entidad,
+        respuestaParaMapear,
+      );
       const client = await pool.connect();
       try {
         await client.query("BEGIN");

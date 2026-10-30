@@ -275,7 +275,23 @@ router.post("/lote-pago-antiguo", async (req, res) => {
       });
       if (valores.some((item) => !item.fecha || !item.referencia || !item.productoNombre || !Number.isFinite(Number(item.precioVentaUnidad)))) throw new Error("Todas las filas deben tener fecha, referencia, concepto y precio de venta válidos");
       const insertadas = await tx.insert(ventasDiariasTable).values(valores).returning();
-      if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "venta", entidadId: operationId, tipo: "crear_lote_pago_antiguo", metodo: "POST", endpoint: "/ventas/lote-pago-antiguo", payload: req.body, origen: "local" });
+      if (!req.header("x-sync-apply")) {
+        await tx.insert(eventosSincronizacionTable).values({
+          operationId,
+          entidad: "venta",
+          entidadId: operationId,
+          tipo: "crear_lote_pago_antiguo",
+          metodo: "POST",
+          endpoint: "/ventas/lote-pago-antiguo",
+          payload: req.body,
+          referenciasRespuesta: insertadas.map((venta, index) => ({
+            campo: `${index}.id`,
+            entidad: "venta",
+            valorLocal: String(venta.id),
+          })),
+          origen: "local",
+        });
+      }
       await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "venta_lote_pago_antiguo", recursoId: insertadas[0].id }).onConflictDoNothing();
       return insertadas;
     });
@@ -331,14 +347,31 @@ router.post("/manoobra", async (req, res) => {
       await tx.update(manoObraTable).set({ ventaId: venta.id }).where(eq(manoObraTable.id, mo.id));
 
       if (!req.header("x-sync-apply")) {
-        await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "venta", entidadId: String(venta.id), tipo: "crear_manoobra", metodo: "POST", endpoint: "/ventas/manoobra", payload: req.body, origen: "local" });
+        await tx.insert(eventosSincronizacionTable).values({
+          operationId,
+          entidad: "venta",
+          entidadId: String(venta.id),
+          tipo: "crear_manoobra",
+          metodo: "POST",
+          endpoint: "/ventas/manoobra",
+          payload: req.body,
+          referenciasRespuesta: [{
+            campo: "_syncManoObraId",
+            entidad: "mano_obra",
+            valorLocal: String(mo.id),
+          }],
+          origen: "local",
+        });
       }
       await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "manoobra_venta", recursoId: venta.id }).onConflictDoNothing();
 
-      return venta;
+      return { venta, manoObraId: mo.id };
     });
 
-    res.status(201).json(resultado);
+    res.status(201).json({
+      ...resultado.venta,
+      _syncManoObraId: resultado.manoObraId,
+    });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

@@ -107,7 +107,7 @@ async function syncManoObraCredito(
   tx: Tx,
   credito: typeof creditosTable.$inferSelect,
   input: CreditoManoObraInput | null | undefined,
-) {
+): Promise<number | null> {
   const [existing] = await tx.select().from(manoObraTable).where(eq(manoObraTable.creditoId, credito.id));
 
   // Revertir distribuciones existentes (resta totalGanado y borra las filas)
@@ -128,7 +128,7 @@ async function syncManoObraCredito(
       await revertir(existing.id);
       await tx.delete(manoObraTable).where(eq(manoObraTable.id, existing.id));
     }
-    return;
+    return null;
   }
 
   // Construir nuevas distribuciones
@@ -209,6 +209,7 @@ async function syncManoObraCredito(
     });
     await ajustarTotalGanado(tx, d.trabajadorId, d.valor);
   }
+  return moId;
 }
 
 type CreditoLineaInput = {
@@ -481,7 +482,8 @@ router.post("/", async (req, res) => {
   try {
     credito = await db.transaction(async (tx) => {
     let lineasDelCredito: Array<{ id: number }> = [];
-    const [created] = await tx
+      const ventasGeneradas: Array<{ id: number }> = [];
+      const [created] = await tx
       .insert(creditosTable)
       .values({
         tipo: tipo ?? "credito",
@@ -496,7 +498,9 @@ router.post("/", async (req, res) => {
       })
       .returning();
 
-    if (manoObra !== undefined) await syncManoObraCredito(tx, created, manoObra);
+    const manoObraId = manoObra !== undefined
+      ? await syncManoObraCredito(tx, created, manoObra)
+      : null;
 
     if (Array.isArray(lineas) && lineas.length > 0) {
       const lineasCreadas = await tx.insert(creditoLineasTable).values(
@@ -554,7 +558,7 @@ router.post("/", async (req, res) => {
           const lineaCreada = lineasCreadas[indice];
           if (!lineaCreada) continue;
           const total = toNum(lineaCreada.cantidad) * toNum(lineaCreada.precioVenta);
-          await crearFilaVentaPago(
+          const ventaGenerada = await crearFilaVentaPago(
             tx,
             created,
             lineaCreada,
@@ -565,6 +569,7 @@ router.post("/", async (req, res) => {
             abonoInicialRef?.trim() || undefined,
             abonoInicialFormaPago,
           );
+          if (ventaGenerada) ventasGeneradas.push(ventaGenerada);
         }
       }
     }
@@ -587,17 +592,44 @@ router.post("/", async (req, res) => {
             entidad: "credito_linea",
             valorLocal: String(linea.id),
           })),
+          ...(manoObraId === null
+            ? []
+            : [{
+                campo: "_syncManoObraId",
+                entidad: "mano_obra",
+                valorLocal: String(manoObraId),
+              }]),
+          ...ventasGeneradas.map((venta, index) => ({
+            campo: `_syncVentasGeneradas.${index}.id`,
+            entidad: "venta",
+            valorLocal: String(venta.id),
+          })),
         ],
       });
     }
     await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: created.id, recursoSecundarioId: abonoInicialId ?? null }).onConflictDoNothing();
-    return created;
+    return {
+      credito: created,
+      manoObraId,
+      ventasGeneradas,
+    };
     });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Error al crear el crédito" });
     return;
   }
-  res.status(201).json({ ...(await mapCredito(credito)), _syncNuevoAbonoId: abonoInicialId });
+  res.status(201).json({
+    ...(await mapCredito(credito.credito)),
+    ...(abonoInicialId === null
+      ? {}
+      : { _syncNuevoAbonoId: abonoInicialId }),
+    ...(credito.manoObraId === null
+      ? {}
+      : { _syncManoObraId: credito.manoObraId }),
+    ...(credito.ventasGeneradas.length === 0
+      ? {}
+      : { _syncVentasGeneradas: credito.ventasGeneradas }),
+  });
 });
 
 // PUT /creditos/:id
@@ -658,6 +690,8 @@ router.put("/:id", async (req, res) => {
   try {
     credito = await db.transaction(async (tx) => {
     let referenciasLineasNuevas: Array<{ campo: string; entidad: string; valorLocal: string }> = [];
+    let ventasGeneradas: Array<{ id: number }> = [];
+    let manoObraId: number | null = null;
     const [updated] = await tx
       .update(creditosTable)
       .set(updateData)
@@ -740,11 +774,29 @@ router.put("/:id", async (req, res) => {
 
       // La distribución de abonos puede cambiar al editar las líneas o el total.
       // Reconstruir las filas evita que Ventas Diarias conserve el estado anterior.
-      await rebuildVentasCredito(tx, updated);
+      ventasGeneradas = await rebuildVentasCredito(tx, updated);
     }
 
     // Sincronizar mano de obra solo si el campo viene en el body (undefined = sin cambios)
-    if (manoObra !== undefined) await syncManoObraCredito(tx, updated, manoObra);
+    if (manoObra !== undefined) {
+      manoObraId = await syncManoObraCredito(tx, updated, manoObra);
+    }
+
+    const referenciasRespuesta = [
+      ...referenciasLineasNuevas,
+      ...(manoObraId === null
+        ? []
+        : [{
+            campo: "_syncManoObraId",
+            entidad: "mano_obra",
+            valorLocal: String(manoObraId),
+          }]),
+      ...ventasGeneradas.map((venta, index) => ({
+        campo: `_syncVentasGeneradas.${index}.id`,
+        entidad: "venta",
+        valorLocal: String(venta.id),
+      })),
+    ];
 
     if (!req.header("x-sync-apply")) {
       await tx.insert(eventosSincronizacionTable).values({
@@ -756,20 +808,24 @@ router.put("/:id", async (req, res) => {
         endpoint: `/creditos/${id}`,
         payload: req.body,
         origen: "local",
-        referenciasRespuesta: referenciasLineasNuevas.length > 0
-          ? referenciasLineasNuevas
+        referenciasRespuesta: referenciasRespuesta.length > 0
+          ? referenciasRespuesta
           : undefined,
       });
     }
     await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: id }).onConflictDoNothing();
-    return updated;
+    return { credito: updated, manoObraId, ventasGeneradas };
     });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Error al actualizar el crédito" });
     return;
   }
 
-  res.json(await mapCredito(credito));
+  res.json({
+    ...(await mapCredito(credito.credito)),
+    _syncManoObraId: credito.manoObraId,
+    _syncVentasGeneradas: credito.ventasGeneradas,
+  });
 });
 
 // POST /creditos/:id/abono — registra un nuevo abono y crea filas en ventas_diarias
@@ -832,6 +888,7 @@ router.post("/:id/abono", async (req, res) => {
     return;
   }
   const updated = await db.transaction(async (tx) => {
+    const ventasGeneradas: Array<{ id: number }> = [];
     // Aplicar el abono a las líneas del crédito
     for (const { linea, valor: av } of applied) {
       await tx
@@ -867,15 +924,56 @@ router.post("/:id/abono", async (req, res) => {
       const antes = toNum(linea.valorAbonado); // valor antes de este abono
       const restante = Math.max(0, total - antes);
       const pagaCompleto = Math.abs(av - restante) < 1;
-      await crearFilaVentaPago(tx, updatedCredito, linea, av, pagaCompleto, newAbono.id, fechaVenta, customRef, formaPago, registrarIvaVentasDiarias !== false);
+      const ventaGenerada = await crearFilaVentaPago(
+        tx,
+        updatedCredito,
+        linea,
+        av,
+        pagaCompleto,
+        newAbono.id,
+        fechaVenta,
+        customRef,
+        formaPago,
+        registrarIvaVentasDiarias !== false,
+      );
+      if (ventaGenerada) ventasGeneradas.push(ventaGenerada);
     }
 
-    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "abono_credito", entidadId: String(newAbono.id), tipo: "abono_crear", metodo: "POST", endpoint: `/creditos/{creditoId}/abono`, referenciasEndpoint: [{ marcador: "{creditoId}", entidad: "credito", valorLocal: String(creditoId) }], payload: req.body, origen: "local" });
+    if (!req.header("x-sync-apply")) {
+      await tx.insert(eventosSincronizacionTable).values({
+        operationId,
+        entidad: "abono_credito",
+        entidadId: String(newAbono.id),
+        tipo: "abono_crear",
+        metodo: "POST",
+        endpoint: `/creditos/{creditoId}/abono`,
+        referenciasEndpoint: [{
+          marcador: "{creditoId}",
+          entidad: "credito",
+          valorLocal: String(creditoId),
+        }],
+        payload: req.body,
+        referenciasRespuesta: ventasGeneradas.map((venta, index) => ({
+          campo: `_syncVentasGeneradas.${index}.id`,
+          entidad: "venta",
+          valorLocal: String(venta.id),
+        })),
+        origen: "local",
+      });
+    }
     await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "abono_credito", recursoId: newAbono.id }).onConflictDoNothing();
 
-    return { credito: updatedCredito, nuevoAbonoId: newAbono.id };
+    return {
+      credito: updatedCredito,
+      nuevoAbonoId: newAbono.id,
+      ventasGeneradas,
+    };
   });
-  res.json({ ...(await mapCredito(updated.credito)), _syncNuevoAbonoId: updated.nuevoAbonoId });
+  res.json({
+    ...(await mapCredito(updated.credito)),
+    _syncNuevoAbonoId: updated.nuevoAbonoId,
+    _syncVentasGeneradas: updated.ventasGeneradas,
+  });
 });
 
 // ── Helpers para revertir un abono ─────────────────────────────────────────
@@ -984,6 +1082,7 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
   if (!credito) { res.status(404).json({ error: "Crédito no encontrado" }); return; }
 
   const updated = await db.transaction(async (tx) => {
+    const ventasGeneradas: Array<{ id: number }> = [];
     // Revertir el abono anterior
     await revertirAbono(tx, abono);
 
@@ -1050,14 +1149,38 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
 
     // Reconstruir TODAS las filas de Ventas de los pagos de este crédito en orden
     // cronológico (el estado completo/parcial de otros pagos puede haber cambiado)
-    await rebuildVentasCredito(tx, updatedCredito);
-    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "abono_credito", entidadId: String(abonoId), tipo: "abono_actualizar", metodo: "PUT", endpoint: "/creditos/{creditoId}/abono/{id}", referenciasEndpoint: [{ marcador: "{creditoId}", entidad: "credito", valorLocal: String(creditoId) }], payload: req.body, origen: "local" });
+    ventasGeneradas.push(...await rebuildVentasCredito(tx, updatedCredito));
+    if (!req.header("x-sync-apply")) {
+      await tx.insert(eventosSincronizacionTable).values({
+        operationId,
+        entidad: "abono_credito",
+        entidadId: String(abonoId),
+        tipo: "abono_actualizar",
+        metodo: "PUT",
+        endpoint: "/creditos/{creditoId}/abono/{id}",
+        referenciasEndpoint: [{
+          marcador: "{creditoId}",
+          entidad: "credito",
+          valorLocal: String(creditoId),
+        }],
+        payload: req.body,
+        referenciasRespuesta: ventasGeneradas.map((venta, index) => ({
+          campo: `_syncVentasGeneradas.${index}.id`,
+          entidad: "venta",
+          valorLocal: String(venta.id),
+        })),
+        origen: "local",
+      });
+    }
     await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: creditoId }).onConflictDoNothing();
-    return updatedCredito;
+    return { credito: updatedCredito, ventasGeneradas };
   });
 
   
-  res.json(await mapCredito(updated));
+  res.json({
+    ...(await mapCredito(updated.credito)),
+    _syncVentasGeneradas: updated.ventasGeneradas,
+  });
 });
 
 // DELETE /creditos/:id
@@ -1144,14 +1267,14 @@ async function crearFilaVentaPago(
   customRef?: string,
   formaPago?: string,
   registrarIvaVentasDiarias = true,
-) {
+): Promise<{ id: number }> {
   const referencia = refCredito(credito, customRef);
   const etiqueta = credito.tipo === "nosdebe" ? "Nos Debe" : "crédito";
 
   if (pagaCompleto && esLineaManoObra(linea.productoNombre, linea.productoId)) {
     const { nombres, detalle } = await trabajadoresManoObra(tx, credito.id);
     const valor = toNum(linea.cantidad) * toNum(linea.precioVenta);
-    await tx.insert(ventasDiariasTable).values({
+    const [venta] = await tx.insert(ventasDiariasTable).values({
       fecha,
       referencia,
       tipoLinea: "manoobra",
@@ -1167,14 +1290,14 @@ async function crearFilaVentaPago(
       formaPago: formaPago || null,
       origen: "abono_credito",
       afectaInventario: false,
-    });
-    return;
+    }).returning({ id: ventasDiariasTable.id });
+    return venta;
   }
 
   // Línea IVA: no inflaciona ventas ni beneficio — se registra como abono sin ganancia
   if (pagaCompleto && linea.productoNombre === IVA_NOMBRE) {
     const valor = toNum(linea.cantidad) * toNum(linea.precioVenta);
-    await tx.insert(ventasDiariasTable).values({
+    const [venta] = await tx.insert(ventasDiariasTable).values({
       fecha,
       referencia,
       tipoLinea: "credito",
@@ -1190,15 +1313,15 @@ async function crearFilaVentaPago(
       formaPago: formaPago || null,
       origen: "abono_credito",
       afectaInventario: false,
-    });
-    return;
+    }).returning({ id: ventasDiariasTable.id });
+    return venta;
   }
 
   if (pagaCompleto) {
     const pvUnidad = toNum(linea.precioVenta);
     const pcUnidad = toNum(linea.precioCompra ?? "0");
     const cant = toNum(linea.cantidad);
-    await tx.insert(ventasDiariasTable).values({
+    const [venta] = await tx.insert(ventasDiariasTable).values({
       fecha,
       referencia,
       tipoLinea: "venta",
@@ -1216,11 +1339,11 @@ async function crearFilaVentaPago(
       formaPago: formaPago || null,
       origen: "abono_credito",
       afectaInventario: false,
-    });
-    return;
+    }).returning({ id: ventasDiariasTable.id });
+    return venta;
   }
 
-  await tx.insert(ventasDiariasTable).values({
+  const [venta] = await tx.insert(ventasDiariasTable).values({
     fecha,
     referencia,
     tipoLinea: "credito",
@@ -1236,7 +1359,8 @@ async function crearFilaVentaPago(
     formaPago: formaPago || null,
     origen: "abono_credito",
     afectaInventario: false,
-  });
+  }).returning({ id: ventasDiariasTable.id });
+  return venta;
 }
 
 /**
@@ -1245,7 +1369,11 @@ async function crearFilaVentaPago(
  * un pago exista a lo sumo una fila venta/manoobra por línea totalmente saldada y
  * filas "Abono A" para los pagos parciales.
  */
-async function rebuildVentasCredito(tx: Tx, credito: typeof creditosTable.$inferSelect) {
+async function rebuildVentasCredito(
+  tx: Tx,
+  credito: typeof creditosTable.$inferSelect,
+): Promise<Array<{ id: number }>> {
+  const ventasGeneradas: Array<{ id: number }> = [];
   const abonos = await tx
     .select()
     .from(abonosCreditosTable)
@@ -1288,10 +1416,22 @@ async function rebuildVentasCredito(tx: Tx, credito: typeof creditosTable.$infer
       const restante = Math.max(0, total - antes);
       const pagaCompleto = Math.abs(valor - restante) < 1;
       const fechaVenta = Array.isArray(_raw) ? abono.fecha : (_raw.ventaFecha || abono.fecha);
-      await crearFilaVentaPago(tx, credito, linea, valor, pagaCompleto, abono.id, fechaVenta, abonoCustomRef, abonoFormaPago, registrarIva);
+      ventasGeneradas.push(await crearFilaVentaPago(
+        tx,
+        credito,
+        linea,
+        valor,
+        pagaCompleto,
+        abono.id,
+        fechaVenta,
+        abonoCustomRef,
+        abonoFormaPago,
+        registrarIva,
+      ));
       running.set(lineaId, antes + valor);
     }
   }
+  return ventasGeneradas;
 }
 
 /** Obtiene los trabajadores de la mano de obra vinculada a un crédito. */

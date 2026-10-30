@@ -51,6 +51,36 @@ describe("GET /api/creditos/:id", () => {
     );
   });
 
+  it("no incluye metadatos de sincronización en la respuesta GET", async () => {
+    const creado = await request(app)
+      .post("/api/creditos")
+      .send({
+        tipo: "credito",
+        concepto: `TEST-GET-CREDITO-SYNC-${Date.now()}`,
+        fechaFactura: new Date().toISOString().slice(0, 10),
+        nombreCliente: "Cliente Test GET",
+        valorCredito: 100,
+        lineas: [
+          {
+            productoNombre: "Línea GET Sync",
+            cantidad: 1,
+            precioVenta: 100,
+            precioCompra: 0,
+          },
+        ],
+      });
+
+    expect(creado.status).toBe(201);
+    creditosCreados.push(creado.body.id as number);
+
+    const respuesta = await request(app).get(`/api/creditos/${creado.body.id}`);
+
+    expect(respuesta.status).toBe(200);
+    expect(
+      Object.keys(respuesta.body).filter((campo) => campo.startsWith("_sync")),
+    ).toEqual([]);
+  });
+
   it("responde 404 cuando el crédito no existe", async () => {
     const respuesta = await request(app).get("/api/creditos/2147483647");
 

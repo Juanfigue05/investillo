@@ -16,6 +16,26 @@ export type ReferenciaEndpoint = {
   valorLocal: string;
 };
 
+export function idPrincipalDeRespuesta(
+  entidad: string,
+  respuesta: unknown,
+): number | string | undefined {
+  if (respuesta === null || typeof respuesta !== "object") return undefined;
+
+  const datos = respuesta as {
+    _syncNuevoAbonoId?: unknown;
+    id?: unknown;
+    recursoId?: unknown;
+  };
+  const id = entidad === "abono_credito"
+    ? datos._syncNuevoAbonoId
+    : datos.id;
+  if (typeof id === "number" || typeof id === "string") return id;
+  return typeof datos.recursoId === "number" || typeof datos.recursoId === "string"
+    ? datos.recursoId
+    : undefined;
+}
+
 export function resolverEndpointConReferencias(
   endpoint: string,
   referencias: ReferenciaEndpoint[],

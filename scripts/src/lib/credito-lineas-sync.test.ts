@@ -5,6 +5,7 @@ import {
   endpointDeRecuperacion,
   idsLineaPendiente,
   idsLineaCreditoEnPayload,
+  idPrincipalDeRespuesta,
   relacionesDeRespuesta,
   resolverEndpointConReferencias,
   traducirIdCreditoEnEndpoint,
@@ -43,6 +44,19 @@ test("resuelve rutas anidadas en respuestas de crédito", () => {
   );
 });
 
+test("selecciona el ID principal según la entidad de sincronización", () => {
+  const respuesta = {
+    id: 101,
+    _syncNuevoAbonoId: 202,
+    recursoId: 303,
+  };
+
+  assert.equal(idPrincipalDeRespuesta("credito", respuesta), 101);
+  assert.equal(idPrincipalDeRespuesta("abono_credito", respuesta), 202);
+  assert.equal(idPrincipalDeRespuesta("venta", { recursoId: 303 }), 303);
+  assert.equal(idPrincipalDeRespuesta("credito", null), undefined);
+});
+
 test("empareja las líneas creadas al editar un crédito", () => {
   const relaciones = relacionesDeRespuesta(
     [
@@ -77,6 +91,27 @@ test("crea la relación inversa al bajar una edición remota", () => {
   assert.deepEqual(relaciones, [
     { entidad: "credito_linea", idLocal: "17", idRemoto: "91" },
   ]);
+});
+
+test("mantiene la orientación local/remoto al guardar IDs divergentes", () => {
+  const referencia = [{
+    campo: "id",
+    entidad: "credito",
+    valorLocal: "101",
+  }];
+
+  assert.deepEqual(
+    relacionesDeRespuesta(referencia, { id: 501 }, "local"),
+    [{ entidad: "credito", idLocal: "101", idRemoto: "501" }],
+  );
+  assert.deepEqual(
+    relacionesDeRespuesta(
+      [{ ...referencia[0]!, valorLocal: "901" }],
+      { id: 201 },
+      "remoto",
+    ),
+    [{ entidad: "credito", idLocal: "201", idRemoto: "901" }],
+  );
 });
 
 test("traduce IDs de líneas en ediciones de crédito y abonos", () => {

@@ -29,6 +29,8 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const scriptsRoot = join(repoRoot, "scripts");
 const token = randomBytes(32).toString("hex");
 const prefix = `sync-local-test-${randomUUID()}`;
+const idBaseCreditoAbono =
+  1_000_000 + randomBytes(3).readUIntBE(0, 3) * 10;
 const referenciasDePrueba: Array<[string, string]> = [
   ["producto", "2000"],
   ["producto", "999"],
@@ -54,6 +56,10 @@ const referenciasDePrueba: Array<[string, string]> = [
   ["cliente", "1502"],
   ["cliente", "1503"],
   ["credito", "5"],
+  ["credito", String(idBaseCreditoAbono + 1)],
+  ["credito", String(idBaseCreditoAbono + 3)],
+  ["abono_credito", String(idBaseCreditoAbono + 2)],
+  ["abono_credito", String(idBaseCreditoAbono + 4)],
   ["vehiculo", "20"],
 ];
 const pool = new Pool({ connectionString: databaseUrl });
@@ -342,6 +348,10 @@ function valoresReferenciasSql(): string {
 }
 
 test("clasifica respuestas remotas y detecta conflictos antes de enviar", async () => {
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS referencias_sincronizacion_entidad_remoto_uidx
+      ON referencias_sincronizacion (entidad, id_remoto)
+  `);
   const anteriores = await pool.query<{
     valor: string;
     operacion_id: string | null;
@@ -1358,6 +1368,114 @@ test("clasifica respuestas remotas y detecta conflictos antes de enviar", async 
       );
       assert.equal(resultado.status, intento < 3 ? 0 : 3);
     }
+    await borrarEventos();
+
+    const creditoLocalId = String(idBaseCreditoAbono + 1);
+    const abonoLocalId = String(idBaseCreditoAbono + 2);
+    const creditoPadreLocalId = String(idBaseCreditoAbono + 3);
+    const abonoEditadoLocalId = String(idBaseCreditoAbono + 4);
+    const creditoRemotoId = String(idBaseCreditoAbono + 101);
+    const abonoRemotoId = String(idBaseCreditoAbono + 102);
+    const creditoPadreRemotoId = String(idBaseCreditoAbono + 103);
+    const abonoEditadoRemotoId = String(idBaseCreditoAbono + 104);
+    postStatus = () => 200;
+    await pool.query(
+      `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)
+       VALUES ('credito', $1, $2)`,
+      [creditoPadreLocalId, creditoPadreRemotoId],
+    );
+    respuestaPost = (endpoint) =>
+      endpoint === "/creditos"
+        ? { id: creditoRemotoId, _syncNuevoAbonoId: abonoRemotoId }
+        : {
+            id: creditoPadreRemotoId,
+            _syncNuevoAbonoId: abonoEditadoRemotoId,
+          };
+    const crearCreditoConAbono = await insertarEvento({
+      nombre: "credito-con-abono-inicial",
+      entidad: "credito",
+      entidadId: creditoLocalId,
+      metodo: "POST",
+      endpoint: "/creditos",
+      cuerpo: { tipo: "credito" },
+      referenciasRespuesta: [{
+        campo: "_syncNuevoAbonoId",
+        entidad: "abono_credito",
+        valorLocal: abonoLocalId,
+      }],
+    });
+    const editarAbono = await insertarEvento({
+      nombre: "editar-abono",
+      entidad: "abono_credito",
+      entidadId: abonoEditadoLocalId,
+      metodo: "POST",
+      endpoint: "/creditos/{creditoId}/abono",
+      cuerpo: { valor: 10 },
+      referenciasEndpoint: [{
+        marcador: "{creditoId}",
+        entidad: "credito",
+        valorLocal: creditoPadreLocalId,
+      }],
+    });
+    postCount = 0;
+    const creditosConAbonosSincronizados = await ejecutarScript(
+      "sincronizar-local.ts",
+    );
+    assert.equal(
+      creditosConAbonosSincronizados.status,
+      0,
+      `${creditosConAbonosSincronizados.stdout}\n${creditosConAbonosSincronizados.stderr}`,
+    );
+    const equivalenciasCreditoAbono = await pool.query<{
+      entidad: string;
+      id_local: string;
+      id_remoto: string;
+    }>(
+      `SELECT entidad, id_local, id_remoto FROM referencias_sincronizacion
+        WHERE (entidad, id_local) IN (
+          ('credito', $1), ('abono_credito', $2), ('abono_credito', $3)
+        )
+        ORDER BY entidad, id_local`,
+      [creditoLocalId, abonoLocalId, abonoEditadoLocalId],
+    );
+    assert.deepEqual(equivalenciasCreditoAbono.rows, [
+      {
+        entidad: "abono_credito",
+        id_local: abonoLocalId,
+        id_remoto: abonoRemotoId,
+      },
+      {
+        entidad: "abono_credito",
+        id_local: abonoEditadoLocalId,
+        id_remoto: abonoEditadoRemotoId,
+      },
+      {
+        entidad: "credito",
+        id_local: creditoLocalId,
+        id_remoto: creditoRemotoId,
+      },
+    ]);
+    assert.deepEqual(
+      (await estados([crearCreditoConAbono, editarAbono])).map(
+        ({ estado }) => estado,
+      ),
+      ["sincronizado", "sincronizado"],
+    );
+    await borrarEventos();
+    await pool.query(
+      `DELETE FROM referencias_sincronizacion
+        WHERE (entidad, id_local) IN (
+          ('credito', $1), ('credito', $2),
+          ('abono_credito', $3), ('abono_credito', $4)
+        )`,
+      [
+        creditoLocalId,
+        creditoPadreLocalId,
+        abonoLocalId,
+        abonoEditadoLocalId,
+      ],
+    );
+    respuestaPost = () => ({});
   } finally {
     await borrarEventos();
     await pool.query(

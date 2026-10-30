@@ -6,6 +6,7 @@ import {
   idsLineaCreditoEnPayload,
   relacionesDeRespuesta,
   endpointDeRecuperacion,
+  idPrincipalDeRespuesta,
   traducirIdsLineaCredito,
 } from "./lib/credito-lineas-sync";
 import { verificarPuntoPartida } from "./lib/punto-partida";
@@ -404,13 +405,10 @@ try {
           respuestaLocal &&
           typeof respuestaLocal === "object"
         ) {
-          const respuesta = respuestaLocal as {
-            _syncNuevoAbonoId?: number | string;
-            id?: number | string;
-            recursoId?: number | string;
-          };
-          const idLocal =
-            respuesta._syncNuevoAbonoId ?? respuesta.id ?? respuesta.recursoId;
+          const idLocal = idPrincipalDeRespuesta(
+            evento.entidad,
+            respuestaLocal,
+          );
           if (idLocal !== undefined) {
             await client.query(
               `INSERT INTO referencias_sincronizacion (entidad, id_local, id_remoto)

@@ -35,22 +35,18 @@ type CreditResponse = {
     precioCompra: number;
   }>;
   _syncNuevoAbonoId?: number;
+  _syncVentasGeneradas?: Array<{ id: number }>;
 };
 
 function assertTestDatabase(databaseUrl: string, expectedName: string): void {
   const parsed = new URL(databaseUrl);
   const databaseName = parsed.pathname.slice(1);
-  const nombresPermitidos = new Set([
-    expectedName,
-    `${expectedName}_9d2_empty`,
-    `${expectedName}_9d2_aiven`,
-  ]);
   if (
     !["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname) ||
-    !nombresPermitidos.has(databaseName)
+    databaseName !== expectedName
   ) {
     throw new Error(
-      `E2E bloqueado: se requiere una base loopback ${[...nombresPermitidos].join(", ")}`,
+      `E2E bloqueado: se requiere una base loopback ${expectedName}`,
     );
   }
 }
@@ -234,6 +230,10 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
     SYNC_PAGE_SIZE: "2",
     PORT: String(localPort),
   });
+
+  let errorPrueba: unknown;
+  let huboErrorPrueba = false;
+  const erroresLimpieza: unknown[] = [];
 
   try {
     await Promise.all(
@@ -932,17 +932,21 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
         fechaFactura: fecha,
         nombreCliente: "Prueba de sincronización local",
         valorCredito: 100,
+        valorAbonado: 10,
+        abonoInicialFecha: fecha,
         lineas: [
           {
             productoNombre: "Línea inicial local",
             cantidad: 1,
             precioVenta: 100,
             precioCompra: 0,
+            valorAbonado: 10,
           },
         ],
       },
       `${prefix}-local-create`,
     );
+    assert.ok(localCreado._syncNuevoAbonoId);
     assert.equal(
       ejecutarScript("sincronizar-local.ts", scriptEnv(localUrl)).status,
       0,
@@ -957,6 +961,29 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
       .then((result) => result.rows);
     assert.ok(mapeoCredito);
     const creditoRemotoId = Number(mapeoCredito.id_remoto);
+    const filaCreditoRemotaInicial = await remotePool.query<{ id: number }>(
+      `SELECT id FROM creditos
+        WHERE id = $1 AND concepto = $2`,
+      [creditoRemotoId, `${prefix}-local`],
+    );
+    assert.equal(filaCreditoRemotaInicial.rowCount, 1);
+    const [mapeoAbonoInicialLocal] = await localPool
+      .query<{ id_remoto: string }>(
+        `SELECT id_remoto FROM referencias_sincronizacion
+          WHERE entidad = 'abono_credito' AND id_local = $1`,
+        [String(localCreado._syncNuevoAbonoId)],
+      )
+      .then((result) => result.rows);
+    assert.ok(mapeoAbonoInicialLocal);
+    const filaAbonoRemotaInicial = await remotePool.query<{
+      id: number;
+      credito_id: number;
+    }>(
+      `SELECT id, credito_id FROM abonos_creditos
+        WHERE id = $1 AND credito_id = $2`,
+      [Number(mapeoAbonoInicialLocal.id_remoto), creditoRemotoId],
+    );
+    assert.equal(filaAbonoRemotaInicial.rowCount, 1);
 
     const localEditado = await api<CreditResponse>(
       localBase(),
@@ -994,6 +1021,46 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
       .then((result) => result.rows);
     assert.ok(mapeoLinea);
     const lineaRemotaId = Number(mapeoLinea.id_remoto);
+    const creditoActualizadoRemoto = await api<CreditResponse & {
+      valorCredito: number;
+    }>(
+      remoteBase(),
+      `/creditos/${creditoRemotoId}`,
+      "GET",
+    );
+    assert.equal(creditoActualizadoRemoto.id, creditoRemotoId);
+    assert.equal(Number(creditoActualizadoRemoto.valorCredito), 300);
+
+    await api<CreditResponse>(
+      localBase(),
+      `/creditos/${localCreado.id}/abono/${localCreado._syncNuevoAbonoId}`,
+      "PUT",
+      {
+        valor: 15,
+        lineas: [{ lineaId: localCreado.lineas[0]!.id, valor: 15 }],
+        fechaAbono: fecha,
+        fechaVentaDiaria: fecha,
+      },
+      `${prefix}-local-abono-inicial-edit`,
+    );
+    assert.equal(
+      ejecutarScript("sincronizar-local.ts", scriptEnv(localUrl)).status,
+      0,
+    );
+    const abonoInicialEditado = await remotePool.query<{
+      linea_detalle: string;
+      credito_id: number;
+    }>(
+      `SELECT linea_detalle, credito_id FROM abonos_creditos
+        WHERE id = $1`,
+      [Number(mapeoAbonoInicialLocal.id_remoto)],
+    );
+    assert.equal(abonoInicialEditado.rows[0]?.credito_id, creditoRemotoId);
+    assert.equal(
+      JSON.parse(abonoInicialEditado.rows[0]?.linea_detalle ?? "{}")
+        .lineas?.[0]?.valor,
+      15,
+    );
 
     await api<CreditResponse>(
       localBase(),
@@ -1033,17 +1100,21 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
         fechaFactura: fecha,
         nombreCliente: "Prueba de sincronización remota",
         valorCredito: 100,
+        valorAbonado: 10,
+        abonoInicialFecha: fecha,
         lineas: [
           {
             productoNombre: "Línea inicial remota",
             cantidad: 1,
             precioVenta: 100,
             precioCompra: 0,
+            valorAbonado: 10,
           },
         ],
       },
       `${prefix}-remote-create`,
     );
+    assert.ok(remotoCreado._syncNuevoAbonoId);
     const operationIdReintentoRemoto = `${prefix}-remote-retry-credit-create`;
     const payloadReintentoRemoto = {
       tipo: "credito",
@@ -1199,6 +1270,51 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
       clienteLocalTrasConflicto.rows[0]?.nombre,
       `${prefix}-cliente-remoto`,
     );
+    const [mapeoCreditoDescargado] = await localPool
+      .query<{ id_local: string }>(
+        `SELECT id_local FROM referencias_sincronizacion
+          WHERE entidad = 'credito' AND id_remoto = $1`,
+        [String(remotoCreado.id)],
+      )
+      .then((result) => result.rows);
+    assert.ok(mapeoCreditoDescargado);
+    const creditoLocalRemoto = await localPool.query<{ id: number }>(
+      `SELECT id FROM creditos
+        WHERE id = $1 AND concepto = $2`,
+      [Number(mapeoCreditoDescargado.id_local), `${prefix}-remote`],
+    );
+    assert.equal(creditoLocalRemoto.rowCount, 1);
+    const [mapeoAbonoInicialDescargado] = await localPool
+      .query<{ id_local: string }>(
+        `SELECT id_local FROM referencias_sincronizacion
+          WHERE entidad = 'abono_credito' AND id_remoto = $1`,
+        [String(remotoCreado._syncNuevoAbonoId)],
+      )
+      .then((result) => result.rows);
+    assert.ok(mapeoAbonoInicialDescargado);
+    const abonoInicialLocalDescargado = await localPool.query<{
+      id: number;
+      credito_id: number;
+    }>(
+      `SELECT id, credito_id FROM abonos_creditos
+        WHERE id = $1 AND credito_id = $2`,
+      [
+        Number(mapeoAbonoInicialDescargado.id_local),
+        Number(mapeoCreditoDescargado.id_local),
+      ],
+    );
+    assert.equal(abonoInicialLocalDescargado.rowCount, 1);
+    const creditoEditadoDesdeRender = await api<CreditResponse & {
+      valorCredito: number;
+    }>(
+      localBase(),
+      `/creditos/${mapeoCreditoDescargado.id_local}`,
+      "GET",
+    );
+    assert.equal(
+      Number(creditoEditadoDesdeRender.valorCredito),
+      300,
+    );
     const relacionesLineasReintentoRemoto = await localPool.query<{
       id_local: string;
       id_remoto: string;
@@ -1327,6 +1443,341 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
     );
     assert.equal(coberturaAcuse.rows[0]?.noAvanzaMasAlla, true);
 
+    const creditosConAbonosNuevos = await api<CreditResponse>(
+      localBase(),
+      "/creditos",
+      "POST",
+      {
+        tipo: "credito",
+        concepto: `${prefix}-credit-ventas-generadas`,
+        fechaFactura: fecha,
+        nombreCliente: `${prefix}-cliente-credit-ventas`,
+        valorCredito: 300,
+        valorAbonado: 300,
+        abonoInicialFecha: fecha,
+        lineas: [
+          {
+            productoNombre: `${prefix}-servicio-abono-a`,
+            cantidad: 1,
+            precioVenta: 100,
+            precioCompra: 0,
+            valorAbonado: 100,
+          },
+          {
+            productoNombre: `${prefix}-servicio-abono-b`,
+            cantidad: 1,
+            precioVenta: 200,
+            precioCompra: 0,
+            valorAbonado: 200,
+          },
+        ],
+      },
+      `${prefix}-local-credit-ventas-generadas`,
+    );
+    assert.equal(creditosConAbonosNuevos._syncVentasGeneradas?.length, 2);
+
+    const manoObraGenerada = await api<{
+      id: number;
+      _syncManoObraId: number;
+    }>(
+      localBase(),
+      "/ventas/manoobra",
+      "POST",
+      {
+        fecha,
+        referencia: `${prefix}-manoobra-generada`,
+        valorTotal: 70000,
+        distribuciones: [],
+      },
+      `${prefix}-local-manoobra-generada`,
+    );
+    assert.ok(manoObraGenerada._syncManoObraId);
+
+    const clienteVehiculoLocal = await api<{
+      id: number;
+      vehiculos: Array<{ id: number }>;
+    }>(
+      localBase(),
+      "/clientes",
+      "POST",
+      {
+        nombre: `${prefix}-cliente-con-vehiculo-local`,
+        vehiculos: [{ placa: `${prefix}-PLACA-LOCAL` }],
+      },
+      `${prefix}-local-cliente-con-vehiculo`,
+    );
+    assert.equal(clienteVehiculoLocal.vehiculos.length, 1);
+
+    const loteVentasLocal = await api<Array<{ id: number }>>(
+      localBase(),
+      "/ventas/lote-pago-antiguo",
+      "POST",
+      {
+        items: ["A", "B"].map((sufijo) => ({
+          fecha,
+          referencia: `${prefix}-lote-venta-${sufijo}`,
+          productoNombre: `${prefix}-lote-servicio-${sufijo}`,
+          tipoLinea: "manoobra",
+          cantidad: 1,
+          precioCompraUnidad: 0,
+          precioVentaUnidad: 30000,
+          precioVentaTotal: 30000,
+          beneficio: 30000,
+        })),
+      },
+      `${prefix}-local-lote-ventas`,
+    );
+    assert.equal(loteVentasLocal.length, 2);
+
+    const subidaFilasSecundarias = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      subidaFilasSecundarias.status,
+      3,
+      subidaFilasSecundarias.stderr || subidaFilasSecundarias.stdout,
+    );
+    const operacionesFilasSecundarias = [
+      `${prefix}-local-credit-ventas-generadas`,
+      `${prefix}-local-manoobra-generada`,
+      `${prefix}-local-cliente-con-vehiculo`,
+      `${prefix}-local-lote-ventas`,
+    ];
+    const estadosFilasSecundarias = await localPool.query<{
+      operation_id: string;
+      estado: string;
+      ultimo_error: string | null;
+    }>(
+      `SELECT operation_id, estado, ultimo_error FROM eventos_sincronizacion
+        WHERE operation_id = ANY($1::text[])
+        ORDER BY operation_id`,
+      [operacionesFilasSecundarias],
+    );
+    assert.equal(estadosFilasSecundarias.rowCount, 4);
+    assert.ok(
+      estadosFilasSecundarias.rows.every(
+        ({ estado }) => estado === "sincronizado",
+      ),
+      JSON.stringify(estadosFilasSecundarias.rows),
+    );
+    const conflictoAnterior = await localPool.query(
+      `SELECT 1 FROM eventos_sincronizacion
+        WHERE operation_id = $1 AND estado = 'conflicto'`,
+      [`${prefix}-local-cliente-conflicto`],
+    );
+    assert.equal(conflictoAnterior.rowCount, 1);
+
+    const mapeosVentasAbono = await localPool.query<{
+      id_local: string;
+      id_remoto: string;
+    }>(
+      `SELECT id_local, id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'venta'
+          AND id_local = ANY($1::text[])
+        ORDER BY id_local`,
+      [creditosConAbonosNuevos._syncVentasGeneradas!.map(({ id }) => String(id))],
+    );
+    assert.equal(mapeosVentasAbono.rowCount, 2);
+    const mapeoManoObra = await localPool.query<{
+      id_local: string;
+      id_remoto: string;
+    }>(
+      `SELECT id_local, id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'mano_obra' AND id_local = $1`,
+      [String(manoObraGenerada._syncManoObraId)],
+    );
+    assert.equal(mapeoManoObra.rowCount, 1);
+    const mapeoClienteConVehiculo = await localPool.query<{
+      id_local: string;
+      id_remoto: string;
+    }>(
+      `SELECT id_local, id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'vehiculo' AND id_local = $1`,
+      [String(clienteVehiculoLocal.vehiculos[0]!.id)],
+    );
+    assert.equal(mapeoClienteConVehiculo.rowCount, 1);
+    const mapeoClientePadre = await localPool.query<{
+      id_local: string;
+      id_remoto: string;
+    }>(
+      `SELECT id_local, id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'cliente' AND id_local = $1`,
+      [String(clienteVehiculoLocal.id)],
+    );
+    assert.equal(mapeoClientePadre.rowCount, 1);
+    const mapeosLoteVentas = await localPool.query<{
+      id_local: string;
+      id_remoto: string;
+    }>(
+      `SELECT id_local, id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'venta' AND id_local = ANY($1::text[])
+        ORDER BY id_local`,
+      [loteVentasLocal.map(({ id }) => String(id))],
+    );
+    assert.equal(mapeosLoteVentas.rowCount, 2);
+    assert.notEqual(
+      mapeosLoteVentas.rows[0]?.id_remoto,
+      mapeosLoteVentas.rows[1]?.id_remoto,
+    );
+
+    const ventaAbonoRemotaId = mapeosVentasAbono.rows[0]!.id_remoto;
+    await api(
+      remoteBase(),
+      `/ventas/${ventaAbonoRemotaId}`,
+      "DELETE",
+      undefined,
+      `${prefix}-remote-borrar-venta-abono`,
+    );
+    const manoObraRemotaId = mapeoManoObra.rows[0]!.id_remoto;
+    await api(
+      remoteBase(),
+      `/manoobra/${manoObraRemotaId}`,
+      "PUT",
+      {
+        fecha,
+        descripcion: `${prefix}-manoobra-editada-en-render`,
+        valorTotal: 71000,
+        distribuciones: [],
+      },
+      `${prefix}-remote-editar-manoobra`,
+    );
+    const clienteRemotoId = mapeoClientePadre.rows[0]!.id_remoto;
+    const vehiculoRemotoId = mapeoClienteConVehiculo.rows[0]!.id_remoto;
+    await api(
+      remoteBase(),
+      `/clientes/${clienteRemotoId}/vehiculos/${vehiculoRemotoId}`,
+      "PUT",
+      { placa: `${prefix}-PLACA-EDITADA-EN-RENDER` },
+      `${prefix}-remote-editar-vehiculo-local`,
+    );
+    for (const mapeo of mapeosLoteVentas.rows) {
+      await api(
+        remoteBase(),
+        `/ventas/${mapeo.id_remoto}`,
+        "DELETE",
+        undefined,
+        `${prefix}-remote-borrar-venta-lote-${mapeo.id_local}`,
+      );
+    }
+
+    const clienteVehiculoRemoto = await api<{
+      id: number;
+      vehiculos: Array<{ id: number }>;
+    }>(
+      remoteBase(),
+      "/clientes",
+      "POST",
+      {
+        nombre: `${prefix}-cliente-con-vehiculo-render`,
+        vehiculos: [{ placa: `${prefix}-PLACA-RENDER` }],
+      },
+      `${prefix}-remote-cliente-con-vehiculo`,
+    );
+    assert.equal(clienteVehiculoRemoto.vehiculos.length, 1);
+
+    await delay(2_100);
+    const descargaFilasSecundarias = ejecutarScript(
+      "sincronizar-remoto.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      descargaFilasSecundarias.status,
+      0,
+      descargaFilasSecundarias.stderr || descargaFilasSecundarias.stdout,
+    );
+
+    const ventasAbonoLocales = await localPool.query(
+      `SELECT id FROM ventas_diarias
+        WHERE id = ANY($1::int[])`,
+      [creditosConAbonosNuevos._syncVentasGeneradas!.map(({ id }) => id)],
+    );
+    assert.equal(ventasAbonoLocales.rowCount, 1);
+    assert.equal(
+      ventasAbonoLocales.rows[0]?.id,
+      Number(mapeosVentasAbono.rows[1]!.id_local),
+    );
+    const manoObraLocalActualizada = await localPool.query<{
+      descripcion: string;
+    }>(
+      "SELECT descripcion FROM mano_obra WHERE id = $1",
+      [manoObraGenerada._syncManoObraId],
+    );
+    assert.equal(
+      manoObraLocalActualizada.rows[0]?.descripcion,
+      `${prefix}-manoobra-editada-en-render`,
+    );
+    const vehiculoLocalActualizado = await localPool.query<{ placa: string }>(
+      "SELECT placa FROM vehiculos_cliente WHERE id = $1",
+      [clienteVehiculoLocal.vehiculos[0]!.id],
+    );
+    assert.equal(
+      vehiculoLocalActualizado.rows[0]?.placa,
+      `${prefix}-PLACA-EDITADA-EN-RENDER`,
+    );
+    const ventasLoteLocales = await localPool.query<{ id: number }>(
+      `SELECT id FROM ventas_diarias WHERE id = ANY($1::int[])`,
+      [loteVentasLocal.map(({ id }) => id)],
+    );
+    assert.equal(ventasLoteLocales.rowCount, 0);
+
+    const mapeoClienteCreadoRemoto = await localPool.query<{
+      id_local: string;
+      id_remoto: string;
+    }>(
+      `SELECT id_local, id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'cliente' AND id_remoto = $1`,
+      [String(clienteVehiculoRemoto.id)],
+    );
+    const mapeoVehiculoCreadoRemoto = await localPool.query<{
+      id_local: string;
+      id_remoto: string;
+    }>(
+      `SELECT id_local, id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'vehiculo' AND id_remoto = $1`,
+      [String(clienteVehiculoRemoto.vehiculos[0]!.id)],
+    );
+    assert.equal(mapeoClienteCreadoRemoto.rowCount, 1);
+    assert.equal(mapeoVehiculoCreadoRemoto.rowCount, 1);
+    await api(
+      localBase(),
+      `/clientes/${mapeoClienteCreadoRemoto.rows[0]!.id_local}/vehiculos/${mapeoVehiculoCreadoRemoto.rows[0]!.id_local}`,
+      "PUT",
+      { placa: `${prefix}-PLACA-EDITADA-EN-PC` },
+      `${prefix}-local-editar-vehiculo-remoto`,
+    );
+    const subidaVehiculoCreadoRemoto = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    const estadoSubidaVehiculo = await localPool.query<{
+      estado: string;
+      ultimo_error: string | null;
+    }>(
+      `SELECT estado, ultimo_error FROM eventos_sincronizacion
+        WHERE operation_id = $1`,
+      [`${prefix}-local-editar-vehiculo-remoto`],
+    );
+    assert.equal(
+      subidaVehiculoCreadoRemoto.status,
+      3,
+      [
+        subidaVehiculoCreadoRemoto.stderr ||
+          subidaVehiculoCreadoRemoto.stdout,
+        JSON.stringify(estadoSubidaVehiculo.rows),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    const vehiculoRemotoActualizado = await remotePool.query<{ placa: string }>(
+      "SELECT placa FROM vehiculos_cliente WHERE id = $1",
+      [Number(clienteVehiculoRemoto.vehiculos[0]!.id)],
+    );
+    assert.equal(
+      vehiculoRemotoActualizado.rows[0]?.placa,
+      `${prefix}-PLACA-EDITADA-EN-PC`,
+    );
+
     const eventoAntiguo = `${prefix}-retencion`;
     const eventoErrorAntiguo = `${prefix}-error`;
     const eventoConflictoAntiguo = `${prefix}-conflicto`;
@@ -1452,6 +1903,9 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
       assert.equal(duplicadosRemotos.rowCount, 0);
       assert.equal(duplicadosLocales.rowCount, 0);
     }
+  } catch (error) {
+    errorPrueba = error;
+    huboErrorPrueba = true;
   } finally {
     try {
       if (localApi && remoteApi) {
@@ -1491,16 +1945,34 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
       }
       await Promise.all(
         [localPool, remotePool].map((pool) =>
-          pool.query(
-            `DELETE FROM eventos_sincronizacion;
-               DELETE FROM operaciones_sincronizadas;
-               DELETE FROM referencias_sincronizacion;
-               DELETE FROM cursos_sincronizacion;`,
-          ),
+          (async () => {
+            await pool.query("DELETE FROM eventos_sincronizacion");
+            await pool.query("DELETE FROM operaciones_sincronizadas");
+            await pool.query("DELETE FROM referencias_sincronizacion");
+            await pool.query("DELETE FROM cursos_sincronizacion");
+          })(),
         ),
       );
       await Promise.all(
         [localPool, remotePool].map(async (pool) => {
+          await pool.query(
+            "UPDATE mano_obra SET venta_id = NULL WHERE descripcion LIKE $1",
+            [`${prefix}%`],
+          );
+          await pool.query(
+            "UPDATE ventas_diarias SET mano_obra_id = NULL WHERE referencia LIKE $1",
+            [`${prefix}%`],
+          );
+          await pool.query(
+            `DELETE FROM distribuciones_mano_obra
+              WHERE mano_obra_id IN (
+                SELECT id FROM mano_obra WHERE descripcion LIKE $1
+              )`,
+            [`${prefix}%`],
+          );
+          await pool.query("DELETE FROM mano_obra WHERE descripcion LIKE $1", [
+            `${prefix}%`,
+          ]);
           await pool.query(
             "DELETE FROM ventas_diarias WHERE referencia LIKE $1",
             [`${prefix}%`],
@@ -1510,10 +1982,33 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
           ]);
         }),
       );
-    } finally {
-      detenerApi(localApi);
-      detenerApi(remoteApi);
-      await Promise.all([localPool.end(), remotePool.end()]);
+    } catch (error) {
+      erroresLimpieza.push(error);
     }
+
+    detenerApi(localApi);
+    detenerApi(remoteApi);
+    try {
+      await Promise.all([localPool.end(), remotePool.end()]);
+    } catch (error) {
+      erroresLimpieza.push(error);
+    }
+  }
+
+  if (huboErrorPrueba) {
+    if (erroresLimpieza.length > 0) {
+      throw new AggregateError(
+        [errorPrueba, ...erroresLimpieza],
+        "La E2E falló y también hubo errores durante la limpieza; el primer error corresponde al escenario de prueba.",
+        { cause: errorPrueba },
+      );
+    }
+    throw errorPrueba;
+  }
+  if (erroresLimpieza.length > 0) {
+    throw new AggregateError(
+      erroresLimpieza,
+      "La limpieza de la E2E no se completó correctamente.",
+    );
   }
 });

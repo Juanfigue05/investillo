@@ -120,6 +120,7 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
   let precioCompraFinal: number | null = null;
   let precioVentaFinal: number | null = null;
   let precioVentaSinIvaRegistrado: number | null = null;
+  let historialPrecioId: number | undefined;
   let preciosModificados = false;
 
   if (estado === "llegado" && cantidadRecibida) {
@@ -159,7 +160,7 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
       await db.update(productosTable).set(updateProd).where(eq(productosTable.id, existing.productoId));
 
       const hoy = fechaHoyColombia();
-      await db.insert(historialPreciosTable).values({
+      const [historialPrecio] = await db.insert(historialPreciosTable).values({
         productoId: existing.productoId,
         productoNombre: existing.productoNombre,
         productoCodigo: existing.productoCodigo,
@@ -170,7 +171,8 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
         compraId: id,
         proveedor: proveedor || null,
         actualizoPrecioInventario: actualizarPrecioInventario !== false ? "si" : "no",
-      });
+      }).returning({ id: historialPreciosTable.id });
+      historialPrecioId = historialPrecio.id;
     }
   }
 
@@ -185,7 +187,7 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
   }
 
   const [compra] = await db.update(comprasTable).set(updateData).where(eq(comprasTable.id, id)).returning();
-  return { compra, preciosModificados };
+  return { compra, preciosModificados, historialPrecioId };
 }
 
 router.put("/:id", async (req, res) => {
@@ -198,12 +200,33 @@ router.put("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
 
   try {
-    const { compra, preciosModificados } = await procesarLlegadaCompra(id, req.body);
+    const { compra, preciosModificados, historialPrecioId } =
+      await procesarLlegadaCompra(id, req.body);
     if (!req.header("x-sync-apply")) {
-      await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "compra", entidadId: String(compra.id), tipo: "llegada", metodo: "PUT", endpoint: `/compras/${id}`, payload: req.body, origen: "local" });
+      await db.insert(eventosSincronizacionTable).values({
+        operationId,
+        entidad: "compra",
+        entidadId: String(compra.id),
+        tipo: "llegada",
+        metodo: "PUT",
+        endpoint: `/compras/${id}`,
+        payload: req.body,
+        referenciasRespuesta: historialPrecioId === undefined
+          ? []
+          : [{
+              campo: "_syncHistorialPrecioId",
+              entidad: "historial_precios",
+              valorLocal: String(historialPrecioId),
+            }],
+        origen: "local",
+      });
     }
     await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra", recursoId: compra.id }).onConflictDoNothing();
-    res.json({ ...mapCompra(compra), preciosModificados });
+    res.json({
+      ...mapCompra(compra),
+      preciosModificados,
+      _syncHistorialPrecioId: historialPrecioId,
+    });
   } catch (err) {
     res.status(404).json({ error: String(err) });
   }
@@ -234,10 +257,21 @@ router.post("/lote-llegada", async (req, res) => {
     }
   }
   
-  const resultados = [];
+  const resultados: Array<
+    ReturnType<typeof mapCompra> & {
+      preciosModificados: boolean;
+      _syncHistorialPrecioId?: number;
+    }
+  > = [];
+  const referenciasRespuesta: Array<{
+    campo: string;
+    entidad: string;
+    valorLocal: string;
+  }> = [];
   try {
-    for (const item of items) {
-      const { compra, preciosModificados } = await procesarLlegadaCompra(item.id, {
+    for (const [index, item] of items.entries()) {
+      const { compra, preciosModificados, historialPrecioId } =
+        await procesarLlegadaCompra(item.id, {
       estado: "llegado",
       cantidadRecibida: item.cantidadRecibida,
       cantidadLocal: item.cantidadLocal,
@@ -249,17 +283,44 @@ router.post("/lote-llegada", async (req, res) => {
       fechaLlegada,
       actualizarPrecioInventario: item.actualizarPrecioInventario,
     });
-      resultados.push({ ...mapCompra(compra), preciosModificados });
+      resultados.push({
+        ...mapCompra(compra),
+        preciosModificados,
+        _syncHistorialPrecioId: historialPrecioId,
+      });
+      if (historialPrecioId !== undefined) {
+        referenciasRespuesta.push({
+          campo: `resultados.${index}._syncHistorialPrecioId`,
+          entidad: "historial_precios",
+          valorLocal: String(historialPrecioId),
+        });
+      }
     }
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
     return;
   }
 
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "compra_lote", entidadId: operationId, tipo: "lote_llegada", metodo: "POST", endpoint: "/compras/lote-llegada", payload: req.body, origen: "local" });
+  if (!req.header("x-sync-apply")) {
+    await db.insert(eventosSincronizacionTable).values({
+      operationId,
+      entidad: "compra_lote",
+      entidadId: operationId,
+      tipo: "lote_llegada",
+      metodo: "POST",
+      endpoint: "/compras/lote-llegada",
+      payload: req.body,
+      referenciasRespuesta,
+      origen: "local",
+    });
+  }
   await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra_lote", recursoId: null }).onConflictDoNothing();
 
-  res.json({ ok: true, procesados: resultados.length, resultados });
+  res.json({
+    ok: true,
+    procesados: resultados.length,
+    resultados,
+  });
 });
 
 router.delete("/:id", async (req, res) => {

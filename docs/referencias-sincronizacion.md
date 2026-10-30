@@ -151,13 +151,48 @@ se guardan en `referenciasEndpoint`.
 - Las respuestas de clientes incluyen IDs de vehículos. Las respuestas de
   mano de obra incluyen IDs de distribuciones y trabajadores. Los mapeadores
   de créditos incluyen IDs de líneas, mano de obra y abonos.
-- Los eventos solo configuran mapeo explícito de IDs anidados en
-  `referenciasRespuesta` para POST `/creditos` (`_syncNuevoAbonoId` y
-  `lineas.{index}.id` → `credito_linea`) y PUT `/creditos/:id`
-  (`lineas.{index}.id` de líneas nuevas). POST de abono devuelve
-  `_syncNuevoAbonoId`, pero no configura `referenciasRespuesta`. El resto de
-  respuestas con IDs anidados no los registra explícitamente como
-  `referenciasRespuesta`.
+- `referenciasRespuesta` registra las filas secundarias que se pueden volver
+  a identificar mediante una ruta:
+  - POST `/clientes` → `vehiculos.{index}.id` (`vehiculo`).
+  - POST `/ventas/manoobra` → `_syncManoObraId` (`mano_obra`).
+  - POST `/ventas/lote-pago-antiguo` → `{index}.id` (`venta`).
+  - POST `/descuentos-inventario` → `{index}.id` (`descuento_inventario`).
+  - PUT `/compras/:id` y POST `/compras/lote-llegada` → el ID de cada fila
+    `historial_precios` en `_syncHistorialPrecioId`.
+  - POST/PUT `/creditos` → líneas nuevas en `lineas.{index}.id`
+    (`credito_linea`), mano de obra en `_syncManoObraId` cuando existe y
+    filas de ventas generadas en `_syncVentasGeneradas.{index}.id` (`venta`).
+  - POST/PUT `/creditos/:id/abono` → filas de ventas generadas en
+    `_syncVentasGeneradas.{index}.id` (`venta`). POST `/creditos` mantiene
+    además `_syncNuevoAbonoId` para el abono inicial.
+- Las respuestas conservan sus campos previos. Los IDs que antes no estaban
+  disponibles para una correlación de sincronización se exponen como campos
+  adicionales con prefijo `_sync`.
+- Al crear un crédito con abono inicial, `id` identifica el crédito y
+  `_syncNuevoAbonoId` identifica el abono. La sincronización elige el ID
+  principal según la entidad del evento (`credito` o `abono_credito`); no debe
+  tratar el ID del abono como el del crédito. Las pruebas cubren subida y
+  descarga con IDs distintos y la traducción inversa entre ambos lados.
+
+## Filas secundarias revisadas
+
+| Ruta que las crea | Tabla y respuesta | ¿Otro endpoint puede nombrar la fila? |
+|---|---|---|
+| POST `/clientes` con `vehiculos` | `vehiculos_cliente`; la respuesta ya incluye `vehiculos[].id`. | Sí: PUT/DELETE `/clientes/:clienteId/vehiculos/:id`. |
+| POST `/ventas/manoobra` | `mano_obra`; la respuesta anterior solo devolvía la venta. Se agrega `_syncManoObraId`. | Sí: PUT/DELETE `/manoobra/:id`. |
+| POST `/ventas/lote-pago-antiguo` | Varias `ventas_diarias`; la respuesta ya es un arreglo de ventas con `id`. | Sí: PUT/DELETE `/ventas/:id`. Cada elemento queda asociado por su índice. |
+| POST `/creditos` | `credito_lineas` y el abono inicial ya incluyen sus IDs; se registran como `lineas.{index}.id` y `_syncNuevoAbonoId`. La mano de obra vinculada se expone como `_syncManoObraId`. Las ventas de los abonos se exponen en `_syncVentasGeneradas`. | Sí: PUT/DELETE `/creditos/:id` para líneas; PUT/DELETE `/creditos/:id/abono/:id` para abonos; PUT/DELETE `/ventas/:id` para ventas. La ruta directa `/manoobra/:id` rechaza la edición de mano de obra perteneciente a un crédito, pero se mapea para conservar la identidad. |
+| POST `/creditos/:id/abono` | Abono con ID en `_syncNuevoAbonoId`; puede crear varias `ventas_diarias`, ahora expuestas en `_syncVentasGeneradas`. | Sí: PUT/DELETE `/creditos/:id/abono/:id` y PUT/DELETE `/ventas/:id`. |
+| PUT `/creditos/:id` y PUT `/creditos/:id/abono/:id` | La reconstrucción de abonos elimina y vuelve a crear filas `ventas_diarias`; los IDs nuevos se devuelven en `_syncVentasGeneradas`. | Sí: PUT/DELETE `/ventas/:id`. |
+| PUT `/compras/:id` y POST `/compras/lote-llegada` | Cada llegada puede crear una `historial_precios`; se agrega `_syncHistorialPrecioId` a la respuesta o al resultado del lote. | Sí: DELETE `/historial-precios/:id`. |
+| POST `/descuentos-inventario` | Varias `descuentos_inventario`; la respuesta ya incluye el ID de cada elemento. | Sí: PUT/DELETE `/descuentos-inventario/:id`. |
+
+Las rutas de importación se revisaron por separado: crean o actualizan las
+entidades principales de sus lotes (`clientes` o `productos`), no filas
+secundarias asociadas a una fila principal. Los borradores del cierre diario
+son filas temporales de otra tabla sin ID usado por los endpoints de
+sincronización. Las distribuciones de mano de obra se dejan fuera porque son
+filas dependientes sin endpoint que acepte su ID.
 
 ## Dudas y casos raros
 
@@ -166,16 +201,11 @@ se guardan en `referenciasEndpoint`.
   (`clientes-import.ts:146,188`); las importaciones de inventario también
   usan `/inventario-import/sincronizar` para importar, confirmar productos
   nuevos y resolver (`inventario-import.ts:279,326,354`).
-- `/ventas/manoobra` emite la entidad `venta` y devuelve la fila de venta,
-  aunque también crea mano de obra; el evento no registra el ID de esa fila
-  de mano de obra (`ventas.ts:295–341`).
 - `/cierre-diario` es POST pero puede actualizar un cierre existente o
   crear uno nuevo (`cierre-diario.ts:149–157`).
 - El borrado de un abono emite `entidad: "abono_credito"` y el ID del abono,
   pero la operación idempotente asociada se registra como tipo `credito`
   con el ID del crédito (`creditos.ts:945–946`).
-- POST `/creditos/:creditoId/abono` devuelve `_syncNuevoAbonoId`, pero no
-  incluye `referenciasRespuesta` en el evento (`creditos.ts:873,878`).
 - El payload de cierre acepta dos formas para trabajadores; su tipo de
   entrada es `unknown`, por lo que no está claro si hay otras formas
   admitidas (`cierre-diario.ts:65,76–85`).

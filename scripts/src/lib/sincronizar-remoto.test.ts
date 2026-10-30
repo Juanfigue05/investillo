@@ -84,6 +84,12 @@ const idsPrueba = [
   idBase + 303,
   idBase + 304,
   idBase + 305,
+  idBase + 401,
+  idBase + 402,
+  idBase + 403,
+  idBase + 404,
+  idBase + 405,
+  idBase + 406,
 ].map(String);
 
 function responder(
@@ -290,6 +296,10 @@ async function cursor(): Promise<{ valor: string; operacion_id: string | null }>
 }
 
 test("descarga traduce referencias, conserva el cursor ante esperas y rechaza referencias desconocidas", async () => {
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS referencias_sincronizacion_entidad_remoto_uidx
+      ON referencias_sincronizacion (entidad, id_remoto)
+  `);
   const remoto = iniciarServidorRemoto();
   const local = iniciarServidorLocal();
   let cursorAnterior: Array<{
@@ -610,6 +620,103 @@ test("descarga traduce referencias, conserva el cursor ante esperas y rechaza re
     );
     assert.equal((await cursor()).operacion_id, `${prefix}-evento-15`);
     respuestaPostLocal = () => ({ id: proximoIdLocal++ });
+
+    eventosRecibidos.length = 0;
+    solicitudesLocales.length = 0;
+    const creditoRemotoConAbonoId = idsPrueba[24]!;
+    const abonoRemotoInicialId = idsPrueba[25]!;
+    const creditoLocalConAbonoId = idsPrueba[20]!;
+    const abonoLocalInicialId = idsPrueba[21]!;
+    const abonoRemotoEditadoId = idsPrueba[23]!;
+    const abonoLocalEditadoId = idsPrueba[22]!;
+    respuestaPostLocal = (endpoint) =>
+      endpoint === "/creditos"
+        ? {
+            id: Number(creditoLocalConAbonoId),
+            _syncNuevoAbonoId: Number(abonoLocalInicialId),
+          }
+        : {
+            id: Number(creditoLocalConAbonoId),
+            _syncNuevoAbonoId: Number(abonoLocalEditadoId),
+          };
+    eventosRemotos = [
+      crearEvento(
+        "POST",
+        "/creditos",
+        "credito",
+        creditoRemotoConAbonoId,
+        { tipo: "credito" },
+        {
+          referenciasRespuesta: [{
+            campo: "_syncNuevoAbonoId",
+            entidad: "abono_credito",
+            valorLocal: abonoRemotoInicialId,
+          }],
+        },
+        17,
+      ),
+      crearEvento(
+        "POST",
+        "/creditos/{creditoId}/abono",
+        "abono_credito",
+        abonoRemotoEditadoId,
+        { valor: 10 },
+        {
+          referenciasEndpoint: [{
+            marcador: "{creditoId}",
+            entidad: "credito",
+            valorLocal: creditoRemotoConAbonoId,
+          }],
+        },
+        18,
+      ),
+    ];
+    const creditosConAbonosDescargados = await ejecutarDescarga();
+    assert.equal(
+      creditosConAbonosDescargados.status,
+      0,
+      `${creditosConAbonosDescargados.stdout}\n${creditosConAbonosDescargados.stderr}`,
+    );
+    assert.deepEqual(
+      eventosRecibidos.map(({ metodo, endpoint }) => [metodo, endpoint]),
+      [
+        ["POST", "/creditos"],
+        ["POST", `/creditos/${creditoLocalConAbonoId}/abono`],
+      ],
+    );
+    const equivalenciasCreditoAbono = await pool.query<{
+      entidad: string;
+      id_local: string;
+      id_remoto: string;
+    }>(
+      `SELECT entidad, id_local, id_remoto FROM referencias_sincronizacion
+        WHERE (entidad, id_remoto) IN (
+          ('credito', $1), ('abono_credito', $2), ('abono_credito', $3)
+        )
+        ORDER BY entidad, id_remoto`,
+      [
+        creditoRemotoConAbonoId,
+        abonoRemotoInicialId,
+        abonoRemotoEditadoId,
+      ],
+    );
+    assert.deepEqual(equivalenciasCreditoAbono.rows, [
+      {
+        entidad: "abono_credito",
+        id_local: abonoLocalEditadoId,
+        id_remoto: abonoRemotoEditadoId,
+      },
+      {
+        entidad: "abono_credito",
+        id_local: abonoLocalInicialId,
+        id_remoto: abonoRemotoInicialId,
+      },
+      {
+        entidad: "credito",
+        id_local: creditoLocalConAbonoId,
+        id_remoto: creditoRemotoConAbonoId,
+      },
+    ]);
   } finally {
     try {
       if (remoto.listening) await cerrar(remoto);
