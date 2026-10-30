@@ -84,6 +84,15 @@ export function valorEnRuta(valor: unknown, ruta: string): unknown {
   }, valor);
 }
 
+export function productoImportadoAusente(
+  referencia: ReferenciaRespuesta,
+  respuesta: unknown,
+): boolean {
+  return referencia.entidad === "producto" &&
+    /^_syncProductos\.\d+\.id$/.test(referencia.campo) &&
+    valorEnRuta(respuesta, referencia.campo) === null;
+}
+
 export function relacionesDeRespuesta(
   referencias: ReferenciaRespuesta[],
   respuesta: unknown,

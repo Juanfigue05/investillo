@@ -172,7 +172,10 @@ se guardan en `referenciasEndpoint`.
     `/inventario-import/aplicar-completo` → productos afectados en
     `_syncProductos.{index}.id` (`producto`). Los IDs se correlacionan en el
     orden de las filas afectadas; si un producto ya existe en el destino, se
-    actualiza por `codigo` y se devuelve su ID existente, sin duplicarlo.
+    actualiza por `codigo` y se devuelve su ID existente, sin duplicarlo. Si
+    un código no devuelve fila en un lado, se conserva su posición con `null`;
+    esa posición no crea equivalencia y la sincronización emite una advertencia
+    sin bloquear el cursor.
   - POST `/clientes-import`, `/clientes-import/sincronizar` y
     `/clientes-import/resolver-telefonos` → clientes insertados en
     `_syncClientes.{index}.id` (`cliente`). Se insertan en una transacción,
@@ -186,6 +189,10 @@ se guardan en `referenciasEndpoint`.
   principal según la entidad del evento (`credito` o `abono_credito`); no debe
   tratar el ID del abono como el del crédito. Las pruebas cubren subida y
   descarga con IDs distintos y la traducción inversa entre ambos lados.
+- La captura remota de peticiones multipart no reemplaza el payload ni las
+  referencias que guardó la ruta de importación con el mismo `operationId`.
+  Si falla el registro adicional de una captura, el error queda en el log y
+  no se propaga a la respuesta de la petición.
 
 ## Filas secundarias revisadas
 

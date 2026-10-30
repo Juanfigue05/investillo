@@ -7,6 +7,7 @@ import {
   relacionesDeRespuesta,
   endpointDeRecuperacion,
   idPrincipalDeRespuesta,
+  productoImportadoAusente,
   traducirIdsLineaCredito,
 } from "./lib/credito-lineas-sync";
 import { verificarPuntoPartida } from "./lib/punto-partida";
@@ -435,6 +436,12 @@ try {
               relacion.idRemoto === referencia.valorLocal,
           );
           if (guardada) continue;
+          if (productoImportadoAusente(referencia, respuestaLocal)) {
+            console.warn(
+              `No se creó equivalencia para el producto ${referencia.valorLocal}: el destino devolvió null en ${referencia.campo}; se omitirá esta referencia.`,
+            );
+            continue;
+          }
 
           const existente = await client.query(
             `SELECT 1 FROM referencias_sincronizacion

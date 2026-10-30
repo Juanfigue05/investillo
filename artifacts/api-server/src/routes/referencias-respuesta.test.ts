@@ -21,6 +21,10 @@ import {
 } from "@workspace/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import app from "../app";
+import {
+  productosEnOrden,
+  referenciasRespuestaProductos,
+} from "./inventario-import";
 
 const operationIds = new Set<string>();
 type ReferenciaRespuestaTest = {
@@ -74,6 +78,34 @@ async function crearProducto(codigo: string) {
 }
 
 describe("referencias de respuesta en filas secundarias", () => {
+  it("conserva las posiciones de productos ausentes sin desplazar referencias", () => {
+    const productos = productosEnOrden(
+      ["COD-A", "COD-FALTA", "COD-C"],
+      [
+        { codigo: "COD-A", id: 101 },
+        { codigo: "COD-C", id: 303 },
+      ],
+    );
+
+    expect(productos).toEqual([
+      { codigo: "COD-A", id: 101 },
+      { codigo: "COD-FALTA", id: null },
+      { codigo: "COD-C", id: 303 },
+    ]);
+    expect(referenciasRespuestaProductos(productos)).toEqual([
+      {
+        campo: "_syncProductos.0.id",
+        entidad: "producto",
+        valorLocal: "101",
+      },
+      {
+        campo: "_syncProductos.2.id",
+        entidad: "producto",
+        valorLocal: "303",
+      },
+    ]);
+  });
+
   it("mapea los productos importados en el orden de entrada y no duplica el reintento", async () => {
     const operation = operationId();
     const items = [

@@ -47,25 +47,29 @@ interface ProductoNuevo {
   cantidad: number | null;
 }
 
-type ProductoImportado = { codigo: string; id: number };
+type ProductoImportado = { codigo: string; id: number | null };
 
-function referenciasRespuestaProductos(productos: ProductoImportado[]) {
-  return productos.map((producto, index) => ({
-    campo: `_syncProductos.${index}.id`,
-    entidad: "producto",
-    valorLocal: String(producto.id),
-  }));
+export function referenciasRespuestaProductos(productos: ProductoImportado[]) {
+  return productos.flatMap((producto, index) =>
+    producto.id === null
+      ? []
+      : [{
+          campo: `_syncProductos.${index}.id`,
+          entidad: "producto",
+          valorLocal: String(producto.id),
+        }],
+  );
 }
 
-function productosEnOrden(
+export function productosEnOrden(
   codigos: string[],
   filas: ProductoImportado[],
 ): ProductoImportado[] {
   const idsPorCodigo = new Map(filas.map(({ codigo, id }) => [codigo, id]));
-  return codigos.flatMap((codigo) => {
-    const id = idsPorCodigo.get(codigo);
-    return id === undefined ? [] : [{ codigo, id }];
-  });
+  return codigos.map((codigo) => ({
+    codigo,
+    id: idsPorCodigo.get(codigo) ?? null,
+  }));
 }
 
 async function upsertRows(

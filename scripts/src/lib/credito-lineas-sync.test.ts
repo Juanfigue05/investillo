@@ -6,6 +6,7 @@ import {
   idsLineaPendiente,
   idsLineaCreditoEnPayload,
   idPrincipalDeRespuesta,
+  productoImportadoAusente,
   relacionesDeRespuesta,
   resolverEndpointConReferencias,
   traducirIdCreditoEnEndpoint,
@@ -41,6 +42,41 @@ test("resuelve rutas anidadas en respuestas de crédito", () => {
   assert.equal(
     valorEnRuta({ lineas: [{ id: 8 }, { id: 12 }] }, "lineas.1.id"),
     12,
+  );
+});
+
+test("reconoce únicamente slots nulos de productos importados", () => {
+  const referencia = {
+    campo: "_syncProductos.1.id",
+    entidad: "producto",
+    valorLocal: "44",
+  };
+  assert.equal(
+    productoImportadoAusente(referencia, {
+      _syncProductos: [{ id: 11 }, { id: null }, { id: 33 }],
+    }),
+    true,
+  );
+  assert.equal(
+    productoImportadoAusente(referencia, {
+      _syncProductos: [{ id: 11 }, { id: 22 }, { id: 33 }],
+    }),
+    false,
+  );
+  assert.equal(
+    productoImportadoAusente(
+      { ...referencia, campo: "_syncClientes.1.id", entidad: "cliente" },
+      { _syncClientes: [{ id: 11 }, { id: null }] },
+    ),
+    false,
+  );
+  assert.deepEqual(
+    relacionesDeRespuesta(
+      [referencia],
+      { _syncProductos: [{ id: 11 }, { id: null }, { id: 33 }] },
+      "local",
+    ),
+    [],
   );
 });
 

@@ -5,6 +5,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ExcelJS from "exceljs";
 import pg from "pg";
 import test from "node:test";
 import { TABLAS_HUELLA } from "@workspace/db/schema";
@@ -174,6 +175,68 @@ async function api<T>(
     `${method} ${endpoint}: HTTP ${response.status} ${JSON.stringify(result)}`,
   );
   return result as T;
+}
+
+async function apiExcel<T>(
+  baseUrl: string,
+  endpoint: string,
+  buffer: Buffer,
+  operationId: string,
+): Promise<T> {
+  const form = new FormData();
+  form.append(
+    "archivo",
+    new Blob([Uint8Array.from(buffer)], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    "inventario.xlsx",
+  );
+  const response = await fetch(`${baseUrl}/api${endpoint}`, {
+    method: "POST",
+    headers: { "X-Operation-Id": operationId },
+    body: form,
+  });
+  const result = await response.json();
+  assert.ok(
+    response.ok,
+    `POST ${endpoint}: HTTP ${response.status} ${JSON.stringify(result)}`,
+  );
+  return result as T;
+}
+
+async function inventarioExcel(
+  productos: Array<{
+    codigo: string;
+    nombre: string;
+    precioCompra?: number;
+    precioVenta?: number;
+    cantidad?: number | null;
+  }>,
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.addWorksheet("Productos").addRows([
+    [
+      "CODIGO",
+      "NOMBRE",
+      "REFERENCIA",
+      "REFERENCIA 2",
+      "MARCA",
+      "SE COMPRA",
+      "SE VENDE A",
+      "CANTIDAD",
+    ],
+    ...productos.map((producto) => [
+      producto.codigo,
+      producto.nombre,
+      null,
+      null,
+      null,
+      producto.precioCompra ?? 10000,
+      producto.precioVenta ?? 15000,
+      producto.cantidad ?? null,
+    ]),
+  ]);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
 function ejecutarScript(
@@ -1043,6 +1106,241 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
         ],
       ],
     );
+
+    const codigoMultipartRemoto = `${prefix}-COD-MULTIPART-REMOTO`;
+    const productoBaseMultipart = await api<{ id: number }>(
+      remoteBase(),
+      "/inventario",
+      "POST",
+      {
+        nombre: `${prefix}-producto-multipart-original`,
+        codigo: codigoMultipartRemoto,
+        precioCompra: 10000,
+        precioVentaSinIva: 15000,
+        tieneIva: false,
+        stockActual: 10,
+        stockMinimo: 0,
+      },
+      `${prefix}-producto-multipart-original`,
+      true,
+    );
+    const importacionMultipart = await apiExcel<{
+      _syncProductos: Array<{ codigo: string; id: number | null }>;
+    }>(
+      remoteBase(),
+      "/inventario-import",
+      await inventarioExcel([{
+        codigo: codigoMultipartRemoto,
+        nombre: `${prefix}-producto-multipart-remoto`,
+        cantidad: 10,
+      }]),
+      `${prefix}-importar-excel-remoto`,
+    );
+    assert.deepEqual(importacionMultipart._syncProductos, [
+      { codigo: codigoMultipartRemoto, id: productoBaseMultipart.id },
+    ]);
+    await delay(2_100);
+    const descargaExcelRemoto = ejecutarScript(
+      "sincronizar-remoto.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      descargaExcelRemoto.status,
+      0,
+      descargaExcelRemoto.stderr || descargaExcelRemoto.stdout,
+    );
+    const productoMultipartLocal = await localPool.query<{ id: number }>(
+      "SELECT id FROM productos WHERE codigo = $1 AND nombre = $2",
+      [codigoMultipartRemoto, `${prefix}-producto-multipart-remoto`],
+    );
+    assert.equal(productoMultipartLocal.rowCount, 1);
+    const equivalenciaMultipart = await localPool.query<{
+      id_local: string;
+      id_remoto: string;
+    }>(
+      `SELECT id_local, id_remoto FROM referencias_sincronizacion
+        WHERE entidad = 'producto' AND id_remoto = $1`,
+      [String(productoBaseMultipart.id)],
+    );
+    assert.equal(
+      equivalenciaMultipart.rows[0]?.id_local,
+      String(productoMultipartLocal.rows[0]?.id),
+    );
+    const eventoMultipart = await remotePool.query<{
+      origen: string;
+      estado: string;
+      payload: { items?: unknown[] };
+      referencias_respuesta: Array<{ campo: string }>;
+    }>(
+      `SELECT origen, estado, payload, referencias_respuesta
+         FROM eventos_sincronizacion WHERE operation_id = $1`,
+      [`${prefix}-importar-excel-remoto`],
+    );
+    assert.equal(eventoMultipart.rows[0]?.origen, "remoto");
+    assert.equal(eventoMultipart.rows[0]?.estado, "sincronizado");
+    assert.equal(eventoMultipart.rows[0]?.payload.items?.length, 1);
+    assert.deepEqual(
+      eventoMultipart.rows[0]?.referencias_respuesta.map(({ campo }) => campo),
+      ["_syncProductos.0.id"],
+    );
+    await api(
+      localBase(),
+      "/ventas",
+      "POST",
+      {
+        fecha: new Date().toISOString().slice(0, 10),
+        referencia: `${prefix}-venta-producto-multipart-remoto`,
+        tipoLinea: "venta",
+        productoId: Number(productoMultipartLocal.rows[0]?.id),
+        productoNombre: `${prefix}-producto-multipart-remoto`,
+        productoCodigo: codigoMultipartRemoto,
+        cantidad: 1,
+        precioCompraUnidad: 10000,
+        precioVentaUnidad: 15000,
+        precioVentaTotal: 15000,
+        beneficio: 5000,
+      },
+      `${prefix}-venta-producto-multipart-remoto`,
+    );
+    await delay(2_100);
+    const sincronizaUsoMultipart = ejecutarScript(
+      "sincronizar-local.ts",
+      scriptEnv(localUrl),
+    );
+    assert.equal(
+      sincronizaUsoMultipart.status,
+      0,
+      sincronizaUsoMultipart.stderr || sincronizaUsoMultipart.stdout,
+    );
+    const ventaMultipartRemota = await remotePool.query<{
+      producto_id: number;
+    }>(
+      "SELECT producto_id FROM ventas_diarias WHERE referencia = $1",
+      [`${prefix}-venta-producto-multipart-remoto`],
+    );
+    assert.equal(
+      ventaMultipartRemota.rows[0]?.producto_id,
+      productoBaseMultipart.id,
+    );
+    await remotePool.query(
+      "DELETE FROM eventos_sincronizacion WHERE operation_id = $1",
+      [`${prefix}-importar-excel-remoto`],
+    );
+
+    const productosAlineacion = [
+      {
+        codigo: `${prefix}-ALINEAR-A`,
+        nombre: `${prefix}-producto-alinear-a`,
+      },
+      {
+        codigo: `${prefix}-ALINEAR-FALTA`,
+        nombre: `${prefix}-producto-alinear-falta`,
+      },
+      {
+        codigo: `${prefix}-ALINEAR-C`,
+        nombre: `${prefix}-producto-alinear-c`,
+      },
+    ];
+    const productosAlineacionLocal: Array<{ codigo: string; id: number }> = [];
+    for (const producto of productosAlineacion) {
+      const creado = await api<{ id: number }>(
+        localBase(),
+        "/inventario",
+        "POST",
+        {
+          nombre: producto.nombre,
+          codigo: producto.codigo,
+          precioCompra: 10000,
+          precioVentaSinIva: 15000,
+          tieneIva: false,
+          stockActual: 10,
+          stockMinimo: 0,
+        },
+        `${prefix}-seed-${producto.codigo}`,
+        true,
+      );
+      productosAlineacionLocal.push({ ...producto, id: creado.id });
+    }
+    const codigoAusente = productosAlineacion[1]!.codigo;
+    try {
+      await remotePool.query(
+        `DROP TRIGGER IF EXISTS sync_e2e_skip_missing_product ON productos;
+         CREATE OR REPLACE FUNCTION sync_e2e_skip_missing_product()
+         RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN
+           IF NEW.codigo = '${codigoAusente}' THEN RETURN NULL; END IF;
+           RETURN NEW;
+         END $$;
+         CREATE TRIGGER sync_e2e_skip_missing_product
+         BEFORE INSERT ON productos FOR EACH ROW
+         EXECUTE FUNCTION sync_e2e_skip_missing_product()`,
+      );
+      const operationAlineacion = `${prefix}-importar-excel-alineacion`;
+      const importacionAlineacion = await apiExcel<{
+        _syncProductos: Array<{ codigo: string; id: number | null }>;
+      }>(
+        localBase(),
+        "/inventario-import",
+        await inventarioExcel(productosAlineacion),
+        operationAlineacion,
+      );
+      assert.equal(importacionAlineacion._syncProductos.length, 3);
+      assert.ok(
+        importacionAlineacion._syncProductos.every(
+          (producto) => Number.isInteger(producto.id),
+        ),
+      );
+      await delay(2_100);
+      const sincronizaAlineacion = ejecutarScript(
+        "sincronizar-local.ts",
+        scriptEnv(localUrl),
+      );
+      assert.equal(
+        sincronizaAlineacion.status,
+        0,
+        sincronizaAlineacion.stderr || sincronizaAlineacion.stdout,
+      );
+      assert.match(
+        `${sincronizaAlineacion.stdout}\n${sincronizaAlineacion.stderr}`,
+        /No se creó equivalencia para el producto .*_syncProductos\.1\.id/,
+      );
+      const equivalenciasAlineadas = await localPool.query<{
+        id_local: string;
+        id_remoto: string;
+      }>(
+        `SELECT id_local, id_remoto FROM referencias_sincronizacion
+          WHERE entidad = 'producto' AND id_local = ANY($1::text[])`,
+        [productosAlineacionLocal.map(({ id }) => String(id))],
+      );
+      assert.equal(equivalenciasAlineadas.rowCount, 2);
+      for (const indice of [0, 2]) {
+        const productoLocal = productosAlineacionLocal[indice]!;
+        const productoRemoto = await remotePool.query<{ id: number }>(
+          "SELECT id FROM productos WHERE codigo = $1",
+          [productoLocal.codigo],
+        );
+        const equivalencia = equivalenciasAlineadas.rows.find(
+          (relacion) => relacion.id_local === String(productoLocal.id),
+        );
+        assert.equal(productoRemoto.rowCount, 1);
+        assert.equal(equivalencia?.id_remoto, String(productoRemoto.rows[0]?.id));
+      }
+      const equivalenciaAusente = equivalenciasAlineadas.rows.find(
+        (relacion) =>
+          relacion.id_local === String(productosAlineacionLocal[1]?.id),
+      );
+      assert.equal(equivalenciaAusente, undefined);
+      const eventoAlineacion = await localPool.query<{ estado: string }>(
+        "SELECT estado FROM eventos_sincronizacion WHERE operation_id = $1",
+        [operationAlineacion],
+      );
+      assert.equal(eventoAlineacion.rows[0]?.estado, "sincronizado");
+    } finally {
+      await remotePool.query(
+        `DROP TRIGGER IF EXISTS sync_e2e_skip_missing_product ON productos;
+         DROP FUNCTION IF EXISTS sync_e2e_skip_missing_product()`,
+      );
+    }
 
     const [fechaGrupo] = await remotePool
       .query<{ fecha: string }>(
