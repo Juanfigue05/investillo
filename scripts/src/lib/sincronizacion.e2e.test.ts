@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import test from "node:test";
+import { TABLAS_HUELLA } from "@workspace/db/schema";
 
 const localUrl = process.env.SYNC_TEST_DATABASE_LOCAL;
 const remoteUrl = process.env.SYNC_TEST_DATABASE_REMOTE;
@@ -38,12 +39,18 @@ type CreditResponse = {
 
 function assertTestDatabase(databaseUrl: string, expectedName: string): void {
   const parsed = new URL(databaseUrl);
+  const databaseName = parsed.pathname.slice(1);
+  const nombresPermitidos = new Set([
+    expectedName,
+    `${expectedName}_9d2_empty`,
+    `${expectedName}_9d2_aiven`,
+  ]);
   if (
     !["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname) ||
-    parsed.pathname !== `/${expectedName}`
+    !nombresPermitidos.has(databaseName)
   ) {
     throw new Error(
-      `E2E bloqueado: se requiere una base loopback llamada ${expectedName}`,
+      `E2E bloqueado: se requiere una base loopback ${[...nombresPermitidos].join(", ")}`,
     );
   }
 }
@@ -74,6 +81,27 @@ async function puertoLibre(): Promise<number> {
     server.close((error) => (error ? reject(error) : resolveClose()));
   });
   return port;
+}
+
+async function desplazarSecuencias(pool: pg.Pool, desplazamiento: bigint): Promise<void> {
+  for (const tabla of TABLAS_HUELLA) {
+    const resultado = await pool.query<{
+      secuencia: string | null;
+      maximo: string;
+    }>(
+      `SELECT pg_get_serial_sequence($1, 'id') AS secuencia,
+              COALESCE(MAX(id), 0)::text AS maximo
+         FROM "${tabla}"`,
+      [tabla],
+    );
+    const secuencia = resultado.rows[0]?.secuencia;
+    assert.ok(secuencia, `La tabla ${tabla} no tiene secuencia para id`);
+    const siguiente = BigInt(resultado.rows[0]!.maximo) + desplazamiento;
+    await pool.query("SELECT setval($1::regclass, $2::bigint, true)", [
+      secuencia,
+      siguiente.toString(),
+    ]);
+  }
 }
 
 async function iniciarApi(
@@ -316,6 +344,11 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
            FROM cursos_sincronizacion WHERE nombre = 'remoto'`,
     );
     assert.deepEqual(cursorSinPisar.rows[0], cursorInicial.rows[0]);
+
+    await Promise.all([
+      desplazarSecuencias(localPool, 1_000_000n),
+      desplazarSecuencias(remotePool, 2_000_000n),
+    ]);
 
     const vehiculoClienteAntiguo = await api<{ id: number }>(
       localBase(),
@@ -623,6 +656,11 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
       ventaProductoRemota.rows[0]?.nombre,
       `${prefix}-producto-local`,
     );
+    assert.notEqual(
+      productoLocal.id,
+      ventaProductoRemota.rows[0]?.producto_id,
+      "La secuencia local y la remota deben divergir para el producto sincronizado",
+    );
     assert.notEqual(ventaProductoRemota.rows[0]?.producto_id, productoSombra.id);
 
     const [fechaGrupo] = await remotePool
@@ -660,25 +698,24 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
           (operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
            referencias_endpoint, origen, estado, creado_en)
          VALUES
-          ($1, 'cliente', '1', 'crear', 'POST', '/clientes',
+          ($1, 'cliente', '900000000', 'crear', 'POST', '/clientes',
            jsonb_build_object('nombre', $4::text), NULL, 'remoto', 'sincronizado', $5::timestamp),
-          ($2, 'vehiculo', '2', 'crear', 'POST', '/clientes/{clienteId}/vehiculos',
+          ($2, 'vehiculo', '900000001', 'crear', 'POST', '/clientes/{clienteId}/vehiculos',
            '{"placa":"CURSOR-FAIL"}'::jsonb,
            jsonb_build_array(jsonb_build_object(
              'marcador', '{clienteId}',
              'entidad', 'cliente',
-             'valorLocal', $6::text
+             'valorLocal', '900000002'
            )),
            'remoto', 'sincronizado', $5::timestamp),
-          ($3, 'cliente', '3', 'crear', 'POST', '/clientes',
-           jsonb_build_object('nombre', $7::text), NULL, 'remoto', 'sincronizado', $5::timestamp)`,
+          ($3, 'cliente', '900000003', 'crear', 'POST', '/clientes',
+           jsonb_build_object('nombre', $6::text), NULL, 'remoto', 'sincronizado', $5::timestamp)`,
       [
         idsGrupo[0],
         idsGrupo[1],
         idsGrupo[2],
         `${prefix}-cursor-first`,
         fechaGrupo.fecha,
-        `${prefix}-missing-parent`,
         `${prefix}-cursor-third`,
       ],
     );

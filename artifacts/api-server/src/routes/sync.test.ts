@@ -259,6 +259,47 @@ describe.sequential("Rutas de sincronización", () => {
     expect(ackSinRetroceso.rows[0]?.valor).toBe(ackGuardado.rows[0]?.valor);
   });
 
+  it("devuelve creadoEn y hasta con seis decimales aunque terminen en cero", async () => {
+    const [marca] = await pool
+      .query<{ fecha: string }>(
+        `SELECT to_char(
+           date_trunc('second', now() - interval '10 seconds')
+             + interval '7740 microseconds',
+           'YYYY-MM-DD HH24:MI:SS.US'
+         ) AS fecha`,
+      )
+      .then((result) => result.rows);
+    expect(marca?.fecha).toMatch(/\.007740$/);
+    const operationId = `${prefix}-fecha-6-decimales`;
+    await insertarEvento(operationId, marca!.fecha);
+    const desdeOperacion = `${prefix}-fecha`;
+
+    const pull = await request(app)
+      .get("/api/sync/pull")
+      .query({
+        desde: marca!.fecha,
+        desdeOperacion,
+        limite: "1",
+      })
+      .expect(200);
+    expect(pull.body.eventos).toHaveLength(1);
+    expect(pull.body.eventos[0]?.operationId).toBe(operationId);
+    expect(pull.body.eventos[0]?.creadoEn).toBe(marca!.fecha);
+    expect(pull.body.hasta).toBe(marca!.fecha);
+
+    const conflicto = await request(app)
+      .get("/api/sync/conflicto")
+      .query({
+        desde: marca!.fecha,
+        desdeOperacion,
+        endpoint: "/test",
+      })
+      .expect(200);
+    expect(conflicto.body.conflicto).toBe(true);
+    expect(conflicto.body.evento.operationId).toBe(operationId);
+    expect(conflicto.body.evento.creadoEn).toBe(marca!.fecha);
+  });
+
   it("detecta endpoints iguales y subrutas posteriores al cursor", async () => {
     const [marcas] = await pool
       .query<{

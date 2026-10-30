@@ -47,6 +47,7 @@ const referenciasDePrueba: Array<[string, string]> = [
   ["producto", "3500"],
   ["producto", "3501"],
   ["producto", "3502"],
+  ["producto", "3503"],
   ["cliente", "5"],
   ["cliente", "1500"],
   ["cliente", "1501"],
@@ -828,6 +829,54 @@ test("clasifica respuestas remotas y detecta conflictos antes de enviar", async 
       [["conflicto", "Referencia sin equivalente remoto: producto 3500"]],
     );
     await borrarEventos();
+
+    solicitudesRecibidas.length = 0;
+    respuestaPost = (endpoint) =>
+      endpoint === "/inventario" ? { id: 13501 } : {};
+    const equivalenciaDuplicada = await insertarEvento({
+      nombre: "equivalencia-remota-duplicada",
+      entidad: "producto",
+      entidadId: "3503",
+      metodo: "POST",
+      endpoint: "/inventario",
+      cuerpo: { nombre: "Producto con ID remoto duplicado" },
+      desplazamientoMs: -1,
+    });
+    const eventoPosterior = await insertarEvento({
+      nombre: "evento-posterior-a-equivalencia-duplicada",
+      entidad: "venta",
+      entidadId: "3504",
+      metodo: "POST",
+      endpoint: "/ventas",
+      cuerpo: {},
+      desplazamientoMs: 1,
+    });
+    postCount = 0;
+    const respuestaDuplicada = await ejecutarScript("sincronizar-local.ts");
+    assert.equal(
+      respuestaDuplicada.status,
+      3,
+      `${respuestaDuplicada.stdout}\n${respuestaDuplicada.stderr}`,
+    );
+    assert.deepEqual(
+      solicitudesRecibidas.map(({ metodo, endpoint }) => [metodo, endpoint]),
+      [
+        ["POST", "/inventario"],
+        ["POST", "/ventas"],
+      ],
+    );
+    const estadosDuplicados = await estados([
+      equivalenciaDuplicada,
+      eventoPosterior,
+    ]);
+    assert.equal(estadosDuplicados[0]?.estado, "error");
+    assert.match(
+      estadosDuplicados[0]?.ultimo_error ?? "",
+      /No se pudo guardar la equivalencia: ese ID remoto ya está asignado/,
+    );
+    assert.equal(estadosDuplicados[1]?.estado, "sincronizado");
+    await borrarEventos();
+    respuestaPost = () => ({});
 
     const referenciaCliente = (valorLocal: string) => [{
       marcador: "{clienteId}",

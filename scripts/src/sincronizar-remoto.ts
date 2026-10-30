@@ -155,8 +155,8 @@ try {
           .map((referencia) => referencia.valorLocal),
       ),
     );
-    const creadoresDePagina = new Map<string, Set<string>>();
-    for (const evento of data.eventos) {
+    const creadoresDePagina = new Map<string, number[]>();
+    for (const [indiceEvento, evento] of data.eventos.entries()) {
       const referenciasCreadas = [
         ...(evento.metodo === "POST"
           ? [{ entidad: evento.entidad, valor: evento.entidadId }]
@@ -168,13 +168,13 @@ try {
       ];
       for (const referencia of referenciasCreadas) {
         const clave = `${referencia.entidad}:${referencia.valor}`;
-        const ids = creadoresDePagina.get(clave) ?? new Set<string>();
-        ids.add(evento.operationId);
-        creadoresDePagina.set(clave, ids);
+        const indices = creadoresDePagina.get(clave) ?? [];
+        indices.push(indiceEvento);
+        creadoresDePagina.set(clave, indices);
       }
     }
 
-    for (const evento of data.eventos) {
+    for (const [indiceEvento, evento] of data.eventos.entries()) {
       let endpoint = evento.endpoint;
       const regla = encontrarRegla(evento.metodo, endpoint);
       if (!regla) {
@@ -189,8 +189,8 @@ try {
       const segmentosRegla = regla.endpoint.split("/");
       const segmentosRuta = ruta.split("/");
       const creadoresPendientes = new Set<string>();
-      for (const [clave, operationIds] of creadoresDePagina) {
-        if ([...operationIds].some((id) => id !== evento.operationId)) {
+      for (const [clave, indices] of creadoresDePagina) {
+        if (indices.some((indiceCreador) => indiceCreador > indiceEvento)) {
           creadoresPendientes.add(clave);
         }
       }

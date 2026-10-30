@@ -59,6 +59,8 @@ const solicitudesRemotas: string[] = [];
 const solicitudesLocales: string[] = [];
 let eventosRemotos: Evento[] = [];
 let proximoIdLocal = idBase + 900;
+let respuestaPostLocal: (endpoint: string, payload: unknown) => unknown =
+  () => ({ id: proximoIdLocal++ });
 let puertoRemoto = 0;
 let puertoLocal = 0;
 const idsPrueba = [
@@ -160,7 +162,7 @@ function iniciarServidorLocal() {
       });
     }
     if (request.method === "POST") {
-      responder(response, 201, { id: proximoIdLocal++ });
+      responder(response, 201, respuestaPostLocal(endpoint, payload));
       return;
     }
     responder(response, 200, {});
@@ -169,11 +171,10 @@ function iniciarServidorLocal() {
 
 function escuchar(
   server: ReturnType<typeof createServer>,
-  host: string,
 ): Promise<number> {
   return new Promise((resolveListen, reject) => {
     server.once("error", reject);
-    server.listen(0, host, () => {
+    server.listen(0, () => {
       const address = server.address();
       if (!address || typeof address === "string") {
         reject(new Error("No se pudo obtener el puerto del servidor de prueba"));
@@ -291,10 +292,75 @@ async function cursor(): Promise<{ valor: string; operacion_id: string | null }>
 test("descarga traduce referencias, conserva el cursor ante esperas y rechaza referencias desconocidas", async () => {
   const remoto = iniciarServidorRemoto();
   const local = iniciarServidorLocal();
+  let cursorAnterior: Array<{
+    valor: string;
+    operacion_id: string | null;
+  }> = [];
+  let baseAnterior: Array<{
+    tabla: string;
+    total: string;
+    maximo_id: string;
+    creado_en: string;
+  }> = [];
+  let estadoCapturado = false;
   try {
+    const eventosAjenoPendientes = await pool.query<{
+      operation_id: string;
+      origen: string;
+      estado: string;
+    }>(
+      `SELECT operation_id, origen, estado
+         FROM eventos_sincronizacion
+        WHERE estado IN ('pendiente', 'error', 'conflicto')
+          AND operation_id NOT LIKE $1
+        ORDER BY creado_en, operation_id
+        LIMIT 20`,
+      [`${prefix}%`],
+    );
+    if (eventosAjenoPendientes.rows.length > 0) {
+      const resumen = eventosAjenoPendientes.rows
+        .map((evento) =>
+          `${evento.operation_id} (${evento.origen}/${evento.estado})`,
+        )
+        .join(", ");
+      throw new Error(
+        `La prueba de descarga requiere una cola aislada. Limpia o resuelve estos eventos ajenos en estado pendiente, error o conflicto antes de continuar: ${resumen}`,
+      );
+    }
+    await pool.query(
+      `ALTER TABLE cursos_sincronizacion
+         ADD COLUMN IF NOT EXISTS operacion_id text;
+       CREATE TABLE IF NOT EXISTS base_sincronizacion (
+         tabla text PRIMARY KEY,
+         total bigint NOT NULL,
+         maximo_id bigint NOT NULL,
+         creado_en timestamp NOT NULL DEFAULT now()
+       )`,
+    );
+    cursorAnterior = (
+      await pool.query<{
+        valor: string;
+        operacion_id: string | null;
+      }>(
+        `SELECT valor::text AS valor, operacion_id
+           FROM cursos_sincronizacion WHERE nombre = 'remoto'`,
+      )
+    ).rows;
+    baseAnterior = (
+      await pool.query<{
+        tabla: string;
+        total: string;
+        maximo_id: string;
+        creado_en: string;
+      }>(
+        `SELECT tabla, total::text, maximo_id::text, creado_en::text
+           FROM base_sincronizacion`,
+      )
+    ).rows;
+    estadoCapturado = true;
     await prepararBase();
-    puertoRemoto = await escuchar(remoto, "127.0.0.1");
-    puertoLocal = await escuchar(local, "::");
+    puertoRemoto = await escuchar(remoto);
+    puertoLocal = await escuchar(local);
 
     await Promise.all([
       insertarEquivalencia("producto", idsPrueba[0]!, idsPrueba[5]!),
@@ -501,20 +567,85 @@ test("descarga traduce referencias, conserva el cursor ante esperas y rechaza re
     );
     assert.equal(eventosRecibidos.length, 0);
     assert.deepEqual(await cursor(), cursorAntesEspera);
+
+    eventosRecibidos.length = 0;
+    solicitudesLocales.length = 0;
+    const idProductoCreadorAnterior = String(idBase + 1003);
+    eventosRemotos = [
+      crearEvento(
+        "POST",
+        "/inventario",
+        "producto",
+        idProductoCreadorAnterior,
+        { nombre: "Producto creador sin ID local" },
+        {},
+        15,
+      ),
+      crearEvento(
+        "POST",
+        "/ventas",
+        "venta",
+        idsPrueba[19]!,
+        { productoId: Number(idProductoCreadorAnterior) },
+        {},
+        16,
+      ),
+    ];
+    respuestaPostLocal = () => ({});
+    const referenciaTrasCreadorPasado = await ejecutarDescarga();
+    assert.notEqual(referenciaTrasCreadorPasado.status, 0);
+    assert.match(
+      `${referenciaTrasCreadorPasado.stdout}\n${referenciaTrasCreadorPasado.stderr}`,
+      new RegExp(
+        `Referencia sin equivalente local: producto ${idProductoCreadorAnterior}`,
+      ),
+    );
+    assert.doesNotMatch(
+      `${referenciaTrasCreadorPasado.stdout}\n${referenciaTrasCreadorPasado.stderr}`,
+      /Espera la creación remota/,
+    );
+    assert.deepEqual(
+      eventosRecibidos.map(({ metodo, endpoint }) => [metodo, endpoint]),
+      [["POST", "/inventario"]],
+    );
+    assert.equal((await cursor()).operacion_id, `${prefix}-evento-15`);
+    respuestaPostLocal = () => ({ id: proximoIdLocal++ });
   } finally {
-    await Promise.all([cerrar(remoto), cerrar(local)]);
-    await pool.query(
-      `DELETE FROM referencias_sincronizacion
-        WHERE id_local = ANY($1::text[]) OR id_remoto = ANY($1::text[])`,
-      [idsPrueba],
-    );
-    await pool.query(
-      `DELETE FROM eventos_sincronizacion WHERE operation_id LIKE $1`,
-      [`${prefix}%`],
-    );
-    await pool.query(
-      `DELETE FROM cursos_sincronizacion WHERE nombre = 'remoto'`,
-    );
-    await pool.end();
+    try {
+      if (remoto.listening) await cerrar(remoto);
+      if (local.listening) await cerrar(local);
+      await pool.query(
+        `DELETE FROM referencias_sincronizacion
+          WHERE id_local = ANY($1::text[]) OR id_remoto = ANY($1::text[])`,
+        [idsPrueba],
+      );
+      await pool.query(
+        `DELETE FROM eventos_sincronizacion WHERE operation_id LIKE $1`,
+        [`${prefix}%`],
+      );
+      if (estadoCapturado) {
+        await pool.query(
+          `DELETE FROM cursos_sincronizacion WHERE nombre = 'remoto';
+           DELETE FROM base_sincronizacion`,
+        );
+        for (const cursor of cursorAnterior) {
+          await pool.query(
+            `INSERT INTO cursos_sincronizacion (nombre, valor, operacion_id)
+             VALUES ('remoto', $1::timestamp, $2)`,
+            [cursor.valor, cursor.operacion_id],
+          );
+        }
+        for (const fila of baseAnterior) {
+          await pool.query(
+            `INSERT INTO base_sincronizacion
+               (tabla, total, maximo_id, creado_en)
+             VALUES ($1, $2::bigint, $3::bigint, $4::timestamp)`,
+            [fila.tabla, fila.total, fila.maximo_id, fila.creado_en],
+          );
+        }
+      }
+    } finally {
+      await pool.end();
+    }
   }
 });

@@ -91,7 +91,7 @@ router.get("/pull", async (req, res) => {
       entidad_id AS "entidadId",
       referencias_respuesta AS "referenciasRespuesta",
       referencias_endpoint AS "referenciasEndpoint",
-      creado_en::text AS "creadoEn"
+      to_char(creado_en, 'YYYY-MM-DD HH24:MI:SS.US') AS "creadoEn"
     FROM eventos_sincronizacion
     WHERE origen = 'remoto'
       AND creado_en < now() - interval '2 seconds'
@@ -154,7 +154,7 @@ router.get("/conflicto", async (req, res) => {
   const { rows } = await db.execute(sql`
     SELECT
       operation_id AS "operationId",
-      creado_en::text AS "creadoEn",
+      to_char(creado_en, 'YYYY-MM-DD HH24:MI:SS.US') AS "creadoEn",
       metodo,
       endpoint
     FROM eventos_sincronizacion
