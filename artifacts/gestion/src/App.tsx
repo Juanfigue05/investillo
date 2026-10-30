@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEffect } from "react";
 import { iniciarSincronizacionAutomatica } from "@/lib/sync-engine";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { OfflineOperationDialog } from "@/components/OfflineOperationDialog";
 
 // Pages
 import Dashboard from "@/pages/dashboard";
@@ -93,6 +94,7 @@ function App() {
             <Router />
           </WouterRouter>
           <Toaster />
+          <OfflineOperationDialog />
         </TooltipProvider>
       </QueryClientProvider>
     </ErrorBoundary>

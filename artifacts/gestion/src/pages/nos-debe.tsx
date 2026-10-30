@@ -41,7 +41,11 @@ import {
   ManoObraSelector,
   calcularDistribucion,
 } from "@/components/ManoObraSelector";
-import { encolarOperacion, esFalloDeRed } from "@/lib/offline-db";
+import {
+  encolarOperacion,
+  esFalloDeRed,
+  obtenerIdOperacionOffline,
+} from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 import {
@@ -568,6 +572,7 @@ export default function NosDebePage() {
               return;
             }
             await encolarOperacion({
+              operationId: obtenerIdOperacionOffline(error),
               tipo: "credito",
               metodo: "PUT",
               endpoint: `/creditos/${editingId}`,
@@ -614,6 +619,7 @@ export default function NosDebePage() {
               return;
             }
             await encolarOperacion({
+              operationId: obtenerIdOperacionOffline(error),
               tipo: "credito",
               metodo: "POST",
               endpoint: "/creditos",
@@ -743,6 +749,7 @@ export default function NosDebePage() {
               return;
             }
             await encolarOperacion({
+              operationId: obtenerIdOperacionOffline(error),
               tipo: "credito",
               metodo: "POST",
               endpoint: `/creditos/${c.id}/abono`,

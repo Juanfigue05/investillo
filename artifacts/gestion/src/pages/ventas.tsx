@@ -15,7 +15,7 @@ import { formatCurrency, parseNumberCO } from "@/lib/utils";
 import { Printer, Save, BookMarked } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ManoObraSelector, calcularDistribucion } from "@/components/ManoObraSelector";
-import { encolarOperacion } from "@/lib/offline-db";
+import { encolarOperacion, obtenerIdOperacionOffline } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { esFalloDeRed } from "@/lib/offline-db";
 import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
@@ -427,8 +427,12 @@ export default function VentasDiarias() {
               toast({ title: "No se pudo guardar", description: errData?.error || `Error del servidor (${res.status})`, variant: "destructive" });
               return;
             }
-          } catch {
+          } catch (error) {
             // sigue abajo, se encola
+            await encolarOperacion({ operationId: obtenerIdOperacionOffline(error), tipo: "manoobra_venta", metodo: "POST", endpoint: "/ventas/manoobra", payload: payloadManoObra });
+            toast({ title: "Guardado sin conexión", description: "Esta mano de obra se sincronizará automáticamente cuando vuelva internet." });
+            limpiarFilaManoObra();
+            return;
           }
         }
         await encolarOperacion({ tipo: "manoobra_venta", metodo: "POST", endpoint: "/ventas/manoobra", payload: payloadManoObra });
@@ -466,7 +470,7 @@ export default function VentasDiarias() {
               toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
               return;
             }
-            await encolarOperacion({ tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadAbono });
+            await encolarOperacion({ operationId: obtenerIdOperacionOffline(error), tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadAbono });
             toast({ title: "Guardado sin conexión", description: "Este abono se sincronizará automáticamente cuando vuelva internet." });
             setNewRow((prev) => ({ ...prev, productoSeleccionado: "", productoNombreManual: "", valorAbono: 0 }));
           },
@@ -522,7 +526,7 @@ export default function VentasDiarias() {
             toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
             return;
           }
-          await encolarOperacion({ tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadVenta });
+          await encolarOperacion({ operationId: obtenerIdOperacionOffline(error), tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadVenta });
           toast({ title: "Guardado sin conexión", description: "Esta venta se sincronizará automáticamente cuando vuelva internet." });
           setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: "", precioVenta: "", precioVentaTotal: "" }));
           setStockAlerta(null);

@@ -3,7 +3,7 @@ import { Layout } from "@/components/Layout";
 import { useGetTrabajadores } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
 import { Calculator, Plus, Trash2, ChevronDown, ChevronUp, Save, CheckCircle, Pencil, Users, X } from "lucide-react";
-import { encolarOperacion } from "@/lib/offline-db";
+import { encolarOperacion, obtenerIdOperacionOffline } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { CalculadoraCierre } from "@/components/CalculadoraCierre";
 import { Calculator as CalcIcon } from "lucide-react";
@@ -574,10 +574,11 @@ export default function CierreDiario() {
       setGuardadoOk(true);
       setTimeout(() => setGuardadoOk(false), 3000);
     } catch (e) {
-      if (navigator.onLine) {
+      const operationId = obtenerIdOperacionOffline(e);
+      if (navigator.onLine && !operationId) {
         alert("Error al guardar: " + e);
       } else {
-        await encolarOperacion({ tipo: "cierre_diario", metodo: "POST", endpoint: "/cierre-diario", payload: { fecha, datos, totalPagar: grandTotal } });
+        await encolarOperacion({ operationId, tipo: "cierre_diario", metodo: "POST", endpoint: "/cierre-diario", payload: { fecha, datos, totalPagar: grandTotal } });
         setEditado(false);
         toast({ title: "Guardado sin conexión", description: "Este cierre diario se sincronizará automáticamente cuando vuelva internet." });
         setGuardadoOk(true);
