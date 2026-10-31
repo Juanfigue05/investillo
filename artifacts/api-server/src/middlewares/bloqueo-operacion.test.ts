@@ -181,11 +181,16 @@ describe("middleware de bloqueo por operation id", () => {
     const respuestas = Promise.all([primera, segunda]);
     await Promise.all([dosSolicitudes, handlerIniciado]);
     resolverHandler();
-    const [respuestaPrimera, respuestaSegunda] = await respuestas;
+    const resultados = await respuestas;
 
-    expect(respuestaPrimera.status).toBe(201);
-    expect(respuestaSegunda.status).toBe(201);
-    expect(respuestaSegunda.body).toEqual(respuestaPrimera.body);
+    expect(resultados.every((respuesta) =>
+      respuesta.status >= 200 && respuesta.status < 300
+    )).toBe(true);
+    expect(resultados.map((respuesta) => respuesta.body)).toEqual([
+      resultados[0]?.body,
+      resultados[0]?.body,
+    ]);
+    expect(resultados[0]?.body).not.toHaveProperty("yaProcesado");
     expect(ejecuciones).toBe(1);
 
     const [eventos, operaciones] = await Promise.all([

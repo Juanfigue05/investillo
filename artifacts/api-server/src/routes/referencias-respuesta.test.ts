@@ -71,6 +71,15 @@ async function referencias(id: string) {
 }
 
 async function olvidarRespuestaGuardada(id: string): Promise<void> {
+  await vi.waitFor(async () => {
+    const filas = await db.select({
+      respuestaRemota: eventosSincronizacionTable.respuestaRemota,
+    }).from(eventosSincronizacionTable)
+      .where(eq(eventosSincronizacionTable.operationId, id));
+    expect(filas).toHaveLength(1);
+    expect(filas[0]?.respuestaRemota).not.toBeNull();
+  }, { timeout: 5000, interval: 25 });
+
   await db.update(eventosSincronizacionTable)
     .set({ respuestaRemota: null })
     .where(eq(eventosSincronizacionTable.operationId, id));

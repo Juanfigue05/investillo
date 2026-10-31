@@ -440,27 +440,23 @@ export default function VentasDiarias() {
       (async () => {
         try {
           if (navigator.onLine) {
-            try {
-              const res = await fetch(`${API}/ventas/manoobra`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payloadManoObra),
-              });
-              if (res.ok) {
-                queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
-                queryClient.invalidateQueries({ queryKey: ["/api/manoobra"] });
-                queryClient.invalidateQueries({ queryKey: ["/api/trabajadores"] });
-                limpiarFilaManoObra();
-                return;
-              }
-              if (navigator.onLine) {
-                quitarFilaOptimista(queryClient, fecha, idTemporal);
-                const errData = await res.json().catch(() => null);
-                toast({ title: "No se pudo guardar", description: errData?.error || `Error del servidor (${res.status})`, variant: "destructive" });
-                return;
-              }
-            } catch (error) {
-              throw error;
+            const res = await fetch(`${API}/ventas/manoobra`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payloadManoObra),
+            });
+            if (res.ok) {
+              queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/manoobra"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/trabajadores"] });
+              limpiarFilaManoObra();
+              return;
+            }
+            if (navigator.onLine) {
+              quitarFilaOptimista(queryClient, fecha, idTemporal);
+              const errData = await res.json().catch(() => null);
+              toast({ title: "No se pudo guardar", description: errData?.error || `Error del servidor (${res.status})`, variant: "destructive" });
+              return;
             }
           }
           await encolarOperacion({ tipo: "manoobra_venta", metodo: "POST", endpoint: "/ventas/manoobra", payload: payloadManoObra });

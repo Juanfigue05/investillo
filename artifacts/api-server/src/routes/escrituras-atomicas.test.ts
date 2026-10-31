@@ -1,6 +1,6 @@
 import "../lib/solo-base-de-pruebas";
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import request, { type Response } from "supertest";
 import { db } from "@workspace/db";
 import {
@@ -515,6 +515,15 @@ async function expectOneRecordedOperation(operation: string): Promise<void> {
 }
 
 async function olvidarRespuestaGuardada(operation: string): Promise<void> {
+  await vi.waitFor(async () => {
+    const filas = await db.select({
+      respuestaRemota: eventosSincronizacionTable.respuestaRemota,
+    }).from(eventosSincronizacionTable)
+      .where(eq(eventosSincronizacionTable.operationId, operation));
+    expect(filas).toHaveLength(1);
+    expect(filas[0]?.respuestaRemota).not.toBeNull();
+  }, { timeout: 5000, interval: 25 });
+
   await db.execute(sql`
     UPDATE eventos_sincronizacion
        SET respuesta_remota = NULL
