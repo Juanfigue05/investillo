@@ -12,6 +12,31 @@ export interface OperacionPendiente {
   intentos?: number;
 }
 
+export class OperacionEncoladaOfflineError extends TypeError {
+  readonly operationId: string;
+  readonly endpoint: string;
+
+  constructor(operationId: string, endpoint: string) {
+    super("Guardado en este dispositivo; pendiente de sincronizar.");
+    this.name = "OperacionEncoladaOfflineError";
+    this.operationId = operationId;
+    this.endpoint = endpoint;
+  }
+}
+
+export class OperacionOfflineNoGuardadaError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OperacionOfflineNoGuardadaError";
+  }
+}
+
+export function obtenerIdOperacionOffline(error: unknown): string | undefined {
+  return error instanceof OperacionEncoladaOfflineError
+    ? error.operationId
+    : undefined;
+}
+
 interface RespaldoImportado {
   backupId: string;
   importadoEn: string;
@@ -56,16 +81,28 @@ function getDB() {
 
 /** Encola una operación (venta, crédito, etc.) para sincronizar después */
 export async function encolarOperacion(
-  op: Omit<OperacionPendiente, "operationId" | "creadoEn" | "estado">,
+  op: Omit<OperacionPendiente, "operationId" | "creadoEn" | "estado"> &
+    Partial<Pick<OperacionPendiente, "operationId">>,
 ) {
   const db = await getDB();
   const operacion: OperacionPendiente = {
     ...op,
-    operationId: crypto.randomUUID(),
+    operationId: op.operationId ?? crypto.randomUUID(),
     creadoEn: new Date().toISOString(),
     estado: "pendiente",
   };
+  const yaEncolada = await db.get(
+    "operaciones-pendientes",
+    operacion.operationId,
+  );
   await db.put("operaciones-pendientes", operacion);
+  if (!yaEncolada && typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("investillo:operacion-encolada", {
+        detail: { endpoint: operacion.endpoint, operationId: operacion.operationId },
+      }),
+    );
+  }
   return operacion;
 }
 
@@ -182,6 +219,7 @@ export async function importarRespaldoLocal(
 
 /** true = de verdad no hay red; false = el servidor respondió con un error real (no encolar, mostrar el error) */
 export function esFalloDeRed(error: unknown): boolean {
+  if (error instanceof OperacionOfflineNoGuardadaError) return false;
   if (error && typeof error === "object" && (error as any).name === "ApiError")
     return false;
   return error instanceof TypeError || !navigator.onLine;

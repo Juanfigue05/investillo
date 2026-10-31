@@ -19,10 +19,9 @@ import {
   Search,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { encolarOperacion } from "@/lib/offline-db";
+import { encolarOperacion, esFalloDeRed, obtenerIdOperacionOffline } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { leerRespuestaApi } from "@/lib/respuesta-api";
-import { esFalloDeRed } from "@/lib/offline-db";
 import { Pencil } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 
@@ -381,6 +380,7 @@ export default function Compras() {
             return;
           }
           await encolarOperacion({
+            operationId: obtenerIdOperacionOffline(error),
             tipo: "compra",
             metodo: "PUT",
             endpoint: `/compras/${compra.id}`,
@@ -492,6 +492,7 @@ export default function Compras() {
             return;
           }
           await encolarOperacion({
+            operationId: obtenerIdOperacionOffline(error),
             tipo: "compra",
             metodo: "POST",
             endpoint: "/compras",

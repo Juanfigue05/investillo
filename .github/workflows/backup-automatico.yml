@@ -18,10 +18,14 @@ jobs:
 
       - name: Instalar cliente de PostgreSQL 18
         run: |
-          sudo install -d -m 0755 /etc/apt/keyrings
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
-          sudo chmod a+r /etc/apt/keyrings/postgresql.gpg
-          sudo sh -c 'echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          # 1. Crear el directorio seguro para los keyrings
+          sudo mkdir -p /usr/share/keyrings
+
+          # 2. Descargar la llave GPG y desarmarla al nuevo formato oficial
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor | sudo tee /usr/share/keyrings/postgresql-archive-keyring.gpg > /dev/null
+
+          # 3. Registrar el repositorio vinculando explícitamente su llave firmada
+          echo "deb [signed-by=/usr/share/keyrings/postgresql-archive-keyring.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y postgresql-client-18
 

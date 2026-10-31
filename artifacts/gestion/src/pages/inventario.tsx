@@ -28,11 +28,10 @@ import {
   MinusCircle,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { encolarOperacion } from "@/lib/offline-db";
+import { encolarOperacion, esFalloDeRed, obtenerIdOperacionOffline } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { RemachadasPanel } from "@/components/RemachadasPanel";
 import { DescuentoRapidoModal } from "@/components/DescuentoRapidoModal";
-import { esFalloDeRed } from "@/lib/offline-db";
 import {
   SearchableSelect,
   type ProductoOpcion,
@@ -617,6 +616,7 @@ export default function Inventario() {
               return;
             }
             await encolarOperacion({
+              operationId: obtenerIdOperacionOffline(error),
               tipo: "producto",
               metodo: "PUT",
               endpoint: `/inventario/${editingId}`,
@@ -652,6 +652,7 @@ export default function Inventario() {
               return;
             }
             await encolarOperacion({
+              operationId: obtenerIdOperacionOffline(error),
               tipo: "producto",
               metodo: "POST",
               endpoint: "/inventario",

@@ -2,8 +2,10 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { instalarSeguimientoGetApi } from "./lib/api-request-tracker";
+import { instalarColaDeEscriturasOffline } from "./lib/offline-fetch";
 
 instalarSeguimientoGetApi();
+instalarColaDeEscriturasOffline();
 
 window.addEventListener("error", (event) => {
   document.body.innerHTML = `

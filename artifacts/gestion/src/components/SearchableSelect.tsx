@@ -131,7 +131,7 @@ export function SearchableSelect({
               className="w-full bg-background border border-border px-3 py-1.5 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
             />
           </div>
-          <div className="max-h-[60vh] overflow-y-auto">
+          <div className="max-h-[51vh] overflow-y-auto">
             {filtered.length === 0 ? (
               allowCustom && busqueda.trim() ? (
                 <button type="button" onClick={() => handleSelect(busqueda.trim())} className="w-full text-left px-3 py-3 text-sm text-primary hover:bg-muted">
