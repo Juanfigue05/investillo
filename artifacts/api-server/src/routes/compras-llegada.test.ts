@@ -43,6 +43,9 @@ afterEach(async () => {
     await db.delete(comprasTable).where(inArray(comprasTable.id, compras));
   }
   if (productos.length > 0) {
+    await db.delete(historialPreciosTable).where(
+      inArray(historialPreciosTable.productoId, productos),
+    );
     await db.delete(productosTable).where(
       inArray(productosTable.id, productos),
     );
@@ -210,7 +213,7 @@ describe("llegada de compras", () => {
     expect(await historial(compraId)).toHaveLength(1);
   });
 
-  it("rechaza cantidad cero y producto ausente sin marcar la compra como llegada", async () => {
+  it("rechaza cantidad cero y producto ausente sin marcar la compra como llegada", async (context) => {
     const operationCantidad = operationId();
     const productoId = await crearProducto();
     const compraCantidad = await crearCompra(productoId);
@@ -224,7 +227,42 @@ describe("llegada de compras", () => {
     expect(await historial(compraCantidad)).toHaveLength(0);
 
     const operationProducto = operationId();
-    const compraSinProducto = await crearCompra(2_000_000_000);
+    const connection = await pool.connect();
+    let replicaEnabled = false;
+    let compraSinProducto: number;
+    try {
+      try {
+        await connection.query("SET session_replication_role = replica");
+        replicaEnabled = true;
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          !("code" in error) ||
+          error.code !== "42501"
+        ) {
+          throw error;
+        }
+        context.skip(
+          "No se puede desactivar temporalmente la validación FK para probar una compra huérfana; se requiere rol superusuario.",
+        );
+        return;
+      }
+      const resultado = await connection.query<{ id: number }>(
+        `INSERT INTO compras (
+           producto_id, producto_nombre, producto_codigo,
+           stock_actual, stock_minimo, estado
+         ) VALUES (2000000000, 'Producto ausente', 'PRODUCTO-AUSENTE',
+                   10, 0, 'pendiente')
+         RETURNING id`,
+      );
+      compraSinProducto = resultado.rows[0]!.id;
+      compraIds.add(compraSinProducto);
+    } finally {
+      if (replicaEnabled) {
+        await connection.query("SET session_replication_role = origin");
+      }
+      connection.release();
+    }
     const productoInexistente = await request(app)
       .put(`/api/compras/${compraSinProducto}`)
       .set("X-Operation-Id", operationProducto)
@@ -342,6 +380,47 @@ describe("llegada de compras", () => {
     expect(await evento(operation)).toBeUndefined();
   });
 
+  it("rechaza el lote completo si una compra ya está llegada", async () => {
+    const operation = operationId();
+    const productoIdsLote = [
+      await crearProducto(),
+      await crearProducto(),
+      await crearProducto(),
+    ];
+    const compraIdsLote = await Promise.all([
+      crearCompra(productoIdsLote[0]!),
+      crearCompra(productoIdsLote[1]!, "llegado"),
+      crearCompra(productoIdsLote[2]!),
+    ]);
+    const stockBefore = await Promise.all(productoIdsLote.map(stock));
+
+    const response = await request(app)
+      .post("/api/compras/lote-llegada")
+      .set("X-Operation-Id", operation)
+      .send({
+        proveedor: "Proveedor prueba",
+        items: compraIdsLote.map((id) => ({
+          id,
+          cantidadRecibida: 2,
+          cantidadLocal: 2,
+          cantidadBodega: 0,
+          nuevoPrecioCompra: 100,
+          nuevoPrecioVentaSinIva: 200,
+          tieneIva: true,
+          actualizarPrecioInventario: true,
+        })),
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatch(/ya está marcada como llegada/i);
+    expect(await Promise.all(productoIdsLote.map(stock))).toEqual(stockBefore);
+    expect(
+      await Promise.all(compraIdsLote.map(async (id) => (await compra(id))?.estado)),
+    ).toEqual(["pendiente", "llegado", "pendiente"]);
+    expect((await Promise.all(compraIdsLote.map(historial))).flat()).toHaveLength(0);
+    expect(await evento(operation)).toBeUndefined();
+  });
+
   it("aplica un lote válido y conserva las referencias en el orden de entrada", async () => {
     const operation = operationId();
     const productoIdsLote = [await crearProducto(), await crearProducto()];
@@ -400,5 +479,64 @@ describe("llegada de compras", () => {
       tipo: "corregir",
       entidad: "compra",
     });
+  });
+
+  it("rechaza corregir una compra pendiente sin tocar el stock", async () => {
+    const operation = operationId();
+    const productoId = await crearProducto();
+    const compraId = await crearCompra(productoId);
+    const stockBefore = await stock(productoId);
+
+    const response = await request(app)
+      .patch(`/api/compras/${compraId}/corregir`)
+      .set("X-Operation-Id", operation)
+      .send({ cantidadRecibida: 4, precioCompraRegistrado: 125 });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatch(/solo se puede corregir.*llegada/i);
+    expect(await stock(productoId)).toEqual(stockBefore);
+    expect((await compra(compraId))?.estado).toBe("pendiente");
+    expect(await historial(compraId)).toHaveLength(0);
+    expect(await evento(operation)).toBeUndefined();
+  });
+
+  it("reconoce una llegada ya procesada aunque la compra se haya borrado", async () => {
+    const operation = operationId();
+    const productoId = await crearProducto();
+    const compraId = await crearCompra(productoId);
+
+    const first = await request(app)
+      .put(`/api/compras/${compraId}`)
+      .set("X-Operation-Id", operation)
+      .send(llegada());
+    await db.delete(comprasTable).where(eq(comprasTable.id, compraId));
+    const retry = await request(app)
+      .put(`/api/compras/${compraId}`)
+      .set("X-Operation-Id", operation)
+      .send(llegada());
+
+    expect(first.status).toBe(200);
+    expect(retry.status).toBe(200);
+    expect(retry.body.yaProcesado).toBe(true);
+  });
+
+  it("reconoce una corrección ya procesada aunque la compra se haya borrado", async () => {
+    const operation = operationId();
+    const productoId = await crearProducto();
+    const compraId = await crearCompra(productoId, "llegado");
+
+    const first = await request(app)
+      .patch(`/api/compras/${compraId}/corregir`)
+      .set("X-Operation-Id", operation)
+      .send({ cantidadRecibida: 4, precioCompraRegistrado: 125 });
+    await db.delete(comprasTable).where(eq(comprasTable.id, compraId));
+    const retry = await request(app)
+      .patch(`/api/compras/${compraId}/corregir`)
+      .set("X-Operation-Id", operation)
+      .send({ cantidadRecibida: 4, precioCompraRegistrado: 125 });
+
+    expect(first.status).toBe(200);
+    expect(retry.status).toBe(200);
+    expect(retry.body.yaProcesado).toBe(true);
   });
 });

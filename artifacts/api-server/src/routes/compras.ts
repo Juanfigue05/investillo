@@ -255,6 +255,10 @@ router.put("/:id", async (req, res) => {
 
   try {
     const resultado = await db.transaction(async (tx) => {
+      const yaInicial = await operacionYaProcesada(tx, operationId);
+      if (yaInicial) {
+        return { yaProcesado: true as const, recursoId: yaInicial.recursoId };
+      }
       const [existing] = await tx
         .select()
         .from(comprasTable)
@@ -264,7 +268,9 @@ router.put("/:id", async (req, res) => {
         throw new CompraRouteError(`Compra ${id} no encontrada.`, 404);
       }
       const ya = await operacionYaProcesada(tx, operationId);
-      if (ya) return { yaProcesado: true as const, recursoId: ya.recursoId };
+      if (ya) {
+        return { yaProcesado: true as const, recursoId: ya.recursoId };
+      }
 
       const { compra, preciosModificados, historialPrecioId } =
         await procesarLlegadaCompra(tx, existing, req.body);
@@ -504,6 +510,10 @@ router.patch("/:id/corregir", async (req, res) => {
 
   try {
     const resultado = await db.transaction(async (tx) => {
+      const yaInicial = await operacionYaProcesada(tx, operationId);
+      if (yaInicial) {
+        return { yaProcesado: true as const, recursoId: yaInicial.recursoId };
+      }
       const [existing] = await tx
         .select()
         .from(comprasTable)

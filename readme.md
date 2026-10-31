@@ -691,6 +691,54 @@ Este procedimiento se usa una sola vez para preparar la sincronización bidirecc
 
 10. **Reanuda las escrituras solo tras verificar ambos sentidos.** Si cualquier comprobación falla, detén la sincronización y conserva los respaldos y los mensajes de error. No borres cursores manualmente, no fuerces `sync:init`, no vuelvas a ejecutar una subida sobre una base desalineada y no reanudes las escrituras hasta confirmar cuál es la copia válida y volver a alinear las bases.
 
+#### Llaves foráneas e índices
+
+- **Nunca ejecutes `db:push` contra Aiven.** Espera a que la sincronización lleve al menos una semana estable; esta orden no forma parte del primer arranque ni se ejecuta durante la inicialización.
+- Antes de aplicarla, toma un respaldo verificado y detén todas las escrituras. Ejecuta manualmente [el SQL de la Orden 12](./docs/sql/orden-12-llaves-foraneas-e-indices.sql) tanto en Aiven como en la copia local. Si primero vas a copiar una base sobre la otra, aplícalo a la fuente antes de copiarla y verifica luego ambas.
+- El SQL conserva en `_respaldo_huerfanos` las filas huérfanas de historial de precios y mano de obra. Desvincula los historiales sin compra y la mano de obra sin venta; elimina los historiales cuyo producto ya no existe. Ese borrado cambia el conteo y la huella de `historial_precios`, por eso debe hacerse fuera del primer arranque de sincronización.
+- Para comprobar cada base, confirma 17 llaves foráneas y 18 índices de esta orden, y revisa cuántas filas se respaldaron:
+
+  ```sql
+  SELECT count(*) AS llaves_foraneas
+  FROM pg_constraint
+  WHERE contype = 'f'
+    AND connamespace = 'public'::regnamespace
+    AND conname = ANY (ARRAY[
+      'abonos_creditos_credito_id_fk', 'credito_lineas_credito_id_fk',
+      'credito_lineas_producto_id_fk', 'compras_producto_id_fk',
+      'descuentos_inventario_producto_id_fk',
+      'distribuciones_mano_obra_mano_obra_fk',
+      'distribuciones_mano_obra_trabajador_fk',
+      'historial_precios_compra_id_fk', 'historial_precios_producto_id_fk',
+      'mano_obra_credito_id_fk', 'mano_obra_venta_id_fk',
+      'obra_electronica_trabajador_id_fk', 'pagos_seguro_trabajador_id_fk',
+      'vehiculos_cliente_cliente_id_fk', 'ventas_diarias_credito_abono_id_fk',
+      'ventas_diarias_mano_obra_id_fk', 'ventas_diarias_producto_id_fk'
+    ]);
+
+  SELECT count(*) AS indices
+  FROM pg_indexes
+  WHERE schemaname = 'public'
+    AND indexname = ANY (ARRAY[
+      'ventas_diarias_fecha_idx', 'ventas_diarias_credito_abono_id_idx',
+      'ventas_diarias_producto_id_idx', 'ventas_diarias_mano_obra_id_idx',
+      'abonos_creditos_credito_id_idx', 'credito_lineas_credito_id_idx',
+      'credito_lineas_producto_id_idx', 'creditos_tipo_idx',
+      'compras_producto_id_idx', 'distribuciones_mano_obra_mo_idx',
+      'distribuciones_mano_obra_trab_idx', 'mano_obra_credito_id_idx',
+      'mano_obra_venta_id_idx', 'mano_obra_fecha_idx',
+      'historial_precios_producto_id_idx', 'obra_electronica_trabajador_id_idx',
+      'pagos_seguro_trabajador_id_idx', 'vehiculos_cliente_cliente_id_idx'
+    ]);
+
+  SELECT origen, count(*) AS filas_respaldadas
+  FROM _respaldo_huerfanos
+  GROUP BY origen
+  ORDER BY origen;
+  ```
+
+- Los primeros resultados deben ser 17 y 18. Compara los conteos de filas de negocio en ambas bases después de aplicar el SQL; investiga cualquier diferencia antes de reanudar escrituras.
+
 ### 8.3 Desplegar en Railway
 
 1. Crea cuenta en **[railway.com](https://railway.com)**.
