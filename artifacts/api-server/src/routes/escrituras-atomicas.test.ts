@@ -94,6 +94,7 @@ async function createPriceHistory(productId: number): Promise<number> {
 type FamilyFixture = {
   perform: (operation: string) => Promise<Response>;
   countData: () => Promise<number>;
+  assertUnrelatedData?: () => Promise<void>;
   afterSuccess: number;
   afterRollback: number;
 };
@@ -173,15 +174,22 @@ async function historialFixture(): Promise<FamilyFixture> {
 
 async function historialPreciosFixture(): Promise<FamilyFixture> {
   const productId = await createProduct();
+  const otroProductoId = await createProduct();
   await createPriceHistory(productId);
+  await createPriceHistory(productId);
+  await createPriceHistory(otroProductoId);
   return {
     perform: (operation) => request(app)
       .delete(`/api/historial-precios/producto/${productId}`)
       .set("x-operation-id", operation),
     countData: async () => (await db.select().from(historialPreciosTable)
       .where(eq(historialPreciosTable.productoId, productId))).length,
+    assertUnrelatedData: async () => {
+      expect(await db.select().from(historialPreciosTable)
+        .where(eq(historialPreciosTable.productoId, otroProductoId))).toHaveLength(1);
+    },
     afterSuccess: 0,
-    afterRollback: 1,
+    afterRollback: 2,
   };
 }
 
@@ -621,6 +629,7 @@ describe.each(routeFamilies)("$name transactional idempotency", ({ createFixture
     expect(duplicate.status).toBe(200);
     expect(duplicate.body).toMatchObject({ ok: true, yaProcesado: true });
     expect(await fixture.countData()).toBe(fixture.afterSuccess);
+    await fixture.assertUnrelatedData?.();
     await expectOneRecordedOperation(operation);
   });
 
@@ -636,6 +645,7 @@ describe.each(routeFamilies)("$name transactional idempotency", ({ createFixture
     expect(responses.every((response) => response.status >= 200 && response.status < 300)).toBe(true);
     expect(responses.filter((response) => response.body.yaProcesado === true)).toHaveLength(1);
     expect(await fixture.countData()).toBe(fixture.afterSuccess);
+    await fixture.assertUnrelatedData?.();
     await expectOneRecordedOperation(operation);
   });
 
@@ -652,6 +662,7 @@ describe.each(routeFamilies)("$name transactional idempotency", ({ createFixture
 
     expect(response!.status).toBeGreaterThanOrEqual(400);
     expect(await fixture.countData()).toBe(fixture.afterRollback);
+    await fixture.assertUnrelatedData?.();
     expect(await countEvents(operation)).toBe(0);
     expect(await countOperations(operation)).toBe(0);
   });
@@ -670,6 +681,7 @@ describe.each(additionalMutationFixtures)("$name transactional idempotency", ({ 
     expect(duplicate.status).toBe(200);
     expect(duplicate.body).toMatchObject({ ok: true, yaProcesado: true });
     expect(await fixture.countData()).toBe(fixture.afterSuccess);
+    await fixture.assertUnrelatedData?.();
     await expectOneRecordedOperation(operation);
   });
 
@@ -685,6 +697,7 @@ describe.each(additionalMutationFixtures)("$name transactional idempotency", ({ 
     expect(responses.every((response) => response.status >= 200 && response.status < 300)).toBe(true);
     expect(responses.filter((response) => response.body.yaProcesado === true)).toHaveLength(1);
     expect(await fixture.countData()).toBe(fixture.afterSuccess);
+    await fixture.assertUnrelatedData?.();
     await expectOneRecordedOperation(operation);
   });
 
@@ -701,6 +714,7 @@ describe.each(additionalMutationFixtures)("$name transactional idempotency", ({ 
 
     expect(response!.status).toBeGreaterThanOrEqual(400);
     expect(await fixture.countData()).toBe(fixture.afterRollback);
+    await fixture.assertUnrelatedData?.();
     expect(await countEvents(operation)).toBe(0);
     expect(await countOperations(operation)).toBe(0);
   });

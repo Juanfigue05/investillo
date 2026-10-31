@@ -4,6 +4,7 @@ const { Pool } = pg;
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("Falta DATABASE_URL en el .env");
 
+const HORAS_MAXIMAS_EVENTO_PENDIENTE = 72;
 const pool = new Pool({ connectionString: DATABASE_URL });
 
 interface Problema {
@@ -99,15 +100,15 @@ async function verificarConsistencia() {
              )::text AS conflictos,
              COUNT(*) FILTER (
                WHERE origen = 'local' AND estado = 'pendiente'
-                 AND creado_en < now() - interval '24 hours'
+                 AND creado_en < now() - ($1::integer * interval '1 hour')
              )::text AS pendientes_antiguos
       FROM eventos_sincronizacion
-    `);
+    `, [HORAS_MAXIMAS_EVENTO_PENDIENTE]);
     const estado = problemasSync.rows[0]!;
     for (const [categoria, cantidad] of [
       ["Eventos de sincronización con error", Number(estado.errores)],
       ["Conflictos de sincronización", Number(estado.conflictos)],
-      ["Eventos pendientes por más de 24 horas", Number(estado.pendientes_antiguos)],
+      [`Eventos pendientes por más de ${HORAS_MAXIMAS_EVENTO_PENDIENTE} horas`, Number(estado.pendientes_antiguos)],
     ] as const) {
       if (cantidad > 0) {
         problemas.push({ categoria, detalle: `${cantidad} evento(s)` });
