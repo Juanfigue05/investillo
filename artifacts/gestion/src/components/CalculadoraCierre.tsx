@@ -10,6 +10,8 @@ import {
   X,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { leerRespuestaApi } from "@/lib/respuesta-api";
+import { toast } from "@/hooks/use-toast";
 
 const API = "/api";
 
@@ -69,6 +71,8 @@ export function CalculadoraCierre({
   const [caja, setCaja] = useState("");
   const [borradorCargado, setBorradorCargado] = useState(false);
   const [guardandoBorrador, setGuardandoBorrador] = useState(false);
+  const [borrandoBorrador, setBorrandoBorrador] = useState(false);
+  const [guardandoConteo, setGuardandoConteo] = useState(false);
 
   // ── Remachadas: solo consulta (la administración vive en Inventario) ──
   const [remachadas, setRemachadas] = useState<RemachadaRow[]>([]);
@@ -122,10 +126,16 @@ export function CalculadoraCierre({
   const guardarBorrador = async () => {
     setGuardandoBorrador(true);
     try {
-      await fetch(`${API}/calculadora-cierre`, {
+      await leerRespuestaApi(fetch(`${API}/calculadora-cierre`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(datosBorrador()),
+      }));
+    } catch (error) {
+      toast({
+        title: "No se pudo guardar el borrador",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
       });
     } finally {
       setGuardandoBorrador(false);
@@ -133,27 +143,51 @@ export function CalculadoraCierre({
   };
 
   const borrarBorrador = async () => {
-    await fetch(`${API}/calculadora-cierre`, { method: "DELETE" });
-    setSuma(Array.from({ length: 25 }, () => ({ concepto: "", valor: "" })));
-    setResta(Array.from({ length: 4 }, () => ({ concepto: "", valor: "" })));
-    setManoObra("");
-    setMonedas({});
-    setBilletes({});
-    setBandaBuscada("");
+    if (borrandoBorrador) return;
+    setBorrandoBorrador(true);
+    try {
+      await leerRespuestaApi(fetch(`${API}/calculadora-cierre`, { method: "DELETE" }));
+      setSuma(Array.from({ length: 25 }, () => ({ concepto: "", valor: "" })));
+      setResta(Array.from({ length: 4 }, () => ({ concepto: "", valor: "" })));
+      setManoObra("");
+      setMonedas({});
+      setBilletes({});
+      setBandaBuscada("");
+    } catch (error) {
+      toast({
+        title: "No se pudo borrar el borrador",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setBorrandoBorrador(false);
+    }
   };
 
   const guardarConteoMonedas = async (
     nuevaBolsa: string,
     nuevaCaja: string,
   ) => {
-    await fetch(`${API}/conteo-monedas`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        bolsa: parseFloat(nuevaBolsa) || 0,
-        caja: parseFloat(nuevaCaja) || 0,
-      }),
-    });
+    if (guardandoConteo) return;
+    setGuardandoConteo(true);
+    try {
+      await leerRespuestaApi(fetch(`${API}/conteo-monedas`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bolsa: parseFloat(nuevaBolsa) || 0,
+          caja: parseFloat(nuevaCaja) || 0,
+        }),
+      }));
+    } catch (error) {
+      toast({
+        title: "No se pudo guardar el conteo",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setGuardandoConteo(false);
+    }
   };
 
   const totalBolsaCaja = (parseFloat(bolsa) || 0) + (parseFloat(caja) || 0);
@@ -226,7 +260,7 @@ export function CalculadoraCierre({
           <div className="flex items-center gap-2">
             <button
               onClick={() => void guardarBorrador()}
-              disabled={guardandoBorrador || !borradorCargado}
+              disabled={guardandoBorrador || borrandoBorrador || !borradorCargado}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50"
             >
               <Save className="w-3.5 h-3.5" />
@@ -234,7 +268,7 @@ export function CalculadoraCierre({
             </button>
             <button
               onClick={() => { if (confirm("¿Borrar Suma, Resta, Monedas y la consulta de remachadas? Bolsa y Caja no se modificarán.")) void borrarBorrador(); }}
-              disabled={!borradorCargado}
+              disabled={!borradorCargado || borrandoBorrador || guardandoBorrador}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-destructive/15 text-destructive text-xs font-medium disabled:opacity-50"
             >
               <Trash2 className="w-3.5 h-3.5" /> Borrar
@@ -601,7 +635,8 @@ export function CalculadoraCierre({
                     type="number"
                     value={bolsa}
                     onChange={(e) => setBolsa(e.target.value)}
-                    onBlur={() => guardarConteoMonedas(bolsa, caja)}
+                    onBlur={() => void guardarConteoMonedas(bolsa, caja)}
+                    disabled={guardandoConteo}
                     className="bg-background px-3 py-2 text-right text-sm font-bold outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
@@ -613,7 +648,8 @@ export function CalculadoraCierre({
                     type="number"
                     value={caja}
                     onChange={(e) => setCaja(e.target.value)}
-                    onBlur={() => guardarConteoMonedas(bolsa, caja)}
+                    onBlur={() => void guardarConteoMonedas(bolsa, caja)}
+                    disabled={guardandoConteo}
                     className="bg-background px-3 py-2 text-right text-sm font-bold outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>

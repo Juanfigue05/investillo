@@ -10,6 +10,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { leerRespuestaApi } from "@/lib/respuesta-api";
+import { toast } from "@/hooks/use-toast";
 
 const API = "/api";
 
@@ -33,6 +35,8 @@ export function RemachadasPanel() {
   const [busquedaBanda, setBusquedaBanda] = useState("");
   const [ordenColumna, setOrdenColumna] = useState<OrdenColumna>("banda");
   const [direccionOrden, setDireccionOrden] = useState<DireccionOrden>("asc");
+  const [guardando, setGuardando] = useState(false);
+  const [eliminandoId, setEliminandoId] = useState<number | null>(null);
 
   const cargar = async () => {
     setCargando(true);
@@ -49,36 +53,68 @@ export function RemachadasPanel() {
   }, []);
 
   const agregar = async () => {
-    if (!nuevaBanda.trim() || !nuevoValor) return;
-    const res = await fetch(`${API}/remachadas`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        numeroBanda: nuevaBanda.trim(),
-        valorJuego: parseFloat(nuevoValor),
-      }),
-    });
-    const row = await res.json();
-    setRemachadas((prev) => [...prev, row]);
-    setNuevaBanda("");
-    setNuevoValor("");
+    if (!nuevaBanda.trim() || !nuevoValor || guardando) return;
+    setGuardando(true);
+    try {
+      const row = await leerRespuestaApi<RemachadaRow>(fetch(`${API}/remachadas`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          numeroBanda: nuevaBanda.trim(),
+          valorJuego: parseFloat(nuevoValor),
+        }),
+      }));
+      setRemachadas((prev) => [...prev, row]);
+      setNuevaBanda("");
+      setNuevoValor("");
+    } catch (error) {
+      toast({
+        title: "No se pudo agregar la banda",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setGuardando(false);
+    }
   };
 
   const guardarEdicion = async (id: number) => {
-    const res = await fetch(`${API}/remachadas/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ valorJuego: parseFloat(editValor) }),
-    });
-    const row = await res.json();
-    setRemachadas((prev) => prev.map((r) => (r.id === id ? row : r)));
-    setEditandoId(null);
+    if (guardando) return;
+    setGuardando(true);
+    try {
+      const row = await leerRespuestaApi<RemachadaRow>(fetch(`${API}/remachadas/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ valorJuego: parseFloat(editValor) }),
+      }));
+      setRemachadas((prev) => prev.map((r) => (r.id === id ? row : r)));
+      setEditandoId(null);
+    } catch (error) {
+      toast({
+        title: "No se pudo guardar la banda",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setGuardando(false);
+    }
   };
 
   const eliminar = async (id: number) => {
-    if (!confirm("¿Eliminar esta banda?")) return;
-    await fetch(`${API}/remachadas/${id}`, { method: "DELETE" });
-    setRemachadas((prev) => prev.filter((r) => r.id !== id));
+    if (eliminandoId !== null || !confirm("¿Eliminar esta banda?")) return;
+    setEliminandoId(id);
+    try {
+      await leerRespuestaApi(fetch(`${API}/remachadas/${id}`, { method: "DELETE" }));
+      setRemachadas((prev) => prev.filter((r) => r.id !== id));
+    } catch (error) {
+      toast({
+        title: "No se pudo eliminar la banda",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setEliminandoId(null);
+    }
   };
 
   const preciosUnicos = useMemo(
@@ -189,6 +225,7 @@ export function RemachadasPanel() {
                       type="button"
                       aria-label="Guardar cambio"
                       onClick={() => guardarEdicion(r.id)}
+                      disabled={guardando}
                       className="rounded-md p-1 text-primary hover:bg-primary/10"
                     >
                       <Check className="h-4 w-4" />
@@ -210,6 +247,7 @@ export function RemachadasPanel() {
                     type="button"
                     aria-label={`Eliminar banda ${r.numeroBanda}`}
                     onClick={() => eliminar(r.id)}
+                    disabled={eliminandoId !== null}
                     className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -239,6 +277,7 @@ export function RemachadasPanel() {
           placeholder="Número de banda"
           value={nuevaBanda}
           onChange={(e) => setNuevaBanda(e.target.value)}
+          disabled={guardando}
           className="w-48 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
         />
         <input
@@ -246,11 +285,14 @@ export function RemachadasPanel() {
           placeholder="Valor remachada (juego)"
           value={nuevoValor}
           onChange={(e) => setNuevoValor(e.target.value)}
+          disabled={guardando}
           className="w-52 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
         />
         <button
           type="button"
           onClick={agregar}
+          disabled={guardando}
+          aria-busy={guardando}
           className="flex items-center gap-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           <Plus className="h-4 w-4" /> Agregar

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import { Layout } from "@/components/Layout";
+import { leerRespuestaApi } from "@/lib/respuesta-api";
 import { formatCurrency } from "@/lib/utils";
 import { History, ChevronDown, ChevronUp, Trash2, AlertCircle, Pencil } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
@@ -41,8 +42,7 @@ async function fetchCierres(): Promise<CierreGuardado[]> {
 }
 
 async function deleteCierre(id: number) {
-  const res = await fetch(`${BASE}/cierre-diario/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(await res.text());
+  await leerRespuestaApi(fetch(`${BASE}/cierre-diario/${id}`, { method: "DELETE" }));
 }
 
 // ---------- helpers ----------
@@ -129,8 +129,8 @@ export default function HistorialCierres() {
     try {
       await deleteCierre(id);
       setCierres((prev) => prev.filter((c) => c.id !== id));
-    } catch {
-      alert("Error al eliminar");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : String(error));
     } finally {
       setDeleting(null);
     }

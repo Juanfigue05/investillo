@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Hand, Pencil, Printer, Trash2, X } from "lucide-react";
 import { Layout } from "@/components/Layout";
 import { fechaHoyColombia, formatCurrency } from "@/lib/utils";
+import { leerRespuestaApi } from "@/lib/respuesta-api";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
@@ -31,6 +32,8 @@ export default function ObraElectronica() {
   const [cargando, setCargando] = useState(true);
   const [editando, setEditando] = useState<Registro | null>(null);
   const [borrador, setBorrador] = useState({ fecha: "", numeroFactura: "", vehiculo: "", valor: "" });
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+  const [eliminandoId, setEliminandoId] = useState<number | null>(null);
 
   const cargar = async () => {
     setCargando(true);
@@ -67,22 +70,34 @@ export default function ObraElectronica() {
   };
 
   const guardarEdicion = async () => {
-    if (!editando) return;
-    const res = await fetch(`${API}/obra-electronica/${editando.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...borrador, valor: valorMostrado(borrador.valor) }),
-    });
-    if (!res.ok) { alert((await res.json().catch(() => null))?.error || "No se pudo guardar"); return; }
-    setEditando(null);
-    await cargar();
+    if (!editando || guardandoEdicion) return;
+    setGuardandoEdicion(true);
+    try {
+      await leerRespuestaApi(fetch(`${API}/obra-electronica/${editando.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...borrador, valor: valorMostrado(borrador.valor) }),
+      }));
+      setEditando(null);
+      await cargar();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : String(error));
+    } finally {
+      setGuardandoEdicion(false);
+    }
   };
 
   const eliminar = async (id: number) => {
-    if (!confirm("¿Eliminar esta obra electrónica?")) return;
-    const res = await fetch(`${API}/obra-electronica/${id}`, { method: "DELETE" });
-    if (!res.ok) { alert("No se pudo eliminar"); return; }
-    await cargar();
+    if (eliminandoId !== null || !confirm("¿Eliminar esta obra electrónica?")) return;
+    setEliminandoId(id);
+    try {
+      await leerRespuestaApi(fetch(`${API}/obra-electronica/${id}`, { method: "DELETE" }));
+      await cargar();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : String(error));
+    } finally {
+      setEliminandoId(null);
+    }
   };
 
   return (
@@ -139,7 +154,7 @@ export default function ObraElectronica() {
             <input value={borrador.numeroFactura} onChange={(e) => setBorrador((p) => ({ ...p, numeroFactura: e.target.value }))} placeholder="Número de factura" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm" />
             <input value={borrador.vehiculo} onChange={(e) => setBorrador((p) => ({ ...p, vehiculo: e.target.value }))} placeholder="Placa o vehículo" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm" />
             <input value={borrador.valor} onChange={(e) => setBorrador((p) => ({ ...p, valor: e.target.value }))} placeholder="Valor: 60 o 12,5" inputMode="decimal" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm" />
-            <button onClick={guardarEdicion} className="w-full bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm font-medium">Guardar cambios</button>
+            <button onClick={guardarEdicion} disabled={guardandoEdicion} className="w-full bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50">{guardandoEdicion ? "Guardando..." : "Guardar cambios"}</button>
           </div>
         </div>}
       </div>

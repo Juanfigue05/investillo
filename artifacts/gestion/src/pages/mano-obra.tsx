@@ -4,6 +4,8 @@ import { useGetTrabajadores, useCrearTrabajador } from "@workspace/api-client-re
 import { formatCurrency } from "@/lib/utils";
 import { Users, Plus, ShieldCheck, Calendar, Clock, Wallet } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { leerRespuestaApi } from "@/lib/respuesta-api";
+import { toast } from "@/hooks/use-toast";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
@@ -115,13 +117,19 @@ export default function Trabajadores() {
     if (!form) return;
     setGuardandoPerfilId(id);
     try {
-      await fetch(`${API}/trabajadores/${id}`, {
+      await leerRespuestaApi(fetch(`${API}/trabajadores/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
-      });
+      }));
       invalidar();
       if (form.aplicaSeguro) cargarPagos(id);
+    } catch (error) {
+      toast({
+        title: "No se pudo guardar el perfil",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
     } finally {
       setGuardandoPerfilId(null);
     }
@@ -133,15 +141,21 @@ export default function Trabajadores() {
     if (!fecha || !monto) return;
     setRegistrandoPagoId(trabajadorId);
     try {
-      await fetch(`${API}/trabajadores/${trabajadorId}/pagos-seguro`, {
+      await leerRespuestaApi(fetch(`${API}/trabajadores/${trabajadorId}/pagos-seguro`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fecha, monto: parseFloat(monto) }),
-      });
+      }));
       setNuevoPagoFecha((prev) => ({ ...prev, [trabajadorId]: "" }));
       setNuevoPagoMonto((prev) => ({ ...prev, [trabajadorId]: "" }));
       invalidar();
       cargarPagos(trabajadorId);
+    } catch (error) {
+      toast({
+        title: "No se pudo registrar el pago",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
     } finally {
       setRegistrandoPagoId(null);
     }

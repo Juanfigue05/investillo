@@ -15,6 +15,7 @@ import { RelojColombia } from "./RelojColombia";
 import { fechaHoyColombia } from "@/lib/utils";
 import { hayGetsApiActivos, suscribirGetsApi } from "@/lib/api-request-tracker";
 import { queryClient } from "@/lib/queryClient";
+import { leerRespuestaApi } from "@/lib/respuesta-api";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 function loadSet(key: string): Set<number> {
@@ -71,6 +72,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [tensionadaFecha, setTensionadaFecha] = useState("");
   const [tensionadaValor, setTensionadaValor] = useState("");
   const [guardandoTensionada, setGuardandoTensionada] = useState(false);
+  const [errorTensionada, setErrorTensionada] = useState("");
   const [showObraElectronica, setShowObraElectronica] = useState(false);
   const [obraFecha, setObraFecha] = useState(fechaHoyColombia());
   const [obraTrabajadorId, setObraTrabajadorId] = useState("");
@@ -133,15 +135,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const guardarTensionada = async () => {
     if (!tensionadaFecha || !tensionadaValor) return;
     setGuardandoTensionada(true);
+    setErrorTensionada("");
     try {
-      await fetch("/api/tensionadas", {
+      await leerRespuestaApi(fetch("/api/tensionadas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fecha: tensionadaFecha, valor: parseFloat(tensionadaValor) }),
-      });
+      }));
       setShowTensionada(false);
       setTensionadaFecha("");
       setTensionadaValor("");
+    } catch (error) {
+      setErrorTensionada(error instanceof Error ? error.message : String(error));
     } finally {
       setGuardandoTensionada(false);
     }
@@ -155,12 +160,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
     }
     setGuardandoObra(true);
     try {
-      const res = await fetch(`${import.meta.env.BASE_URL}api/obra-electronica`.replace(/\/+/g, "/"), {
+      await leerRespuestaApi(fetch(`${import.meta.env.BASE_URL}api/obra-electronica`.replace(/\/+/g, "/"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ trabajadorId: Number(obraTrabajadorId), fecha: obraFecha, numeroFactura: obraNumeroFactura, vehiculo: obraVehiculo, valor: obraValor }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "No se pudo guardar");
+      }));
       setShowObraElectronica(false);
       setObraNumeroFactura("");
       setObraVehiculo("");
@@ -270,6 +274,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     <input type="number" value={tensionadaValor} onChange={(e) => setTensionadaValor(e.target.value)}
                       className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
                   </div>
+                  {errorTensionada && <p className="text-sm text-destructive">{errorTensionada}</p>}
                   <div className="flex gap-2">
                     <button onClick={guardarTensionada} disabled={guardandoTensionada} className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm disabled:opacity-50">
                       {guardandoTensionada ? "Guardando..." : "Guardar"}

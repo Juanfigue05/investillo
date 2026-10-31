@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { coincideBusqueda, formatCurrency, formatCurrencyDecimal, formatNumberCO, parseNumberCO } from "@/lib/utils";
 import { Pencil, Search, Trash2, X } from "lucide-react";
+import { leerRespuestaApi } from "@/lib/respuesta-api";
+import { toast } from "@/hooks/use-toast";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 const MOTIVOS = ["Producto dañado", "Arreglo para trabajador", "Pérdida", "Consumo interno", "Producto vencido", "Otro"];
@@ -13,19 +15,48 @@ function necesitaConfirmacion(texto: string) { const limpio = texto.replace(/[\s
 export default function DescuentosInventario() {
   const [productos, setProductos] = useState<Producto[]>([]); const [registros, setRegistros] = useState<Registro[]>([]); const [busqueda, setBusqueda] = useState("");
   const [cantidades, setCantidades] = useState<Record<number, string>>({}); const [confirmados, setConfirmados] = useState<Record<number, boolean>>({}); const [motivo, setMotivo] = useState(MOTIVOS[0]); const [motivoOtro, setMotivoOtro] = useState(""); const [observacion, setObservacion] = useState(""); const [mensaje, setMensaje] = useState(""); const [guardando, setGuardando] = useState(false); const [editando, setEditando] = useState<Registro | null>(null); const [editCantidad, setEditCantidad] = useState(""); const [editMotivo, setEditMotivo] = useState(MOTIVOS[0]); const [editOtro, setEditOtro] = useState(""); const [editObservacion, setEditObservacion] = useState("");
+  const [operacionEnCurso, setOperacionEnCurso] = useState(false);
   const cargar = async () => { const [p, h] = await Promise.all([fetch(`${API}/inventario`).then((r) => r.json()), fetch(`${API}/descuentos-inventario`).then((r) => r.json())]); setProductos(p); setRegistros(h); };
   useEffect(() => { void cargar(); }, []);
   const visibles = useMemo(() => productos.filter((p) => coincideBusqueda(busqueda, p.nombre, p.codigo, p.marca, p.tipo, p.referencia, p.adicional)), [productos, busqueda]);
   const grupos = useMemo(() => [...registros.reduce((m, r) => m.set(r.operacionId, [...(m.get(r.operacionId) || []), r]), new Map<string, Registro[]>()).values()], [registros]);
   const guardar = async () => {
+    if (guardando || operacionEnCurso) return;
     setMensaje(""); const items = Object.entries(cantidades).filter(([, cantidad]) => cantidad.trim());
     if (!items.length) { setMensaje("Selecciona cantidades para uno o varios productos."); return; }
     if (motivo === "Otro" && !motivoOtro.trim()) { setMensaje("Especifica el motivo."); return; }
     if (items.some(([id, cantidad]) => necesitaConfirmacion(cantidad) && !confirmados[Number(id)])) { setMensaje("Confirma la interpretación de las cantidades marcadas."); return; }
-    setGuardando(true); try { const res = await fetch(`${API}/descuentos-inventario`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ motivo, motivoOtro, observacion, items: items.map(([productoId, cantidad]) => ({ productoId: Number(productoId), cantidad: parseNumberCO(cantidad) })) }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error); setCantidades({}); setConfirmados({}); setObservacion(""); setMensaje("Descuento registrado."); await cargar(); } catch (e) { setMensaje(e instanceof Error ? e.message : "No se pudo guardar"); } finally { setGuardando(false); }
+    setGuardando(true); try { await leerRespuestaApi(fetch(`${API}/descuentos-inventario`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ motivo, motivoOtro, observacion, items: items.map(([productoId, cantidad]) => ({ productoId: Number(productoId), cantidad: parseNumberCO(cantidad) })) }) })); setCantidades({}); setConfirmados({}); setObservacion(""); setMensaje("Descuento registrado."); await cargar(); } catch (e) { const detalle = e instanceof Error ? e.message : "No se pudo guardar"; setMensaje(detalle); toast({ title: "No se pudo guardar el descuento", description: detalle, variant: "destructive" }); } finally { setGuardando(false); }
   };
-  const eliminar = async (registro: Registro) => { if (!window.confirm(`¿Devolver ${formatNumberCO(registro.cantidad)} unidades de ${registro.productoNombre} al inventario?`)) return; const res = await fetch(`${API}/descuentos-inventario/${registro.id}`, { method: "DELETE" }); if (!res.ok) { setMensaje((await res.json()).error || "No se pudo eliminar"); return; } await cargar(); };
-  const guardarEdicion = async () => { if (!editando) return; const res = await fetch(`${API}/descuentos-inventario/${editando.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cantidad: parseNumberCO(editCantidad), motivo: editMotivo, motivoOtro: editOtro, observacion: editObservacion }) }); const data = await res.json(); if (!res.ok) { setMensaje(data.error || "No se pudo editar"); return; } setEditando(null); await cargar(); };
+  const eliminar = async (registro: Registro) => {
+    if (guardando || operacionEnCurso || !window.confirm(`¿Devolver ${formatNumberCO(registro.cantidad)} unidades de ${registro.productoNombre} al inventario?`)) return;
+    setOperacionEnCurso(true);
+    try {
+      await leerRespuestaApi(fetch(`${API}/descuentos-inventario/${registro.id}`, { method: "DELETE" }));
+      await cargar();
+    } catch (error) {
+      const detalle = error instanceof Error ? error.message : "No se pudo eliminar";
+      setMensaje(detalle);
+      toast({ title: "No se pudo eliminar el descuento", description: detalle, variant: "destructive" });
+    } finally {
+      setOperacionEnCurso(false);
+    }
+  };
+  const guardarEdicion = async () => {
+    if (!editando || guardando || operacionEnCurso) return;
+    setOperacionEnCurso(true);
+    try {
+      await leerRespuestaApi(fetch(`${API}/descuentos-inventario/${editando.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cantidad: parseNumberCO(editCantidad), motivo: editMotivo, motivoOtro: editOtro, observacion: editObservacion }) }));
+      setEditando(null);
+      await cargar();
+    } catch (error) {
+      const detalle = error instanceof Error ? error.message : "No se pudo editar";
+      setMensaje(detalle);
+      toast({ title: "No se pudo editar el descuento", description: detalle, variant: "destructive" });
+    } finally {
+      setOperacionEnCurso(false);
+    }
+  };
   return <Layout><div className="space-y-6"><div><h1 className="text-2xl font-display font-bold">Descuentos de inventario</h1><p className="text-sm text-muted-foreground mt-1">Se descuenta primero de Local y luego de Bodega.</p></div>
     <section className="bg-card border border-border rounded-xl p-5 space-y-4"><div className="grid sm:grid-cols-2 gap-3"><label className="text-sm">Motivo<select value={motivo} onChange={(e) => setMotivo(e.target.value)} className="mt-1 w-full bg-background border border-border rounded-lg px-3 py-2">{MOTIVOS.map((m) => <option key={m}>{m}</option>)}</select></label>{motivo === "Otro" && <label className="text-sm">Especifica el motivo<input value={motivoOtro} onChange={(e) => setMotivoOtro(e.target.value)} className="mt-1 w-full bg-background border border-border rounded-lg px-3 py-2" /></label>}</div><label className="text-sm">Observación<textarea value={observacion} onChange={(e) => setObservacion(e.target.value)} rows={2} className="mt-1 w-full bg-background border border-border rounded-lg px-3 py-2" /></label><div className="relative"><Search className="absolute left-3 top-2.5 w-4 h-4" /><input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar producto" className="w-full pl-9 bg-background border border-border rounded-lg px-3 py-2" /></div><div className="max-h-64 overflow-auto divide-y divide-border">{visibles.map((p) => <div key={p.id} className="flex items-center justify-between gap-3 py-2"><div><p className="text-sm font-medium">{p.nombre}</p><p className="text-xs text-muted-foreground">{p.codigo} · Local {p.stockLocal} · Bodega {p.stockBodega}</p></div><input value={cantidades[p.id] || ""} onChange={(e) => setCantidades((x) => ({ ...x, [p.id]: e.target.value }))} placeholder="0,25" inputMode="decimal" className="w-24 text-right bg-background border border-border rounded-lg px-2 py-1.5" /></div>)}</div>
       {Object.entries(cantidades).filter(([, c]) => c.trim()).map(([id, texto]) => <div key={id} className="text-xs border border-border rounded-lg p-3 flex justify-between gap-3"><div><p>Escribiste <strong>{texto}</strong>; se interpretará como <strong>{formatNumberCO(parseNumberCO(texto))}</strong>.</p><p className="text-muted-foreground">El sistema descontará primero de Local y completará desde Bodega.</p>{necesitaConfirmacion(texto) && <label className="flex gap-2 mt-2"><input type="checkbox" checked={Boolean(confirmados[Number(id)])} onChange={(e) => setConfirmados((x) => ({ ...x, [Number(id)]: e.target.checked }))} /> Confirmo esta interpretación</label>}</div><button title="Quitar" onClick={() => setCantidades((x) => { const n = { ...x }; delete n[Number(id)]; return n; })}><Trash2 className="w-4 h-4 text-destructive" /></button></div>)}{mensaje && <p className="text-sm text-primary">{mensaje}</p>}<button onClick={() => void guardar()} disabled={guardando} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground disabled:opacity-50">{guardando ? "Guardando..." : "Registrar descuento"}</button></section>

@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { Layout } from "@/components/Layout";
+import { leerRespuestaApi } from "@/lib/respuesta-api";
 import {
   useGetClientes,
   useCrearCliente,
@@ -366,21 +367,21 @@ export default function Clientes() {
     const file = e.target.files?.[0];
     if (!file) return;
     setImportandoClientes(true);
-    setImportResultClientes(null);
     try {
       const form = new FormData();
       form.append("archivo", file);
-      const res = await fetch(`${API}/clientes-import`, {
+      const data = await leerRespuestaApi<ImportResultCliente>(fetch(`${API}/clientes-import`, {
         method: "POST",
         body: form,
-      });
-      const data: ImportResultCliente = await res.json();
+      }));
       if (data.conflictosTelefono?.length) {
         setConflictosTelefono(data.conflictosTelefono);
       }
       setImportResultClientes(data);
-      if (data.ok)
+      if (data.ok) {
+        e.target.value = "";
         queryClient.invalidateQueries({ queryKey: ["/api/clientes"] });
+      }
     } catch (err) {
       setImportResultClientes({
         ok: false,
@@ -388,11 +389,10 @@ export default function Clientes() {
         procesados: 0,
         omitidos: 0,
         duplicados: 0,
-        error: String(err),
+        error: err instanceof Error ? err.message : String(err),
       });
     } finally {
       setImportandoClientes(false);
-      e.target.value = "";
     }
   };
 

@@ -43,6 +43,13 @@ function agregarFilaOptimista(queryClient: any, fecha: string, fila: any) {
     ...(old || []),
     { id: idTemporal, ...fila, _pendiente: true },
   ]);
+  return idTemporal;
+}
+
+function quitarFilaOptimista(queryClient: any, fecha: string, idTemporal: number) {
+  queryClient.setQueryData(["/api/ventas", { fecha }], (old: any[] = []) =>
+    (old || []).filter((fila) => fila.id !== idTemporal),
+  );
 }
 
 interface EditValues {
@@ -142,6 +149,7 @@ export default function VentasDiarias() {
     valoresFijados: {} as Record<number, number>,
     formaPago: "efectivo",
   });
+  const [guardandoManoObra, setGuardandoManoObra] = useState(false);
 
   const [stockAlerta, setStockAlerta] = useState<{ stock: number; minimo: number } | null>(null);
 
@@ -378,6 +386,7 @@ export default function VentasDiarias() {
     if (!newRow.referencia) { alert("Escribe una referencia / No. Remisión"); return; }
 
     if (modoActual === "manoobra" || modoActual === "soldadura") {
+      if (guardandoManoObra) return;
       if (!newRow.precioManoObra || newRow.trabajadoresSeleccionados.length === 0) {
         alert("Llena el valor del servicio y selecciona los trabajadores");
         return;
@@ -401,39 +410,45 @@ export default function VentasDiarias() {
         setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioManoObra: 0, trabajadoresSeleccionados: [], valoresFijados: {} }));
 
       setOrdenLocal(null);
-      agregarFilaOptimista(queryClient, fecha, {
+      const idTemporal = agregarFilaOptimista(queryClient, fecha, {
         referencia: newRow.referencia, tipoLinea: "manoobra",
         productoNombre: servicioActual, productoMarca: payloadManoObra.productoMarca,
         cantidad: 1, precioCompraUnidad: 0, precioVentaUnidad: valor, precioVentaTotal: valor, beneficio: valor,
       });
 
+      setGuardandoManoObra(true);
       (async () => {
-        if (navigator.onLine) {
-          try {
-            const res = await fetch(`${API}/ventas/manoobra`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payloadManoObra),
-            });
-            if (res.ok) {
-              queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
-              queryClient.invalidateQueries({ queryKey: ["/api/manoobra"] });
-              queryClient.invalidateQueries({ queryKey: ["/api/trabajadores"] });
-              limpiarFilaManoObra();
-              return;
+        try {
+          if (navigator.onLine) {
+            try {
+              const res = await fetch(`${API}/ventas/manoobra`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payloadManoObra),
+              });
+              if (res.ok) {
+                queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+                queryClient.invalidateQueries({ queryKey: ["/api/manoobra"] });
+                queryClient.invalidateQueries({ queryKey: ["/api/trabajadores"] });
+                limpiarFilaManoObra();
+                return;
+              }
+              if (navigator.onLine) {
+                quitarFilaOptimista(queryClient, fecha, idTemporal);
+                const errData = await res.json().catch(() => null);
+                toast({ title: "No se pudo guardar", description: errData?.error || `Error del servidor (${res.status})`, variant: "destructive" });
+                return;
+              }
+            } catch {
+              // sigue abajo, se encola
             }
-            if (navigator.onLine) {
-              const errData = await res.json().catch(() => null);
-              toast({ title: "No se pudo guardar", description: errData?.error || `Error del servidor (${res.status})`, variant: "destructive" });
-              return;
-            }
-          } catch {
-            // sigue abajo, se encola
           }
+          await encolarOperacion({ tipo: "manoobra_venta", metodo: "POST", endpoint: "/ventas/manoobra", payload: payloadManoObra });
+          toast({ title: "Guardado sin conexión", description: "Esta mano de obra se sincronizará automáticamente cuando vuelva internet." });
+          limpiarFilaManoObra();
+        } finally {
+          setGuardandoManoObra(false);
         }
-        await encolarOperacion({ tipo: "manoobra_venta", metodo: "POST", endpoint: "/ventas/manoobra", payload: payloadManoObra });
-        toast({ title: "Guardado sin conexión", description: "Esta mano de obra se sincronizará automáticamente cuando vuelva internet." });
-        limpiarFilaManoObra();
       })();
 
       return;
@@ -681,7 +696,7 @@ export default function VentasDiarias() {
                 )}
                 <tr ref={newRowRef} className={`no-print bg-background/40 scroll-mt-24 ${modoActual === "manoobra" || modoActual === "soldadura" ? "row-manoobra" : modoActual === "abono" ? "row-credito" : ""}`}>
                   <td className="p-2 no-print">
-                    <button onClick={handleAddRow} disabled={crearMutation.isPending} className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow" title="Guardar fila">
+                    <button onClick={handleAddRow} disabled={crearMutation.isPending || guardandoManoObra} className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow" title="Guardar fila">
                       <Save className="w-4 h-4" />
                     </button>
                   </td>

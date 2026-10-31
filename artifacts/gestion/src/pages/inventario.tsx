@@ -204,18 +204,17 @@ export default function Inventario() {
   const [resolvedOk, setResolvedOk] = useState(false);
 
     const handlePrevisualizar = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-    setPrevisualizando(true);
-    setPreviewCompleto(null);
-    setResultadoAplicado(null);
-    try {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setPrevisualizando(true);
+      try {
       const form = new FormData();
       form.append("archivo", file);
       const res = await fetch(`${API}/inventario-import/previsualizar`, { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al previsualizar");
+      e.target.value = "";
+      setResultadoAplicado(null);
       setPreviewCompleto(data);
     } catch (err) {
       alert("Error: " + err);
@@ -295,15 +294,7 @@ export default function Inventario() {
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    e.target.value = "";
     setImportando(true);
-    setImportResult(null);
-    setConflictos([]);
-    setChoices({});
-    setNewCodes({});
-    setResolvedOk(false);
-    setConflictosCantidad([]);
-    setProductosNuevos([]);
     try {
       const form = new FormData();
       form.append("archivo", file);
@@ -313,6 +304,13 @@ export default function Inventario() {
       });
       const data: ImportResult = await res.json();
       if (!res.ok) throw new Error((data as any).error || "Error desconocido");
+      e.target.value = "";
+      setConflictos([]);
+      setChoices({});
+      setNewCodes({});
+      setResolvedOk(false);
+      setConflictosCantidad([]);
+      setProductosNuevos([]);
       setImportResult(data);
       if (data.conflictos?.length) {
         setConflictos(data.conflictos);
