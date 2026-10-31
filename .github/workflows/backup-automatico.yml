@@ -6,16 +6,22 @@ on:
     - cron: "0 1 * * *"    # 8:00 p.m. hora Colombia (del día anterior en UTC)
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
 jobs:
   backup:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
       - name: Instalar cliente de PostgreSQL 18
         run: |
-          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo install -d -m 0755 /etc/apt/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+          sudo chmod a+r /etc/apt/keyrings/postgresql.gpg
+          sudo sh -c 'echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
           sudo apt-get update
           sudo apt-get install -y postgresql-client-18
 
@@ -30,7 +36,7 @@ jobs:
         with:
           node-version: 24
 
-      - run: corepack enable && corepack prepare pnpm@latest --activate
+      - run: corepack enable && corepack prepare pnpm@11.22.0 --activate
       - run: pnpm install --frozen-lockfile
 
       - name: Ejecutar respaldo

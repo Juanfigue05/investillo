@@ -4,12 +4,16 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -31,7 +35,7 @@ jobs:
           node-version: 24
 
       - name: Install pnpm
-        run: corepack enable && corepack prepare pnpm@latest --activate
+        run: corepack enable && corepack prepare pnpm@11.22.0 --activate
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -50,3 +54,65 @@ jobs:
 
       - name: Run script tests
         run: pnpm --filter @workspace/scripts run test
+
+  sync-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: investillo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d investillo_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGPASSWORD: postgres
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/investillo_test
+      SYNC_TEST_DATABASE_LOCAL: postgres://postgres:postgres@localhost:5432/investillo_sync_local
+      SYNC_TEST_DATABASE_REMOTE: postgres://postgres:postgres@localhost:5432/investillo_sync_remote
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: corepack enable && corepack prepare pnpm@11.22.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create isolated synchronization databases
+        run: |
+          pnpm --filter @workspace/scripts exec node -e '
+            const { Client } = require("pg");
+            (async () => {
+              const databaseUrl = new URL(process.env.DATABASE_URL);
+              databaseUrl.pathname = "/postgres";
+              const client = new Client({ connectionString: databaseUrl.toString() });
+              await client.connect();
+              try {
+                await client.query("CREATE DATABASE investillo_sync_local");
+                await client.query("CREATE DATABASE investillo_sync_remote");
+              } finally {
+                await client.end();
+              }
+            })().catch((error) => { console.error(error.message); process.exitCode = 1; });
+          '
+
+      - name: Create local test schemas
+        run: |
+          for database in investillo_test investillo_sync_local investillo_sync_remote; do
+            DATABASE_URL="postgres://postgres:postgres@localhost:5432/$database" pnpm --filter @workspace/db run push
+          done
+
+      - name: Run synchronization tests
+        run: pnpm --filter @workspace/scripts run test:sync

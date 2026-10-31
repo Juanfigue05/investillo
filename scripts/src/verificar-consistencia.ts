@@ -53,6 +53,68 @@ async function verificarConsistencia() {
     }
   }
 
+  const totalesTrabajadores = await pool.query<{
+    id: number;
+    nombre: string;
+    total_ganado: string;
+    total_distribuido: string;
+  }>(`
+    SELECT t.id, t.nombre, t.total_ganado::text AS total_ganado,
+           COALESCE(SUM(d.valor), 0)::text AS total_distribuido
+    FROM trabajadores t
+    LEFT JOIN distribuciones_mano_obra d ON d.trabajador_id = t.id
+    GROUP BY t.id, t.nombre, t.total_ganado
+    HAVING t.total_ganado <> COALESCE(SUM(d.valor), 0)
+  `);
+  for (const row of totalesTrabajadores.rows) {
+    problemas.push({
+      categoria: "Total ganado desalineado",
+      detalle: `${row.nombre} (#${row.id}): total_ganado ${row.total_ganado}, distribuciones ${row.total_distribuido}`,
+    });
+  }
+
+  const tablasSincronizacion = await pool.query<{
+    eventos: string | null;
+    operaciones: string | null;
+  }>(`
+    SELECT to_regclass('public.eventos_sincronizacion') AS eventos,
+           to_regclass('public.operaciones_sincronizadas') AS operaciones
+  `);
+  const tablasSync = tablasSincronizacion.rows[0];
+  if (!tablasSync?.eventos || !tablasSync.operaciones) {
+    console.warn(
+      "Aviso: las tablas de sincronización no están instaladas; se omite esa sección de la revisión.",
+    );
+  } else {
+    const problemasSync = await pool.query<{
+      errores: string;
+      conflictos: string;
+      pendientes_antiguos: string;
+    }>(`
+      SELECT COUNT(*) FILTER (
+               WHERE origen = 'local' AND estado = 'error'
+             )::text AS errores,
+             COUNT(*) FILTER (
+               WHERE origen = 'local' AND estado = 'conflicto'
+             )::text AS conflictos,
+             COUNT(*) FILTER (
+               WHERE origen = 'local' AND estado = 'pendiente'
+                 AND creado_en < now() - interval '24 hours'
+             )::text AS pendientes_antiguos
+      FROM eventos_sincronizacion
+    `);
+    const estado = problemasSync.rows[0]!;
+    for (const [categoria, cantidad] of [
+      ["Eventos de sincronización con error", Number(estado.errores)],
+      ["Conflictos de sincronización", Number(estado.conflictos)],
+      ["Eventos pendientes por más de 24 horas", Number(estado.pendientes_antiguos)],
+    ] as const) {
+      if (cantidad > 0) {
+        problemas.push({ categoria, detalle: `${cantidad} evento(s)` });
+      }
+    }
+  }
+
   // 1. Stock negativo (nunca debería pasar)
   const stockNegativo = await pool.query(
     "SELECT nombre, codigo, stock_actual FROM productos WHERE stock_actual < 0",

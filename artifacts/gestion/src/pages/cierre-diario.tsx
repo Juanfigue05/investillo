@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetTrabajadores } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
@@ -379,6 +379,7 @@ export default function CierreDiario() {
 
   const fechaHoy = fechaHoyColombia();
   const [fechaCierre, setFechaCierre] = useState(() => fechaCierreActiva(fechaHoy));
+  const falloBorradorAvisado = useRef(false);
   const hoyLabel = new Date(fechaCierre + "T12:00:00").toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const hoyStr = hoyLabel.charAt(0).toUpperCase() + hoyLabel.slice(1);
 
@@ -503,13 +504,19 @@ export default function CierreDiario() {
       ),
     };
     const timer = window.setTimeout(() => {
-      guardarBorrador(fechaCierre, datos).catch((error) => {
-        toast({
-          title: "No se pudo guardar el borrador",
-          description: error instanceof Error ? error.message : String(error),
-          variant: "destructive",
+      guardarBorrador(fechaCierre, datos)
+        .then(() => {
+          falloBorradorAvisado.current = false;
+        })
+        .catch((error) => {
+          if (!navigator.onLine || falloBorradorAvisado.current) return;
+          falloBorradorAvisado.current = true;
+          toast({
+            title: "No se pudo guardar el borrador",
+            description: error instanceof Error ? error.message : String(error),
+            variant: "destructive",
+          });
         });
-      });
       try { sessionStorage.setItem(CIERRE_ACTIVO_KEY, fechaCierre); } catch { /* almacenamiento de sesión no es la fuente de datos */ }
     }, 350);
     return () => window.clearTimeout(timer);

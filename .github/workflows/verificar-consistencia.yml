@@ -5,9 +5,13 @@ on:
     - cron: "0 13 * * *"   # todos los días a las 8:00 a.m. hora Colombia (13:00 UTC)
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
 jobs:
   verificar:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Clonar el repositorio
         uses: actions/checkout@v4
@@ -18,7 +22,7 @@ jobs:
           node-version: 24
 
       - name: Instalar pnpm
-        run: corepack enable && corepack prepare pnpm@latest --activate
+        run: corepack enable && corepack prepare pnpm@11.22.0 --activate
 
       - name: Instalar dependencias
         run: pnpm install --frozen-lockfile
