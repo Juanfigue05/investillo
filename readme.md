@@ -467,7 +467,7 @@ La instalación local usa PostgreSQL en este computador. Esto evita que las oper
 
 #### Qué significa cada variable
 
-- `DATABASE_URL` es una conexión de PostgreSQL. En `.env.local` apunta a la base instalada en este computador, por ejemplo `localhost:5432/investillo_local`.
+- `DATABASE_URL` es una conexión de PostgreSQL. En la laptop de la empresa apunta a la base local por el puerto `5433`, por ejemplo `localhost:5433/investillo_local`. `5432` es el puerto predeterminado de una instalación nueva de PostgreSQL; no lo uses para esta laptop.
 - `SYNC_REMOTE_API_URL` **no** es una conexión de PostgreSQL. Es la dirección HTTPS del API publicado en Render, normalmente con `/api` al final, por ejemplo `https://TU-SERVICIO.onrender.com/api`.
 - `SYNC_TOKEN` es un secreto aleatorio compartido por Render, `.env.local` y el servidor local. Los scripts lo envían en la cabecera `X-Sync-Token`; debe tener al menos 32 bytes.
 - En Render, `DATABASE_URL` apunta a Aiven. En `.env.backup`, `SOURCE_DATABASE_URL` también apunta a Aiven; `AIVEN_DATABASE_URL` es el nombre histórico de la conexión de destino Supabase.
@@ -512,7 +512,7 @@ Hazlo una sola vez, antes de usar la oficina sin internet y después de tener un
 2. Ejecuta `pnpm run backup`, que obtiene el dump de Aiven con las variables de `.env.backup`. Revisa el resumen y elige el archivo `.dump` recién generado en `scripts\backups`.
 3. Confirma cuidadosamente que el destino sea `investillo_local`. El siguiente ejemplo restaura el dump elegido en esa base local; no uses la URL de Aiven como destino:
   ```powershell
-  & 'C:\Program Files\PostgreSQL\18\bin\pg_restore.exe' --host localhost --port 5432 --username postgres --dbname investillo_local --clean --if-exists --no-owner --no-privileges 'C:\ruta\protegida\investillo_AAAA-MM-DD.dump'
+  & 'C:\Program Files\PostgreSQL\18\bin\pg_restore.exe' --host localhost --port 5433 --username postgres --dbname investillo_local --clean --if-exists --no-owner --no-privileges 'C:\ruta\protegida\investillo_AAAA-MM-DD.dump'
   ```
 4. Ejecuta la verificación contra la base local:
   ```powershell
@@ -1063,6 +1063,8 @@ No escribas valores reales en el README, en capturas, tickets ni commits. Usa lo
 | `SYNC_REMOTE_API_URL` | `.env.local` | URL HTTPS del API de Render con `/api`; no es una URL de PostgreSQL. |
 | `DISABLE_BACKGROUND_JOBS` | API | Si vale `true`, desactiva los trabajos periódicos del proceso. Normalmente se deja sin configurar. |
 | `LOG_LEVEL` | API | Nivel de logging opcional; por defecto es `info`. |
+| `REPL_ID` | Replit | Variable opcional que Replit inyecta; en desarrollo activa complementos visuales de Vite. No hace falta configurarla en Render ni en la laptop. |
+| `NODE_VERSION` | Render | Fija la versión de Node.js del servicio; usa `24` para esta rama. Es una variable de configuración de la plataforma, no la lee el código de la aplicación. |
 | `SOURCE_DATABASE_URL` | `.env.backup` y GitHub Secrets del backup | Obligatoria para generar el respaldo: conexión de origen a Aiven, la base principal. |
 | `AIVEN_DATABASE_URL` | `.env.backup` y GitHub Secrets del backup | Opcional; nombre histórico de la conexión de destino a Supabase, la réplica auxiliar. |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | `.env.backup` y GitHub Secrets del backup | Deben configurarse las cuatro para subir dumps a Cloudflare R2. La llave debe limitarse al bucket necesario. |

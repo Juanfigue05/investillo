@@ -77,3 +77,41 @@ Variables añadidas solo para pruebas y no destinadas a producción:
 `SOURCE_DATABASE_URL` y `AIVEN_DATABASE_URL` conservan sus nombres. El significado operativo documentado es `SOURCE_DATABASE_URL` como origen Aiven y `AIVEN_DATABASE_URL` como destino auxiliar Supabase. Las demás variables y su ámbito se detallan en la sección [Variables de entorno](../readme.md#seccion-16).
 
 Las variables heredadas del sistema operativo usadas en pruebas (`PATH`, `TEMP`, `TMP`, `USERPROFILE`, `SystemRoot` y `ComSpec`) no son configuración de Investillo ni deben agregarse a archivos `.env`.
+
+## Qué aplicar al desplegar y en qué orden
+
+### Antes de iniciar la versión nueva en Render
+
+Configura estas variables en el servicio de Render antes de desplegar o reiniciar el API:
+
+- `SYNC_TOKEN`: secreto aleatorio de al menos 32 caracteres; debe coincidir exactamente con el de `.env.local` en la laptop.
+- `SYNC_CAPTURE_REMOTE=true`: habilita la captura de escrituras remotas que se descargan después en la PC.
+- `TRUST_PROXY_HOPS=1`: para el recorrido usual de un proxy en Render; verifica la topología real si cambia.
+- `CORS_ORIGINS`: origen HTTPS real desde el que se abrirá la aplicación. No uses un valor de ejemplo ni agregues una conexión PostgreSQL.
+- `CLAVE_ACCESO_REMOTO`: secreto de acceso remoto; consérvalo únicamente en la configuración privada de Render.
+- `NODE_VERSION=24`: versión de Node.js solicitada a Render.
+
+El arranque del API **no ejecuta migraciones ni crea automáticamente las tablas núcleo de sincronización**. `eventos_sincronizacion`, `operaciones_sincronizadas`, `referencias_sincronizacion`, `cursos_sincronizacion` y `base_sincronizacion` pertenecen al esquema Drizzle y deben existir por la migración aprobada correspondiente. Algunas tablas auxiliares se crean de forma diferida al usar su ruta, pero eso no aprovisiona el esquema de sincronización. No ejecutes `db:push` contra Aiven para resolver una tabla faltante.
+
+### SQL de llaves foráneas e índices de la Orden 12
+
+El archivo [`sql/orden-12-llaves-foraneas-e-indices.sql`](./sql/orden-12-llaves-foraneas-e-indices.sql) se aplica como migración separada, después de que la sincronización bidireccional lleve al menos una semana estable, de acuerdo con la guía del README. Antes, genera y verifica un respaldo reciente, pausa todas las escrituras y ejecuta la revisión de consistencia contra las bases que se van a migrar. Revisa cada huérfano, diferencia de `total_ganado`, conflicto y error; el verificador informa problemas, no los corrige.
+
+Aplica el archivo completo en cada base requerida, respetando su `BEGIN` y `COMMIT`, y valida las 17 llaves foráneas, los 18 índices y la tabla `_respaldo_huerfanos` antes de reanudar escrituras. Si ocurre un error antes de `COMMIT`, la transacción completa se revierte; conserva el mensaje y no reintentes sin revisarlo. Después de un `COMMIT` no hay una reversión automática segura: el SQL conserva y cambia datos huérfanos y elimina historiales cuyo producto ya no existe. No ejecutes un `DROP CONSTRAINT` improvisado; restaura el respaldo previo en una base aislada y planifica una recuperación revisada.
+
+### Orden recomendado
+
+1. Genera un respaldo fresco de Aiven hacia R2 y guarda otra copia verificada fuera del repositorio. Confirma que el archivo se pueda leer y que exista espacio para recuperar.
+2. Configura en Render las seis variables indicadas arriba, manteniendo sus valores secretos fuera del código, los comandos y los logs.
+3. Fusiona la rama aprobada en `main` y deja que Render despliegue el código nuevo.
+4. Comprueba `/api/healthz` y `/api/healthz-db`; no continúes si el API o la conexión a Aiven no responden.
+5. Prepara la laptop con PostgreSQL 18 en el puerto local `5433`, copia y verifica la base siguiendo [el primer arranque de sincronización](../readme.md#primer-arranque-aiven-a-pc), y realiza el paso 6 de ese procedimiento solo con respaldo validado y todas las escrituras detenidas. Ese paso reinicia la metadata antigua en las dos bases; no borra tablas de negocio.
+6. Ejecuta `sync:init`, revisa `sync:status` y completa la prueba controlada en ambos sentidos antes de reanudar escrituras. La migración de llaves de la Orden 12 se hace después de al menos una semana estable, en una ventana aparte y con los pasos de verificación anteriores.
+
+El workflow de verificación diaria está programado y GitHub ejecuta su horario desde la rama predeterminada (`main`); no es un monitor continuo de una rama de trabajo. Durante la primera puesta en marcha pueden existir eventos históricos antiguos en Aiven hasta completar el paso 6. Si llega una alerta en esa ventana planificada, conserva el log y confirma que el respaldo, la pausa de escrituras y el reinicio de metadata siguen pendientes o ya se completaron correctamente. Fuera de esa ventana, o si la alerta continúa después del reinicio, revisa `sync:status` y la verificación; no borres eventos para silenciar el aviso.
+
+### Límites conocidos
+
+- La guarda del respaldo que evita restaurar sobre el origen compara host, puerto y nombre de base; no reconoce que un alias de pooler y una conexión directa puedan terminar en la misma base.
+- No hay pruebas automáticas de interfaz que validen los mensajes y el estado visual de los formularios.
+- El middleware de `X-Operation-Id` retiene una conexión de PostgreSQL durante la petición y la ruta puede necesitar otra. Con un pool máximo de 11, esto se midió en la base local de pruebas; los resultados y su alcance están en el informe de la Orden 17.
