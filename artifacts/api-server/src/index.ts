@@ -2,13 +2,17 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { iniciarGuardadoDiario } from "./lib/guardado-diario";
 
-
 process.on("uncaughtException", (err) => {
-  console.error("Error no capturado (el servidor sigue corriendo):", err);
+  logger.fatal({ err }, "Excepción no capturada; se terminará el proceso");
+  process.exit(1);
 });
 
 process.on("unhandledRejection", (reason) => {
-  console.error("Promesa rechazada sin capturar (el servidor sigue corriendo):", reason);
+  logger.fatal(
+    { err: reason },
+    "Rechazo no controlado; se terminará el proceso",
+  );
+  process.exit(1);
 });
 
 const rawPort = process.env["PORT"];
@@ -32,5 +36,7 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  iniciarGuardadoDiario();
+  if (process.env.DISABLE_BACKGROUND_JOBS !== "true") {
+    iniciarGuardadoDiario();
+  }
 });

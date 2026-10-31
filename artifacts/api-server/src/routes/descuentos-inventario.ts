@@ -88,7 +88,23 @@ router.post("/", async (req, res) => {
         });
       }
       const creados = await tx.insert(descuentosInventarioTable).values(registros).returning();
-      if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "descuento_inventario", entidadId: operationId, tipo: "crear", metodo: "POST", endpoint: "/descuentos-inventario", payload: req.body, origen: "local" });
+      if (!req.header("x-sync-apply")) {
+        await tx.insert(eventosSincronizacionTable).values({
+          operationId,
+          entidad: "descuento_inventario",
+          entidadId: operationId,
+          tipo: "crear",
+          metodo: "POST",
+          endpoint: "/descuentos-inventario",
+          payload: req.body,
+          referenciasRespuesta: creados.map((descuento, index) => ({
+            campo: `${index}.id`,
+            entidad: "descuento_inventario",
+            valorLocal: String(descuento.id),
+          })),
+          origen: "local",
+        });
+      }
       await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "descuento_inventario", recursoId: creados[0].id }).onConflictDoNothing();
       return creados;
     });

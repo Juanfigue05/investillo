@@ -1,6 +1,8 @@
-import { pgTable, serial, text, numeric, timestamp, date, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, timestamp, date, integer, foreignKey, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { comprasTable } from "./compras";
+import { productosTable } from "./inventario";
 
 /** Registro histórico de precios de productos cada vez que llega una compra */
 export const historialPreciosTable = pgTable("historial_precios", {
@@ -17,7 +19,19 @@ export const historialPreciosTable = pgTable("historial_precios", {
   proveedor: text("proveedor"),
   actualizoPrecioInventario: text("actualizo_precio_inventario").default("no"),
   creadoEn: timestamp("creado_en").defaultNow(),
-});
+}, (table) => [
+  foreignKey({
+    name: "historial_precios_compra_id_fk",
+    columns: [table.compraId],
+    foreignColumns: [comprasTable.id],
+  }).onDelete("set null"),
+  foreignKey({
+    name: "historial_precios_producto_id_fk",
+    columns: [table.productoId],
+    foreignColumns: [productosTable.id],
+  }),
+  index("historial_precios_producto_id_idx").on(table.productoId),
+]);
 
 export const insertHistorialPrecioSchema = createInsertSchema(historialPreciosTable).omit({ id: true, creadoEn: true });
 export type InsertHistorialPrecio = z.infer<typeof insertHistorialPrecioSchema>;

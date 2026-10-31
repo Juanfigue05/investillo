@@ -171,7 +171,9 @@ Las tareas de respaldo, verificación, sincronización y limpieza se crean de la
 9. **Paso extra importante:** busca la tarea recién creada en la lista del Programador de Tareas, haz doble clic para abrir sus **Propiedades**, y en la pestaña **General** marca la casilla **"Ejecutar tanto si el usuario inició sesión como si no"** — así la tarea corre igual aunque nadie haya iniciado sesión en Windows en ese momento (por ejemplo, de madrugada).
 10. Repite estos pasos para verificación, sincronización y limpieza, cambiando el nombre, la frecuencia y el comando de "Agregar argumentos" según la tabla. Para sincronización, abre las propiedades de la tarea, pestaña **Desencadenadores**, edita el desencadenador y marca **"Repetir la tarea cada 5 minutos durante 1 día"**. Usa `pnpm.cmd` porque el Programador de tareas ejecuta comandos de Windows directamente.
 
-La tarea `sync:all` hace este recorrido: comprueba que el API remoto esté disponible, sube primero las operaciones locales con estado `pendiente` o `error` y después descarga cambios remotos. Si no hay operaciones pendientes, no sube nada y solo continúa con la descarga. Para probarla sin esperar, ejecuta la tarea con clic derecho → **Ejecutar** y revisa `logs\sincronizacion.txt`.
+La tarea `sync:all` comprueba que el API remoto esté disponible, sube primero las operaciones locales pendientes o con error y después descarga cambios remotos. Si la subida termina con código `1` (Render no disponible) o `2` (llave rechazada), no inicia la descarga; con código `3` (quedaron errores o conflictos) sí continúa con ella. Los conflictos no se reintentan automáticamente ni bloquean la descarga. Para probarla sin esperar, ejecuta la tarea con clic derecho → **Ejecutar** y revisa `logs\sincronizacion.txt`.
+
+Antes de ejecutar la sincronización en la PC después de actualizar el sistema, despliega primero la API nueva en Render. Para modificaciones y borrados, la subida consulta si hay un cambio remoto posterior al cursor de descarga por el mismo endpoint o una subruta suya; no compara las fechas de los relojes de ambos equipos. Si existe ese cambio, la modificación local queda guardada como conflicto para revisión y no se envía; la descarga aplica el cambio de Render. La comparación no detecta cambios remotos en otras rutas relacionadas; ese caso queda para revisión manual. Los eventos POST no necesitan esa consulta.
 
 **Cómo confirmar que sí están funcionando:** haz clic derecho sobre cualquiera de las tareas creadas → **"Ejecutar"** — esto la corre de inmediato, sin esperar a la fecha programada, para que puedas revisar los archivos de log (`logs\backup-local.txt`, `logs\consistencia-local.txt`, `logs\sincronizacion.txt`, etc.).
 
@@ -300,6 +302,7 @@ Todos se escriben en el **Símbolo del sistema (CMD)**, estando dentro de la car
 | `pnpm run verificar`                             | Revisa consistencia de datos (stock negativo, créditos sobre-abonados, precios invertidos, etc.) |
 | `pnpm run verificar:local`                       | Ejecuta la misma revisión contra PostgreSQL local                                      |
 | `pnpm run sync:local`                            | Intenta subir eventos locales pendientes al API remoto configurado en `SYNC_REMOTE_API_URL` |
+| `pnpm run sync:init`                             | Inicializa una sola vez el punto de partida para descargar cambios desde Render |
 | `pnpm run sync:pull`                             | Descarga cambios registrados en Render y los aplica al API local                    |
 | `pnpm run sync:all`                              | Sube primero operaciones locales y luego descarga cambios remotos, en ese orden     |
 | `pnpm run sync:status`                           | Muestra pendientes, errores y eventos sincronizados retenidos en la cola local           |
@@ -449,7 +452,8 @@ La instalación local usa PostgreSQL en este computador. Esto evita que las oper
 #### Qué significa cada variable
 
 - `DATABASE_URL` es una conexión de PostgreSQL. En `.env.local` apunta a la base instalada en este computador, por ejemplo `localhost:5432/investillo_local`.
-- `SYNC_REMOTE_API_URL` **no** es una conexión de PostgreSQL y **no** es una URL de Supabase. Es la dirección HTTP del sistema/API publicado en Render, normalmente con `/api` al final, por ejemplo `https://investillo.onrender.com/api`.
+- `SYNC_REMOTE_API_URL` **no** es una conexión de PostgreSQL y **no** es una URL de Supabase. Es la dirección HTTPS del sistema/API publicado en Render, normalmente con `/api` al final, por ejemplo `https://investillo.onrender.com/api`.
+- `SYNC_TOKEN` es un secreto aleatorio compartido por Render, `.env.local` y el servidor local. Los scripts lo envían en la cabecera `X-Sync-Token`; debe tener al menos 32 bytes.
 - La conexión de Supabase permanece en `.env.api` como `DATABASE_URL` para el servidor remoto y en `.env.backup` como `SOURCE_DATABASE_URL` para los respaldos.
 - Nunca pongas la contraseña de Supabase en `SYNC_REMOTE_API_URL`.
 
@@ -476,7 +480,7 @@ La instalación local usa PostgreSQL en este computador. Esto evita que las oper
   pnpm run sync:all
   ```
   Para automatizarla, crea la tarea de Windows descrita en la sección 3.4 y ejecútala cada 5 minutos. La tarea debe usar la misma carpeta del proyecto para encontrar `.env.local`.
-  Antes o después puedes revisar la cola con `pnpm run sync:status`. El resultado esperado cuando no hay trabajo pendiente es `Pendientes: 0`, `Con error: 0` y `Conflictos: 0`. Antes de subir una edición, `sync:local` consulta el registro remoto; si detecta una actualización remota posterior, marca `conflicto`, no sobrescribe y detiene `sync:all` antes del pull. Ese caso requiere revisión manual.
+  Antes o después puedes revisar la cola con `pnpm run sync:status`. El resultado esperado cuando no hay trabajo pendiente es `Pendientes: 0`, `Con error: 0` y `Conflictos: 0`. Antes de subir una modificación o borrado, `sync:local` consulta si hay un cambio remoto sin descargar sobre el mismo endpoint o recurso. Si lo hay, guarda la operación local como `conflicto` y no la envía; `sync:all` continúa con la descarga para aplicar el cambio de Render y la operación local queda para revisión manual.
 
   7. Programa también un respaldo local diario con `cmd.exe` y estos argumentos:
     `/c cd /d "C:\ruta\investillo" && pnpm run backup:local`.
@@ -584,8 +588,13 @@ Ambas usan **la misma base de datos de Supabase de siempre** — nunca se crea u
    |---|---|
    | `DATABASE_URL` | el mismo de tu `.env.api` |
    | `NODE_ENV` | `production` |
-  | `SYNC_CAPTURE_REMOTE` | `true` |
+   | `SYNC_CAPTURE_REMOTE` | `true` |
+   | `CLAVE_ACCESO_REMOTO` | una clave privada para abrir la aplicación |
+   | `SYNC_TOKEN` | secreto aleatorio de al menos 32 bytes; también se configura en `.env.local` |
+   | `TRUST_PROXY_HOPS` | `1` para Render detrás de un proxy |
 5. Clic en **"Create Web Service"** y espera a que termine — te da una dirección como `https://investillo.onrender.com`.
+
+Genera el token con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Guarda el mismo valor en Render y en `.env.local`, y no lo publiques ni lo subas a Git. Los scripts `sync:local` y `sync:pull` lo envían como `X-Sync-Token`; sin este token la sincronización se rechaza. El límite de intentos de acceso es de 5 fallos por IP cada 15 minutos y se guarda en memoria, por lo que está pensado para una sola instancia. `TRUST_PROXY_HOPS` debe corresponder al número real de proxies confiables; verifica esa configuración antes de usar el límite en producción.
 
 La dirección que Render entrega, seguida de `/api`, es la que se debe poner en `SYNC_REMOTE_API_URL` del computador local. Ejemplo: si Render entrega `https://investillo.onrender.com`, configura `SYNC_REMOTE_API_URL=https://investillo.onrender.com/api`. No pongas allí `DATABASE_URL`, la URL del pooler de Supabase, ni una URL de Cloudflare o Aiven.
 
@@ -597,6 +606,140 @@ https://TU-SERVICIO.onrender.com/api/healthz
 
 Debe responder con un estado correcto. Si no responde, no programes todavía `sync:local`.
 
+#### Acceso remoto y sincronización autenticada
+
+- Configura `CLAVE_ACCESO_REMOTO` en Render para proteger la aplicación. Tras iniciar sesión, el navegador recibe una cookie `investillo_sesion` aleatoria, `HttpOnly`, `SameSite=Lax` y con expiración de 30 días; el servidor guarda solo el hash en `sesiones_acceso`. Cerrar sesión revoca la sesión de ese navegador/perfil. La tabla se crea automáticamente al iniciar sesión y la limpieza periódica de operaciones elimina sesiones vencidas.
+- Configura `SYNC_TOKEN` con el mismo secreto aleatorio en Render y `.env.local`. Genéralo con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` y no lo compartas ni lo subas a Git. Se necesita para subir y descargar cambios; los scripts lo envían mediante `X-Sync-Token` y, sin él, la API rechaza las solicitudes de sincronización.
+- Para preparar la primera sincronización Aiven→PC, sigue completo el procedimiento **[Primer arranque de la sincronización (Aiven a PC)](#primer-arranque-de-la-sincronizaci%C3%B3n-aiven-a-pc)**. No basta con copiar los datos: también hay que migrar el esquema y reiniciar el estado antiguo de sincronización en ambas bases.
+- `sync:init` compara en las dos bases la cantidad de filas y el ID máximo de cada tabla de negocio. Solo guarda el cursor y las 21 huellas iniciales si coinciden. No hay una opción para saltarse esa comprobación; si ya hay cursor sin punto de partida completo, el comando se detiene sin borrar ni modificar datos.
+- `sync:status` informa si el punto de partida está ausente, incompleto o completo; muestra el cursor remoto, los eventos por origen y estado, y advierte si hay eventos anteriores a la fecha guardada en la huella base.
+- La descarga confirma a Render el último cursor aplicado (`/api/sync/ack`). El limpiador conserva los eventos remotos mientras no tengan acuse; una vez confirmados, quedan sujetos a la retención normal de 60 días. Esta confirmación está diseñada para una sola PC sincronizadora.
+- En Render configura `TRUST_PROXY_HOPS` con el número real de proxies confiables. Para la configuración habitual de Render se usa `1`; verifica el recorrido de red antes de habilitar el servicio. Es obligatorio en producción cuando `CLAVE_ACCESO_REMOTO` está activa. El límite de acceso es de cinco fallos por IP en 15 minutos y se mantiene en memoria, adecuado para una sola instancia.
+- La política CSP de Helmet se mantiene desactivada para no interferir con los estilos, fuentes ni PWA; se habilitan las demás cabeceras de seguridad y `Referrer-Policy: same-origin`.
+
+#### Primer arranque de la sincronización (Aiven a PC)
+
+Este procedimiento se usa una sola vez para preparar la sincronización bidireccional entre la base de Aiven (Render) y la copia de trabajo de la PC. No lo ejecutes con cambios pendientes ni con las bases desalineadas. El reinicio borra solo metadata de sincronización, no tablas de negocio.
+
+1. **Comprueba los requisitos.**
+   - Render ya debe tener desplegada la versión nueva de la aplicación, con `SYNC_CAPTURE_REMOTE=true` y `SYNC_TOKEN` configurado. Usa el mismo `SYNC_TOKEN` en Render y en `.env.local`; configura `SYNC_REMOTE_API_URL` con la URL del API de Render.
+   - La PC debe tener PostgreSQL 18 instalado, el código actualizado y sus variables locales correctas.
+   - Confirma que la base local de trabajo es la que vas a usar y que hay espacio suficiente para restaurar el respaldo.
+
+2. **Haz un respaldo de Aiven antes de cambiar nada.** Guarda el dump en una ubicación protegida fuera del repositorio y comprueba que el archivo se pueda leer. No compartas ni registres credenciales en comandos, capturas o logs.
+
+3. **Detén todas las escrituras.** Desde que se toma el respaldo hasta que `sync:init` termine correctamente, no se deben crear, editar ni borrar datos en Aiven/Render ni en la PC. Pausa también importaciones, tareas programadas y cualquier otra aplicación que escriba en esas bases.
+
+4. **Copia Aiven a la PC.** En el equipo local, si la base ya contiene tablas, elimina primero solo su esquema y restáuralo sin `--clean`. Ejemplo para la base local; sustituye la ruta por la ubicación protegida del dump:
+
+   ```sql
+   DROP SCHEMA public CASCADE;
+   ```
+
+   ```powershell
+   & 'C:\Program Files\PostgreSQL\18\bin\pg_restore.exe' --host localhost --port 5433 --username postgres --dbname investillo_sync_local --no-owner 'C:\ruta\protegida\aiven.dump'
+   ```
+
+   No ejecutes `pg_restore --clean`: el esquema se acaba de eliminar y el dump crea los objetos. Verifica que el destino sea la base local correcta. No restaures el dump encima de Aiven.
+
+5. **Aplica la migración en Aiven y en la PC.** En cada base, ejecuta primero este SQL. La consulta de duplicados debe devolver cero filas; si devuelve alguna, detente y resuelve los duplicados con respaldo antes de crear el índice único.
+
+   ```sql
+   ALTER TABLE cursos_sincronizacion
+     ADD COLUMN IF NOT EXISTS operacion_id text;
+
+   CREATE TABLE IF NOT EXISTS base_sincronizacion (
+     tabla text PRIMARY KEY,
+     total bigint NOT NULL,
+     maximo_id bigint NOT NULL,
+     creado_en timestamp NOT NULL DEFAULT now()
+   );
+
+   SELECT entidad, id_remoto, array_agg(id_local ORDER BY id_local) AS ids_local
+   FROM referencias_sincronizacion
+   GROUP BY entidad, id_remoto
+   HAVING count(*) > 1;
+
+   CREATE UNIQUE INDEX IF NOT EXISTS referencias_sincronizacion_entidad_remoto_uidx
+     ON referencias_sincronizacion (entidad, id_remoto);
+   ```
+
+6. **Reinicia la metadata antigua en las dos bases.** Ejecuta, tanto en Aiven como en la PC, estas sentencias en este orden y dentro de una transacción. No borres `operaciones_sincronizadas` ni ninguna tabla de negocio:
+
+   ```sql
+   BEGIN;
+   DELETE FROM cursos_sincronizacion;
+   DELETE FROM eventos_sincronizacion;
+   DELETE FROM referencias_sincronizacion;
+   DELETE FROM base_sincronizacion;
+   COMMIT;
+   ```
+
+   Comprueba que las cuatro tablas quedaron sin filas en ambas bases. Este paso evita reaplicar eventos del sistema anterior; no lo omitas ni ejecutes `sync:local` antes de inicializar.
+
+7. **Verifica la alineación con `sync:init`.** Mantén detenidas las escrituras y, desde la PC, ejecuta:
+
+   ```powershell
+   pnpm run sync:init
+   ```
+
+   El comando consulta la huella remota y la compara con la local para cada tabla: cantidad de filas e ID máximo. Esas medidas deben coincidir en las 21 tablas; no son un hash criptográfico del contenido. Si falta una tabla o una medida difiere, el comando falla y no guarda un cursor parcial. No fuerces el avance: vuelve a detener escrituras, identifica cuál base es la fuente correcta, alinéala y repite desde la copia y el reinicio.
+
+8. **Revisa el estado antes de reabrir escrituras.** Ejecuta `pnpm run sync:status` en la PC. Debe indicar punto de partida completo (21/21 tablas), cursor remoto y cantidades de eventos por origen/estado. Después del reinicio no deben quedar eventos viejos pendientes; si hay eventos con fecha anterior a la huella o cuya antigüedad no se puede determinar, detente e investiga.
+
+9. **Haz una prueba controlada.** Crea un registro de prueba identificable en Render, ejecuta `pnpm run sync:all` en la PC y comprueba que el registro y su equivalencia llegaron a la base local. Luego crea otro registro de prueba en la PC, vuelve a ejecutar `sync:all` y comprueba que llegó a Render. Ejecuta `sync:all` una segunda vez: no debe volver a aplicar ninguno de los cambios. Borra los registros de prueba mediante la aplicación sincronizada y verifica que ya no existan en ninguna base.
+
+10. **Reanuda las escrituras solo tras verificar ambos sentidos.** Si cualquier comprobación falla, detén la sincronización y conserva los respaldos y los mensajes de error. No borres cursores manualmente, no fuerces `sync:init`, no vuelvas a ejecutar una subida sobre una base desalineada y no reanudes las escrituras hasta confirmar cuál es la copia válida y volver a alinear las bases.
+
+#### Llaves foráneas e índices
+
+- **Nunca ejecutes `db:push` contra Aiven.** Espera a que la sincronización lleve al menos una semana estable; esta orden no forma parte del primer arranque ni se ejecuta durante la inicialización.
+- Antes de aplicarla, toma un respaldo verificado y detén todas las escrituras. Ejecuta manualmente [el SQL de la Orden 12](./docs/sql/orden-12-llaves-foraneas-e-indices.sql) tanto en Aiven como en la copia local. Si primero vas a copiar una base sobre la otra, aplícalo a la fuente antes de copiarla y verifica luego ambas.
+- El SQL conserva en `_respaldo_huerfanos` las filas huérfanas de historial de precios y mano de obra. Desvincula los historiales sin compra y la mano de obra sin venta; elimina los historiales cuyo producto ya no existe. Ese borrado cambia el conteo y la huella de `historial_precios`, por eso debe hacerse fuera del primer arranque de sincronización.
+- Si el SQL falla por cualquier llave, toda la transacción se revierte y no cambia nada. Copia el mensaje completo y no lo reintentes sin revisarlo.
+- Para comprobar cada base, confirma 17 llaves foráneas y 18 índices de esta orden, y revisa cuántas filas se respaldaron:
+
+  ```sql
+  SELECT count(*) AS llaves_foraneas
+  FROM pg_constraint
+  WHERE contype = 'f'
+    AND connamespace = 'public'::regnamespace
+    AND conname = ANY (ARRAY[
+      'abonos_creditos_credito_id_fk', 'credito_lineas_credito_id_fk',
+      'credito_lineas_producto_id_fk', 'compras_producto_id_fk',
+      'descuentos_inventario_producto_id_fk',
+      'distribuciones_mano_obra_mano_obra_fk',
+      'distribuciones_mano_obra_trabajador_fk',
+      'historial_precios_compra_id_fk', 'historial_precios_producto_id_fk',
+      'mano_obra_credito_id_fk', 'mano_obra_venta_id_fk',
+      'obra_electronica_trabajador_id_fk', 'pagos_seguro_trabajador_id_fk',
+      'vehiculos_cliente_cliente_id_fk', 'ventas_diarias_credito_abono_id_fk',
+      'ventas_diarias_mano_obra_id_fk', 'ventas_diarias_producto_id_fk'
+    ]);
+
+  SELECT count(*) AS indices
+  FROM pg_indexes
+  WHERE schemaname = 'public'
+    AND indexname = ANY (ARRAY[
+      'ventas_diarias_fecha_idx', 'ventas_diarias_credito_abono_id_idx',
+      'ventas_diarias_producto_id_idx', 'ventas_diarias_mano_obra_id_idx',
+      'abonos_creditos_credito_id_idx', 'credito_lineas_credito_id_idx',
+      'credito_lineas_producto_id_idx', 'creditos_tipo_idx',
+      'compras_producto_id_idx', 'distribuciones_mano_obra_mo_idx',
+      'distribuciones_mano_obra_trab_idx', 'mano_obra_credito_id_idx',
+      'mano_obra_venta_id_idx', 'mano_obra_fecha_idx',
+      'historial_precios_producto_id_idx', 'obra_electronica_trabajador_id_idx',
+      'pagos_seguro_trabajador_id_idx', 'vehiculos_cliente_cliente_id_idx'
+    ]);
+
+  SELECT origen, count(*) AS filas_respaldadas
+  FROM _respaldo_huerfanos
+  GROUP BY origen
+  ORDER BY origen;
+  ```
+
+- Los primeros resultados deben ser 17 y 18. Compara los conteos de filas de negocio en ambas bases después de aplicar el SQL; investiga cualquier diferencia antes de reanudar escrituras.
+
 ### 8.3 Desplegar en Railway
 
 1. Crea cuenta en **[railway.com](https://railway.com)**.
@@ -604,7 +747,7 @@ Debe responder con un estado correcto. Si no responde, no programes todavía `sy
 3. En **"Settings"**, configura:
    - **Build Command:** `pnpm install && pnpm run build`
    - **Start Command:** `pnpm --filter @workspace/api-server run start`
-4. En **"Variables"**, agrega las mismas 2 variables que en Render.
+4. En **"Variables"**, agrega las variables requeridas para tu despliegue, incluyendo `CLAVE_ACCESO_REMOTO`, `SYNC_TOKEN` y `TRUST_PROXY_HOPS` con el salto correcto de Railway.
 5. En **"Networking"**, clic en **"Generate Domain"** para obtener tu dirección pública.
 
 > Alternativa sin usar tarjeta de crédito: **Koyeb** también ofrece un servicio web gratis "para siempre" (a diferencia de Railway, que ahora es una prueba de 30 días + $1 de crédito mensual) — pide verificar identidad con una tarjeta, pero no cobra nada mientras te quedes en el plan gratis. El proceso de desplegar es casi idéntico al de Render.
@@ -745,6 +888,8 @@ TRUNCATE TABLE
   cierre_diario,
   remachadas,
   grupos_trabajo_default,
+  descuentos_inventario,
+  obra_electronica,
   operaciones_sincronizadas,
   notas,
   conteo_monedas
@@ -753,6 +898,8 @@ RESTART IDENTITY CASCADE;
 
 4. Confirma que se ejecutó sin errores (mensaje verde de éxito).
 5. Abre el sistema — todas las listas deberían aparecer vacías, listas para empezar con información real.
+
+Con las llaves foráneas de la Orden 12, `CASCADE` también vaciaría `descuentos_inventario` y `obra_electronica` junto a productos y trabajadores; por eso aparecen explícitamente en la lista.
 
 **¿Qué significa cada palabra del comando?**
 
@@ -818,9 +965,12 @@ Para que sepas qué esperar y qué no, por ahora:
 - El sistema hoy solo tiene **Render** desplegado en la nube — Railway o Koyeb como segunda plataforma de respaldo quedaron analizados pero sin implementar (no es urgente: el portátil local conecta directo a Supabase, sin depender de Render para nada).
 - El plan gratis de Aiven se pausa si pasan 7 días sin usarlo — si el respaldo automático deja de correr por más de una semana, toca reactivarlo a mano.
 - La importación masiva de clientes detecta duplicados por nombre y por teléfono (compara solo los dígitos, sin importar el formato) — si un número ya está en uso, esa fila queda separada para revisión manual, no se omite en silencio. Correo no se valida contra duplicados.
-- El outbox transaccional ya cubre clientes, vehículos, productos, ventas y reordenamiento, mano de obra, créditos y abonos, compras individuales y por lote, notas, remachadas, trabajadores y pagos de seguro, cierres, grupos, conteo de monedas, calculadora, historiales, edición de nómina, obra electrónica, tensionadas e importaciones procesadas de clientes e inventario. Las importaciones se convierten a filas JSON para sincronizarse sin transportar archivos binarios. La descarga de cambios remotos usa `/api/sync/pull` y el comando `pnpm run sync:pull`; aún requiere pruebas de extremo a extremo.
-- Si una operación recibe un error del servidor, queda marcada como error con el mensaje y número de intentos. El panel **Copia local** permite reactivarla y reintentarla; no debe asumirse que fue aplicada hasta comprobarlo.
+- El outbox transaccional ya cubre clientes, vehículos, productos, ventas y reordenamiento, mano de obra, créditos y abonos, compras individuales y por lote, notas, remachadas, trabajadores y pagos de seguro, cierres, grupos, conteo de monedas, calculadora, historiales, edición de nómina, obra electrónica, tensionadas e importaciones procesadas de clientes e inventario. Las importaciones se convierten a filas JSON para sincronizarse sin transportar archivos binarios. La descarga de cambios remotos usa `/api/sync/pull` y `pnpm run sync:pull`; el servidor conserva los eventos remotos hasta que la PC confirma el cursor y luego permite limpiar los que superan 60 días desde su procesamiento.
+- Códigos de salida de `sync:local`: `0` todo bien; `1` Render no disponible (se reintenta en la próxima corrida); `2` Render rechazó `SYNC_TOKEN` (revisar la llave); `3` terminó la subida, pero quedaron operaciones en error o conflicto. Las respuestas `409` quedan en conflicto y no se reintentan solas; otros errores `5xx` se reintentan hasta dos veces antes de quedar en error, excepto `502`, `503` y `504`, que interrumpen la corrida. El panel **Copia local** permite revisar y reactivar operaciones con error; no debe asumirse que fueron aplicadas hasta comprobarlo.
 - No hay pruebas automáticas de integración que levanten PostgreSQL por sí solas; las pruebas del API necesitan una `DATABASE_URL` válida.
+- La prueba E2E de sincronización usa dos bases locales aisladas derivadas del respaldo. Configura `SYNC_TEST_DATABASE_LOCAL` y `SYNC_TEST_DATABASE_REMOTE` con las URL de `investillo_sync_local` e `investillo_sync_remote`, y ejecuta `pnpm --filter @workspace/scripts run test:sync-e2e`. La prueba limpia la metadata de sincronización de esas bases; no debe apuntarse a producción ni a una base de trabajo.
+- Las pruebas integrales de la subida usan el servidor HTTP falso y `investillo_sync_local`; configura `SYNC_TEST_DATABASE_LOCAL` con su URL local y ejecuta `pnpm --filter @workspace/scripts run test:sync-local`. La prueba limpia únicamente sus eventos identificados y el cursor remoto de la base aislada.
+- La prueba de `sync:init` también usa `investillo_sync_local` y un servidor falso; configura `SYNC_TEST_DATABASE_LOCAL` y ejecuta `pnpm --filter @workspace/scripts run test:sync-init`. Verifica la comparación de huellas, la inicialización sin cambios parciales y el caso de cursor existente.
 - El contrato OpenAPI y las rutas implementadas no son idénticos: las funciones que usan `fetch` manual deben probarse además de ejecutar el codegen.
 - La PWA usa `BASE_PATH` para `base`, `start_url`, `scope` y `navigateFallback`. Para desplegar bajo una subruta, configura esa variable durante el build y verifica que el proxy publique `/api` en la misma URL esperada por el frontend.
 

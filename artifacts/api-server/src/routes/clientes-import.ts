@@ -1,39 +1,19 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import * as XLSX from "xlsx";
-import { eventosSincronizacionTable, operacionesSincronizadasTable } from "@workspace/db/schema";
+import ExcelJS from "exceljs";
+import { operacionesSincronizadasTable } from "@workspace/db/schema";
 import { pool, db } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import {
+  parseClientesExcel,
+  type ParsedCliente,
+} from "../lib/excel-import-parsers";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1, parts: 2 } });
 
-function cleanStr(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "number") return v.toLocaleString("fullwide", { useGrouping: false });
-  return String(v).trim();
-}
-
 function soloDigitos(v: string): string {
   return v.replace(/\D/g, "");
-}
-
-function parseTelefonos(raw: string): { telefono: string | null; telefono2: string | null } {
-  if (!raw.trim()) return { telefono: null, telefono2: null };
-  const partes = raw
-    .split(/\s*[-/,]\s*|\s+y\s+|\s+Y\s+/)
-    .map((p) => soloDigitos(p))
-    .filter((p) => p.length >= 7);
-  if (partes.length === 0) return { telefono: null, telefono2: null };
-  return { telefono: partes[0] || null, telefono2: partes[1] || null };
-}
-
-interface ParsedCliente {
-  nombre: string;
-  telefono: string | null;
-  telefono2: string | null;
-  correo: string | null;
-  notas: string | null;
 }
 
 interface ConflictoTelefono extends ParsedCliente {
@@ -41,28 +21,14 @@ interface ConflictoTelefono extends ParsedCliente {
   conflictoCon?: string;      // nombre del cliente (nuevo o existente) que ya lo tiene
 }
 
-function parseExcel(buffer: Buffer): { rows: ParsedCliente[]; omitidos: number[] } {
-  const wb = XLSX.read(buffer, { type: "buffer" });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  const raw: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
-  const dataRows = raw.slice(1);
+type ClienteImportado = { nombre: string; id: number };
 
-  if (dataRows.length > 10_000) {
-    throw new Error("El archivo supera el máximo de 10000 filas");
-  }
-
-  const rows: ParsedCliente[] = [];
-  const omitidos: number[] = [];
-
-  for (let i = 0; i < dataRows.length; i++) {
-    const r = dataRows[i] as unknown[];
-    const nombre = cleanStr(r[0]);
-    if (!nombre) { omitidos.push(i + 2); continue; }
-
-    const { telefono, telefono2 } = parseTelefonos(cleanStr(r[1]));
-    rows.push({ nombre, telefono, telefono2, correo: cleanStr(r[2]) || null, notas: cleanStr(r[3]) || null });
-  }
-  return { rows, omitidos };
+function referenciasRespuestaClientes(clientes: ClienteImportado[]) {
+  return clientes.map((cliente, index) => ({
+    campo: `_syncClientes.${index}.id`,
+    entidad: "cliente",
+    valorLocal: String(cliente.id),
+  }));
 }
 
 function dedupeDentroDelArchivo(rows: ParsedCliente[]): { unicos: ParsedCliente[]; duplicadosArchivo: number } {
@@ -141,31 +107,77 @@ async function separarConflictosDeTelefono(rows: ParsedCliente[]): Promise<{ val
   return { validos, conflictos };
 }
 
-async function insertRows(items: ParsedCliente[]) {
-  if (!items.length) return;
-  const n = items.map((x) => x.nombre);
-  const t = items.map((x) => x.telefono);
-  const t2 = items.map((x) => x.telefono2);
-  const c = items.map((x) => x.correo);
-  const no = items.map((x) => x.notas);
+async function insertRows(
+  items: ParsedCliente[],
+  operationId: string,
+  tipoEvento?: "importar" | "resolver",
+): Promise<ClienteImportado[]> {
   const client = await pool.connect();
   try {
+    await client.query("BEGIN");
+    const insertados: ClienteImportado[] = [];
+    for (const item of items) {
+      const resultado = await client.query<{ id: number }>(
+        `INSERT INTO clientes (nombre, telefono, telefono2, correo, notas)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [
+          item.nombre,
+          item.telefono,
+          item.telefono2,
+          item.correo,
+          item.notas,
+        ],
+      );
+      const id = resultado.rows[0]?.id;
+      if (id === undefined) {
+        throw new Error("No se pudo obtener el ID de una fila importada");
+      }
+      insertados.push({ nombre: item.nombre, id });
+    }
+    if (tipoEvento !== undefined) {
+      await client.query(
+        `INSERT INTO eventos_sincronizacion
+           (operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
+            referencias_respuesta, origen)
+         VALUES ($1, 'clientes_import', $1, $2, 'POST',
+                 '/clientes-import/sincronizar', $3::jsonb, $4::jsonb, 'local')`,
+        [
+          operationId,
+          tipoEvento,
+          JSON.stringify({ items }),
+          JSON.stringify(referenciasRespuestaClientes(insertados)),
+        ],
+      );
+    }
     await client.query(
-      `INSERT INTO clientes (nombre, telefono, telefono2, correo, notas)
-       SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[], $4::text[], $5::text[])`,
-      [n, t, t2, c, no],
+      `INSERT INTO operaciones_sincronizadas (operation_id, tipo, recurso_id)
+       VALUES ($1, 'clientes_import', NULL)
+       ON CONFLICT (operation_id) DO NOTHING`,
+      [operationId],
     );
+    await client.query("COMMIT");
+    return insertados;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      console.error("No se pudo revertir la importación de clientes:", rollbackError);
+    }
+    throw error;
   } finally {
     client.release();
   }
 }
 
-router.get("/template", (_req, res) => {
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([["NOMBRE", "TELEFONO (si son 2: 3145370182 - 3202501578)", "CORREO", "NOTAS"]]);
-  ws["!cols"] = [30, 40, 30, 40].map((w) => ({ wch: w }));
-  XLSX.utils.book_append_sheet(wb, ws, "Clientes");
-  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+router.get("/template", async (_req, res) => {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Clientes");
+  ws.addRow(["NOMBRE", "TELEFONO (si son 2: 3145370182 - 3202501578)", "CORREO", "NOTAS"]);
+  [30, 40, 30, 40].forEach(
+    (width, index) => (ws.getColumn(index + 1).width = width),
+  );
+  const buf = Buffer.from(await wb.xlsx.writeBuffer());
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", 'attachment; filename="plantilla_clientes.xlsx"');
   res.send(buf);
@@ -177,16 +189,18 @@ router.post("/", upload.single("archivo"), async (req, res) => {
   if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   if (!req.file) { res.status(400).json({ error: "No se recibió ningún archivo" }); return; }
   try {
-    const { rows, omitidos } = parseExcel(req.file.buffer);
+    const { rows, omitidos } = await parseClientesExcel(req.file.buffer);
     if (!rows.length) { res.status(400).json({ error: "No se encontraron filas válidas (falta NOMBRE)" }); return; }
 
     const { unicos, duplicadosArchivo } = dedupeDentroDelArchivo(rows);
     const { nuevos, duplicadosBD } = await filtrarExistentesEnBD(unicos);
     const { validos, conflictos } = await separarConflictosDeTelefono(nuevos);
 
-    await insertRows(validos);
-    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "clientes_import", entidadId: operationId, tipo: "importar", metodo: "POST", endpoint: "/clientes-import/sincronizar", payload: { items: validos }, origen: "local" });
-    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "clientes_import", recursoId: null }).onConflictDoNothing();
+    const clientes = await insertRows(
+      validos,
+      operationId,
+      req.header("x-sync-apply") ? undefined : "importar",
+    );
 
     res.json({
       ok: true,
@@ -195,6 +209,7 @@ router.post("/", upload.single("archivo"), async (req, res) => {
       omitidos: omitidos.length,
       duplicados: duplicadosArchivo + duplicadosBD,
       conflictosTelefono: conflictos.length > 0 ? conflictos : undefined,
+      ...(clientes.length > 0 ? { _syncClientes: clientes } : {}),
     });
   } catch (err: any) {
     console.error("Error importando clientes:", err?.message ?? err);
@@ -209,9 +224,12 @@ router.post("/sincronizar", async (req, res) => {
   if (ya) { res.json({ ok: true, yaProcesado: true }); return; }
   const items = req.body?.items as ParsedCliente[];
   if (!Array.isArray(items)) { res.status(400).json({ error: "items requerido" }); return; }
-  await insertRows(items);
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "clientes_import", recursoId: null }).onConflictDoNothing();
-  res.json({ ok: true, procesados: items.length });
+  const clientes = await insertRows(items, operationId);
+  res.json({
+    ok: true,
+    procesados: items.length,
+    ...(clientes.length > 0 ? { _syncClientes: clientes } : {}),
+  });
 });
 
 // ─── POST /resolver-telefonos — aplica lo que el usuario decidió para cada conflicto ──
@@ -226,14 +244,17 @@ router.post("/resolver-telefonos", async (req, res) => {
 
     // Vuelve a revisar por si el usuario dejó, sin querer, otro número ya repetido
     const { validos, conflictos } = await separarConflictosDeTelefono(items);
-    await insertRows(validos);
-    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "clientes_import", entidadId: operationId, tipo: "resolver", metodo: "POST", endpoint: "/clientes-import/sincronizar", payload: { items: validos }, origen: "local" });
-    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "clientes_import", recursoId: null }).onConflictDoNothing();
+    const clientes = await insertRows(
+      validos,
+      operationId,
+      req.header("x-sync-apply") ? undefined : "resolver",
+    );
 
     res.json({
       ok: true,
       procesados: validos.length,
       conflictosTelefono: conflictos.length > 0 ? conflictos : undefined,
+      ...(clientes.length > 0 ? { _syncClientes: clientes } : {}),
     });
   } catch (err: any) {
     res.status(500).json({ error: (err?.message ?? String(err)).split("\n")[0].substring(0, 400) });

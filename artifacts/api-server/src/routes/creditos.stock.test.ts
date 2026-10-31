@@ -14,11 +14,13 @@
  * red de seguridad para tests que fallen antes del cleanup normal.
  */
 
+import "../lib/solo-base-de-pruebas";
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
 import app from "../app";
 import { db } from "@workspace/db";
 import {
+  eventosSincronizacionTable,
   productosTable,
   ventasDiariasTable,
 } from "@workspace/db/schema";
@@ -118,6 +120,82 @@ describe("Escenario 1: Crear credito con productos", () => {
     // Cleanup: credito primero, luego producto
     await cleanupTest(creditoId, productoId);
     pendingCleanups.pop();
+  });
+});
+
+describe("Sincronización de líneas nuevas de crédito", () => {
+  it("registra la ruta de respuesta de una línea agregada mediante PUT", async () => {
+    let creditoId: number | null = null;
+    try {
+      const creado = await request(app)
+        .post("/api/creditos")
+        .send({
+          tipo: "credito",
+          concepto: "TEST-SYNC-LINEA",
+          fechaFactura: new Date().toISOString().slice(0, 10),
+          nombreCliente: "Cliente Test Sync",
+          valorCredito: 100,
+          lineas: [{
+            productoNombre: "Línea inicial",
+            cantidad: 1,
+            precioVenta: 100,
+            precioCompra: 0,
+          }],
+        });
+
+      expect(creado.status).toBe(201);
+      creditoId = creado.body.id as number;
+      const lineaInicial = creado.body.lineas[0] as {
+        id: number;
+        productoNombre: string;
+        cantidad: number;
+        precioVenta: number;
+        precioCompra: number;
+      };
+      const operationId = crypto.randomUUID();
+
+      const editado = await request(app)
+        .put(`/api/creditos/${creditoId}`)
+        .set("X-Operation-Id", operationId)
+        .send({
+          valorCredito: 300,
+          lineas: [
+            {
+              id: lineaInicial.id,
+              productoNombre: lineaInicial.productoNombre,
+              cantidad: lineaInicial.cantidad,
+              precioVenta: lineaInicial.precioVenta,
+              precioCompra: lineaInicial.precioCompra,
+            },
+            {
+              productoNombre: "Línea agregada",
+              cantidad: 1,
+              precioVenta: 200,
+              precioCompra: 0,
+            },
+          ],
+        });
+
+      expect(editado.status).toBe(200);
+      const lineaNueva = editado.body.lineas[1] as { id: number };
+      const [evento] = await db
+        .select({ referencias: eventosSincronizacionTable.referenciasRespuesta })
+        .from(eventosSincronizacionTable)
+        .where(eq(eventosSincronizacionTable.operationId, operationId));
+
+      expect(evento?.referencias).toEqual([
+        {
+          campo: "lineas.1.id",
+          entidad: "credito_linea",
+          valorLocal: String(lineaNueva.id),
+        },
+      ]);
+    } finally {
+      if (creditoId !== null) {
+        const eliminado = await request(app).delete(`/api/creditos/${creditoId}`);
+        expect(eliminado.status).toBeLessThan(500);
+      }
+    }
   });
 });
 

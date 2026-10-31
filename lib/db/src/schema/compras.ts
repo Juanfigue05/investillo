@@ -1,6 +1,7 @@
-import { pgTable, serial, text, numeric, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, timestamp, integer, foreignKey, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { productosTable } from "./inventario";
 
 export const comprasTable = pgTable("compras", {
   id: serial("id").primaryKey(),
@@ -18,7 +19,14 @@ export const comprasTable = pgTable("compras", {
   precioVentaRegistrado: numeric("precio_venta_registrado", { precision: 15, scale: 2 }),
   creadoEn: timestamp("creado_en").defaultNow(),
   actualizadoEn: timestamp("actualizado_en").defaultNow(),
-});
+}, (table) => [
+  foreignKey({
+    name: "compras_producto_id_fk",
+    columns: [table.productoId],
+    foreignColumns: [productosTable.id],
+  }),
+  index("compras_producto_id_idx").on(table.productoId),
+]);
 
 export const insertCompraSchema = createInsertSchema(comprasTable).omit({ id: true, creadoEn: true, actualizadoEn: true });
 export type InsertCompra = z.infer<typeof insertCompraSchema>;

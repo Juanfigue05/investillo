@@ -15,11 +15,35 @@ async function main() {
   const eventos = await pool.query(
     `DELETE FROM eventos_sincronizacion
      WHERE estado = 'sincronizado'
-       AND procesado_en < now() - make_interval(days => $1)`,
+       AND procesado_en < now() - make_interval(days => $1)
+       AND (
+         origen <> 'remoto'
+         OR creado_en <= (
+           SELECT valor
+             FROM cursos_sincronizacion
+            WHERE nombre = 'acuse_local'
+         )
+       )`,
     [DIAS_A_CONSERVAR],
   );
-  console.log(`Limpieza: ${res.rowCount} operaciones anti-duplicados y ${eventos.rowCount} eventos sincronizados antiguos.`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sesiones_acceso (
+      token_hash text PRIMARY KEY,
+      creado_en timestamptz NOT NULL DEFAULT now(),
+      expira_en timestamptz NOT NULL
+    )
+  `);
+  const sesiones = await pool.query(
+    "DELETE FROM sesiones_acceso WHERE expira_en < now()",
+  );
+  console.log(
+    `Limpieza: ${res.rowCount} operaciones anti-duplicados y ${eventos.rowCount} eventos sincronizados antiguos.`,
+  );
+  console.log(`Sesiones de acceso vencidas eliminadas: ${sesiones.rowCount}.`);
   await pool.end();
 }
 
-main().catch((err) => { console.error("Error limpiando:", err); process.exit(1); });
+main().catch((err) => {
+  console.error("Error limpiando:", err);
+  process.exit(1);
+});
