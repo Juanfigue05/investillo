@@ -18,6 +18,24 @@ function mensajeDelServidor(body: unknown): string | undefined {
   return undefined;
 }
 
+export function esOperacionEncoladaOffline(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "name" in error &&
+    error.name === "OperacionEncoladaOfflineError"
+  );
+}
+
+export function esOperacionOfflineNoGuardada(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "name" in error &&
+    error.name === "OperacionOfflineNoGuardadaError"
+  );
+}
+
 export async function leerRespuestaApi<T>(
   respuesta: Response | Promise<Response>,
 ): Promise<T> {
@@ -25,6 +43,12 @@ export async function leerRespuestaApi<T>(
   try {
     response = await respuesta;
   } catch (error) {
+    if (
+      esOperacionEncoladaOffline(error) ||
+      esOperacionOfflineNoGuardada(error)
+    ) {
+      throw error;
+    }
     if (error instanceof TypeError) {
       throw new Error("No se pudo conectar con el servidor. Verifica tu conexión e inténtalo de nuevo.");
     }

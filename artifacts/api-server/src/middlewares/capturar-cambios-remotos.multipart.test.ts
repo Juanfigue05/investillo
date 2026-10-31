@@ -73,6 +73,7 @@ async function esperarEvento(id: string) {
       .from(eventosSincronizacionTable)
       .where(eq(eventosSincronizacionTable.operationId, id));
     expect(evento).toBeDefined();
+    expect(evento?.origen).toBe("remoto");
   });
   const [evento] = await db
     .select()

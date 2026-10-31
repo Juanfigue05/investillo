@@ -1,7 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import { Layout } from "@/components/Layout";
-import { leerRespuestaApi } from "@/lib/respuesta-api";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 import { formatCurrency } from "@/lib/utils";
 import { History, ChevronDown, ChevronUp, Trash2, AlertCircle, Pencil } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
@@ -130,6 +134,11 @@ export default function HistorialCierres() {
       await deleteCierre(id);
       setCierres((prev) => prev.filter((c) => c.id !== id));
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setCierres((prev) => prev.filter((cierre) => cierre.id !== id));
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       alert(error instanceof Error ? error.message : String(error));
     } finally {
       setDeleting(null);

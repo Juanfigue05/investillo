@@ -1,4 +1,5 @@
 import pg from "pg";
+import { limpiarEventosSincronizadosAntiguos } from "./lib/limpiar-operaciones-viejas";
 const { Pool } = pg;
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -12,19 +13,9 @@ async function main() {
      WHERE creado_en < now() - make_interval(days => $1)`,
     [DIAS_A_CONSERVAR],
   );
-  const eventos = await pool.query(
-    `DELETE FROM eventos_sincronizacion
-     WHERE estado = 'sincronizado'
-       AND procesado_en < now() - make_interval(days => $1)
-       AND (
-         origen <> 'remoto'
-         OR creado_en <= (
-           SELECT valor
-             FROM cursos_sincronizacion
-            WHERE nombre = 'acuse_local'
-         )
-       )`,
-    [DIAS_A_CONSERVAR],
+  const eventosEliminados = await limpiarEventosSincronizadosAntiguos(
+    pool,
+    DIAS_A_CONSERVAR,
   );
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sesiones_acceso (
@@ -37,7 +28,7 @@ async function main() {
     "DELETE FROM sesiones_acceso WHERE expira_en < now()",
   );
   console.log(
-    `Limpieza: ${res.rowCount} operaciones anti-duplicados y ${eventos.rowCount} eventos sincronizados antiguos.`,
+    `Limpieza: ${res.rowCount} operaciones anti-duplicados y ${eventosEliminados} eventos sincronizados antiguos.`,
   );
   console.log(`Sesiones de acceso vencidas eliminadas: ${sesiones.rowCount}.`);
   await pool.end();

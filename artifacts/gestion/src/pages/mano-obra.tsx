@@ -4,7 +4,11 @@ import { useGetTrabajadores, useCrearTrabajador } from "@workspace/api-client-re
 import { formatCurrency } from "@/lib/utils";
 import { Users, Plus, ShieldCheck, Calendar, Clock, Wallet } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { leerRespuestaApi } from "@/lib/respuesta-api";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 import { toast } from "@/hooks/use-toast";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
@@ -125,6 +129,11 @@ export default function Trabajadores() {
       invalidar();
       if (form.aplicaSeguro) cargarPagos(id);
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        await invalidar();
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       toast({
         title: "No se pudo guardar el perfil",
         description: error instanceof Error ? error.message : String(error),
@@ -151,6 +160,13 @@ export default function Trabajadores() {
       invalidar();
       cargarPagos(trabajadorId);
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setNuevoPagoFecha((prev) => ({ ...prev, [trabajadorId]: "" }));
+        setNuevoPagoMonto((prev) => ({ ...prev, [trabajadorId]: "" }));
+        await invalidar();
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       toast({
         title: "No se pudo registrar el pago",
         description: error instanceof Error ? error.message : String(error),

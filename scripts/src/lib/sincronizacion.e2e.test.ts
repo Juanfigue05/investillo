@@ -147,6 +147,24 @@ function detenerApi(child: ChildProcess | undefined): void {
   if (child && child.exitCode === null) child.kill();
 }
 
+async function esperarRespuestaGuardada(
+  pool: pg.Pool,
+  operationId: string,
+): Promise<void> {
+  const limite = Date.now() + 5_000;
+  while (Date.now() < limite) {
+    const resultado = await pool.query<{ respuesta_remota: unknown }>(
+      `SELECT respuesta_remota
+         FROM eventos_sincronizacion
+        WHERE operation_id = $1`,
+      [operationId],
+    );
+    if (resultado.rows[0]?.respuesta_remota != null) return;
+    await delay(10);
+  }
+  assert.fail(`No se guardó respuesta para la operación ${operationId}`);
+}
+
 async function api<T>(
   baseUrl: string,
   endpoint: string,
@@ -886,6 +904,33 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
     );
     const productoCompartidoLocal = importacionProductoLocal._syncProductos[0];
     assert.ok(productoCompartidoLocal);
+    const operationIdProductoCompartido =
+      `${prefix}-importar-producto-compartido-local`;
+    await esperarRespuestaGuardada(
+      localPool,
+      operationIdProductoCompartido,
+    );
+    const productoReintentadoConRespuesta = await api(
+      localBase(),
+      "/inventario-import/confirmar-nuevos",
+      "POST",
+      {
+        items: [
+          {
+            codigo: codigoProductoCompartido,
+            nombre: productoCompartidoRemoto.nombre,
+            referencia: null,
+            marca: null,
+            precioCompra: "10000",
+            precioVentaSinIva: "15000",
+            precioVentaConIva: "17850",
+            cantidad: 10,
+          },
+        ],
+      },
+      operationIdProductoCompartido,
+    );
+    assert.deepEqual(productoReintentadoConRespuesta, importacionProductoLocal);
     assert.notEqual(productoCompartidoLocal.id, productoCompartidoRemoto.id);
     await delay(2_100);
     const sincronizaProductoImportado = ejecutarScript(
@@ -907,6 +952,12 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
     assert.equal(
       equivalenciaProductoImportado.rows[0]?.id_remoto,
       String(productoCompartidoRemoto.id),
+    );
+    await localPool.query(
+      `UPDATE eventos_sincronizacion
+          SET respuesta_remota = NULL
+        WHERE operation_id = $1`,
+      [operationIdProductoCompartido],
     );
     const productoReintentado = await api<{
       yaProcesado?: boolean;
@@ -971,6 +1022,29 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
     );
     const clienteImportadoLocal = importacionClienteLocal._syncClientes[0];
     assert.ok(clienteImportadoLocal);
+    const operationIdClienteImportado = `${prefix}-importar-cliente-local`;
+    await esperarRespuestaGuardada(
+      localPool,
+      operationIdClienteImportado,
+    );
+    const clienteReintentadoConRespuesta = await api(
+      localBase(),
+      "/clientes-import/resolver-telefonos",
+      "POST",
+      {
+        items: [
+          {
+            nombre: `${prefix}-cliente-importado-local`,
+            telefono: null,
+            telefono2: null,
+            correo: null,
+            notas: null,
+          },
+        ],
+      },
+      operationIdClienteImportado,
+    );
+    assert.deepEqual(clienteReintentadoConRespuesta, importacionClienteLocal);
     await delay(2_100);
     const sincronizaClienteImportado = ejecutarScript(
       "sincronizar-local.ts",
@@ -989,6 +1063,12 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
       [String(clienteImportadoLocal.id)],
     );
     assert.ok(equivalenciaClienteImportado.rows[0]?.id_remoto);
+    await localPool.query(
+      `UPDATE eventos_sincronizacion
+          SET respuesta_remota = NULL
+        WHERE operation_id = $1`,
+      [operationIdClienteImportado],
+    );
     const clienteReintentado = await api<{
       yaProcesado?: boolean;
     }>(

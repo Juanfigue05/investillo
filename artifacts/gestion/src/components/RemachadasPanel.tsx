@@ -10,7 +10,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import { leerRespuestaApi } from "@/lib/respuesta-api";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 import { toast } from "@/hooks/use-toast";
 
 const API = "/api";
@@ -68,6 +72,12 @@ export function RemachadasPanel() {
       setNuevaBanda("");
       setNuevoValor("");
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setNuevaBanda("");
+        setNuevoValor("");
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       toast({
         title: "No se pudo agregar la banda",
         description: error instanceof Error ? error.message : String(error),
@@ -90,6 +100,18 @@ export function RemachadasPanel() {
       setRemachadas((prev) => prev.map((r) => (r.id === id ? row : r)));
       setEditandoId(null);
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setRemachadas((prev) =>
+          prev.map((row) =>
+            row.id === id
+              ? { ...row, valorJuego: parseFloat(editValor) }
+              : row,
+          ),
+        );
+        setEditandoId(null);
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       toast({
         title: "No se pudo guardar la banda",
         description: error instanceof Error ? error.message : String(error),
@@ -107,6 +129,11 @@ export function RemachadasPanel() {
       await leerRespuestaApi(fetch(`${API}/remachadas/${id}`, { method: "DELETE" }));
       setRemachadas((prev) => prev.filter((r) => r.id !== id));
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setRemachadas((prev) => prev.filter((r) => r.id !== id));
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       toast({
         title: "No se pudo eliminar la banda",
         description: error instanceof Error ? error.message : String(error),

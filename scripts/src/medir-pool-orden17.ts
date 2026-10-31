@@ -26,6 +26,7 @@ if (
 type HttpResult = {
   status: number | null;
   durationMs: number;
+  bodyText: string;
   error?: string;
 };
 
@@ -121,12 +122,14 @@ async function send(
             resolveResult({
               status: response.statusCode ?? null,
               durationMs: Math.round(performance.now() - started),
+              bodyText: responseBody,
               ...(error ? { error } : {}),
             });
           },
           (error: unknown) => resolveResult({
             status: null,
             durationMs: Math.round(performance.now() - started),
+            bodyText: "",
             error: error instanceof Error ? error.message : String(error),
           }),
         );
@@ -136,6 +139,7 @@ async function send(
     request.once("error", (error) => resolveResult({
       status: null,
       durationMs: Math.round(performance.now() - started),
+      bodyText: "",
       error: error.message,
     }));
     if (body) request.write(JSON.stringify(body));
@@ -235,6 +239,8 @@ async function runDifferentOperations(
 
 async function runRepeatedOperation(apiUrl: URL): Promise<{
   batch: BatchResult;
+  sameStatus: boolean;
+  sameBody: boolean;
   dataRows: number;
   eventRows: number;
   operationRows: number;
@@ -258,8 +264,20 @@ async function runRepeatedOperation(apiUrl: URL): Promise<{
        (SELECT count(*)::text FROM operaciones_sincronizadas WHERE operation_id = $1) AS operations`,
     [operationId, value],
   );
+  const first = results[0];
+  const allSuccessful = results.every(
+    (result) => result.status !== null && result.status >= 200 && result.status < 300,
+  );
+  const sameStatus = allSuccessful && results.every(
+    (result) => result.status === first?.status,
+  );
+  const sameBody = allSuccessful && first !== undefined && results.every(
+    (result) => result.bodyText === first.bodyText,
+  );
   return {
     batch,
+    sameStatus,
+    sameBody,
     dataRows: Number(rows.rows[0]?.data ?? 0),
     eventRows: Number(rows.rows[0]?.events ?? 0),
     operationRows: Number(rows.rows[0]?.operations ?? 0),

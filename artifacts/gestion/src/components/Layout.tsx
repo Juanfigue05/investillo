@@ -15,7 +15,11 @@ import { RelojColombia } from "./RelojColombia";
 import { fechaHoyColombia } from "@/lib/utils";
 import { hayGetsApiActivos, suscribirGetsApi } from "@/lib/api-request-tracker";
 import { queryClient } from "@/lib/queryClient";
-import { leerRespuestaApi } from "@/lib/respuesta-api";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 function loadSet(key: string): Set<number> {
@@ -146,6 +150,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
       setTensionadaFecha("");
       setTensionadaValor("");
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setShowTensionada(false);
+        setTensionadaFecha("");
+        setTensionadaValor("");
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       setErrorTensionada(error instanceof Error ? error.message : String(error));
     } finally {
       setGuardandoTensionada(false);
@@ -171,6 +182,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
       setObraValor("");
       window.dispatchEvent(new Event("obra-electronica-actualizada"));
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setShowObraElectronica(false);
+        setObraNumeroFactura("");
+        setObraVehiculo("");
+        setObraValor("");
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       setObraError(error instanceof Error ? error.message : "No se pudo guardar");
     } finally {
       setGuardandoObra(false);

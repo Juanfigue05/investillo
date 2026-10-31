@@ -36,3 +36,27 @@ test("traduce fallos de red", async () => {
     { message: "No se pudo conectar con el servidor. Verifica tu conexión e inténtalo de nuevo." },
   );
 });
+
+test("relanza sin cambiar la operación que ya quedó en cola", async () => {
+  const error = Object.assign(
+    new TypeError("Guardado en este dispositivo."),
+    {
+      name: "OperacionEncoladaOfflineError",
+      operationId: "orden18-operation",
+    },
+  );
+  await assert.rejects(
+    leerRespuestaApi(Promise.reject(error)),
+    (recibido) => recibido === error,
+  );
+});
+
+test("relanza sin cambiar la operación offline que no se pudo guardar", async () => {
+  const error = Object.assign(new Error("No se pudo guardar localmente."), {
+    name: "OperacionOfflineNoGuardadaError",
+  });
+  await assert.rejects(
+    leerRespuestaApi(Promise.reject(error)),
+    (recibido) => recibido === error,
+  );
+});

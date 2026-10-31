@@ -21,7 +21,11 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { encolarOperacion, esFalloDeRed, obtenerIdOperacionOffline } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
-import { leerRespuestaApi } from "@/lib/respuesta-api";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 import { Pencil } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 
@@ -370,6 +374,17 @@ export default function Compras() {
           setPrecioConfirm(null);
         },
         onError: async (error) => {
+          if (esOperacionEncoladaOffline(error)) {
+            queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+            queryClient.invalidateQueries({
+              queryKey: ["/api/historial-precios"],
+            });
+            setLlegadaOpen(null);
+            setPrecioConfirm(null);
+            return;
+          }
+          if (esOperacionOfflineNoGuardada(error)) return;
           if (!esFalloDeRed(error)) {
             toast({
               title: "No se pudo guardar",
@@ -482,6 +497,13 @@ export default function Compras() {
           setProductoSeleccionado(null);
         },
         onError: async (error) => {
+          if (esOperacionEncoladaOffline(error)) {
+            queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+            setShowAddForm(false);
+            setProductoSeleccionado(null);
+            return;
+          }
+          if (esOperacionOfflineNoGuardada(error)) return;
           if (!esFalloDeRed(error)) {
             toast({
               title: "No se pudo guardar",
@@ -1024,6 +1046,17 @@ export default function Compras() {
                       });
                       setEditandoLlegadaId(null);
                     } catch (error) {
+                      if (esOperacionEncoladaOffline(error)) {
+                        await queryClient.invalidateQueries({
+                          queryKey: ["/api/compras"],
+                        });
+                        await queryClient.invalidateQueries({
+                          queryKey: ["/api/inventario"],
+                        });
+                        setEditandoLlegadaId(null);
+                        return;
+                      }
+                      if (esOperacionOfflineNoGuardada(error)) return;
                       toast({
                         title: "No se pudo guardar la corrección",
                         description: error instanceof Error ? error.message : String(error),

@@ -10,7 +10,11 @@ import {
   X,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import { leerRespuestaApi } from "@/lib/respuesta-api";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 import { toast } from "@/hooks/use-toast";
 
 const API = "/api";
@@ -132,6 +136,12 @@ export function CalculadoraCierre({
         body: JSON.stringify(datosBorrador()),
       }));
     } catch (error) {
+      if (
+        esOperacionEncoladaOffline(error) ||
+        esOperacionOfflineNoGuardada(error)
+      ) {
+        return;
+      }
       toast({
         title: "No se pudo guardar el borrador",
         description: error instanceof Error ? error.message : String(error),
@@ -154,6 +164,16 @@ export function CalculadoraCierre({
       setBilletes({});
       setBandaBuscada("");
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setSuma(Array.from({ length: 25 }, () => ({ concepto: "", valor: "" })));
+        setResta(Array.from({ length: 4 }, () => ({ concepto: "", valor: "" })));
+        setManoObra("");
+        setMonedas({});
+        setBilletes({});
+        setBandaBuscada("");
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       toast({
         title: "No se pudo borrar el borrador",
         description: error instanceof Error ? error.message : String(error),
@@ -180,6 +200,12 @@ export function CalculadoraCierre({
         }),
       }));
     } catch (error) {
+      if (
+        esOperacionEncoladaOffline(error) ||
+        esOperacionOfflineNoGuardada(error)
+      ) {
+        return;
+      }
       toast({
         title: "No se pudo guardar el conteo",
         description: error instanceof Error ? error.message : String(error),

@@ -514,6 +514,14 @@ async function expectOneRecordedOperation(operation: string): Promise<void> {
   expect(await countOperations(operation)).toBe(1);
 }
 
+async function olvidarRespuestaGuardada(operation: string): Promise<void> {
+  await db.execute(sql`
+    UPDATE eventos_sincronizacion
+       SET respuesta_remota = NULL
+     WHERE operation_id = ${operation}
+  `);
+}
+
 async function enableEventInsertFailure(): Promise<void> {
   await db.execute(sql`
     CREATE OR REPLACE FUNCTION orden13_fallar_evento() RETURNS trigger AS $$
@@ -622,6 +630,7 @@ describe.each(routeFamilies)("$name transactional idempotency", ({ createFixture
     const operation = operationId();
 
     const first = await fixture.perform(operation);
+    await olvidarRespuestaGuardada(operation);
     const duplicate = await fixture.perform(operation);
 
     expect(first.status).toBeGreaterThanOrEqual(200);
@@ -633,14 +642,14 @@ describe.each(routeFamilies)("$name transactional idempotency", ({ createFixture
     await expectOneRecordedOperation(operation);
   });
 
-  it("serializes concurrent requests with the same operation ID", async () => {
+  it("uses the transactional guard when the saved response is missing", async () => {
     const fixture = await createFixture();
     const operation = operationId();
 
-    const responses = await Promise.all([
-      fixture.perform(operation),
-      fixture.perform(operation),
-    ]);
+    const first = await fixture.perform(operation);
+    await olvidarRespuestaGuardada(operation);
+    const second = await fixture.perform(operation);
+    const responses = [first, second];
 
     expect(responses.every((response) => response.status >= 200 && response.status < 300)).toBe(true);
     expect(responses.filter((response) => response.body.yaProcesado === true)).toHaveLength(1);
@@ -674,6 +683,7 @@ describe.each(additionalMutationFixtures)("$name transactional idempotency", ({ 
     const operation = operationId();
 
     const first = await fixture.perform(operation);
+    await olvidarRespuestaGuardada(operation);
     const duplicate = await fixture.perform(operation);
 
     expect(first.status).toBeGreaterThanOrEqual(200);
@@ -685,14 +695,14 @@ describe.each(additionalMutationFixtures)("$name transactional idempotency", ({ 
     await expectOneRecordedOperation(operation);
   });
 
-  it("serializes concurrent requests with the same operation ID", async () => {
+  it("uses the transactional guard when the saved response is missing", async () => {
     const fixture = await prepare();
     const operation = operationId();
 
-    const responses = await Promise.all([
-      fixture.perform(operation),
-      fixture.perform(operation),
-    ]);
+    const first = await fixture.perform(operation);
+    await olvidarRespuestaGuardada(operation);
+    const second = await fixture.perform(operation);
+    const responses = [first, second];
 
     expect(responses.every((response) => response.status >= 200 && response.status < 300)).toBe(true);
     expect(responses.filter((response) => response.body.yaProcesado === true)).toHaveLength(1);

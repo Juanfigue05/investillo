@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { coincideBusqueda, formatCurrency, formatCurrencyDecimal, formatNumberCO, parseNumberCO } from "@/lib/utils";
 import { Pencil, Search, Trash2, X } from "lucide-react";
-import { leerRespuestaApi } from "@/lib/respuesta-api";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 import { toast } from "@/hooks/use-toast";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
@@ -26,7 +30,7 @@ export default function DescuentosInventario() {
     if (!items.length) { setMensaje("Selecciona cantidades para uno o varios productos."); return; }
     if (motivo === "Otro" && !motivoOtro.trim()) { setMensaje("Especifica el motivo."); return; }
     if (items.some(([id, cantidad]) => necesitaConfirmacion(cantidad) && !confirmados[Number(id)])) { setMensaje("Confirma la interpretación de las cantidades marcadas."); return; }
-    setGuardando(true); try { await leerRespuestaApi(fetch(`${API}/descuentos-inventario`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ motivo, motivoOtro, observacion, items: items.map(([productoId, cantidad]) => ({ productoId: Number(productoId), cantidad: parseNumberCO(cantidad) })) }) })); setCantidades({}); setConfirmados({}); setObservacion(""); setMensaje("Descuento registrado."); await cargar(); } catch (e) { const detalle = e instanceof Error ? e.message : "No se pudo guardar"; setMensaje(detalle); toast({ title: "No se pudo guardar el descuento", description: detalle, variant: "destructive" }); } finally { setGuardando(false); }
+    setGuardando(true); try { await leerRespuestaApi(fetch(`${API}/descuentos-inventario`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ motivo, motivoOtro, observacion, items: items.map(([productoId, cantidad]) => ({ productoId: Number(productoId), cantidad: parseNumberCO(cantidad) })) }) })); setCantidades({}); setConfirmados({}); setObservacion(""); setMensaje("Descuento registrado."); await cargar(); } catch (e) { if (esOperacionEncoladaOffline(e)) { setCantidades({}); setConfirmados({}); setObservacion(""); setMensaje(""); return; } if (esOperacionOfflineNoGuardada(e)) return; const detalle = e instanceof Error ? e.message : "No se pudo guardar"; setMensaje(detalle); toast({ title: "No se pudo guardar el descuento", description: detalle, variant: "destructive" }); } finally { setGuardando(false); }
   };
   const eliminar = async (registro: Registro) => {
     if (guardando || operacionEnCurso || !window.confirm(`¿Devolver ${formatNumberCO(registro.cantidad)} unidades de ${registro.productoNombre} al inventario?`)) return;
@@ -35,6 +39,11 @@ export default function DescuentosInventario() {
       await leerRespuestaApi(fetch(`${API}/descuentos-inventario/${registro.id}`, { method: "DELETE" }));
       await cargar();
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setRegistros((prev) => prev.filter((item) => item.id !== registro.id));
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       const detalle = error instanceof Error ? error.message : "No se pudo eliminar";
       setMensaje(detalle);
       toast({ title: "No se pudo eliminar el descuento", description: detalle, variant: "destructive" });
@@ -50,6 +59,24 @@ export default function DescuentosInventario() {
       setEditando(null);
       await cargar();
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setRegistros((prev) =>
+          prev.map((item) =>
+            item.id === editando.id
+              ? {
+                  ...item,
+                  cantidad: parseNumberCO(editCantidad),
+                  motivo: editMotivo,
+                  motivoOtro: editOtro,
+                  observacion: editObservacion,
+                }
+              : item,
+          ),
+        );
+        setEditando(null);
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       const detalle = error instanceof Error ? error.message : "No se pudo editar";
       setMensaje(detalle);
       toast({ title: "No se pudo editar el descuento", description: detalle, variant: "destructive" });

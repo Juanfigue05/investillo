@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Hand, Pencil, Printer, Trash2, X } from "lucide-react";
 import { Layout } from "@/components/Layout";
 import { fechaHoyColombia, formatCurrency } from "@/lib/utils";
-import { leerRespuestaApi } from "@/lib/respuesta-api";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
 
@@ -81,6 +85,22 @@ export default function ObraElectronica() {
       setEditando(null);
       await cargar();
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setRegistros((prev) =>
+          prev.map((registro) =>
+            registro.id === editando.id
+              ? {
+                  ...registro,
+                  ...borrador,
+                  valor: valorMostrado(borrador.valor),
+                }
+              : registro,
+          ),
+        );
+        setEditando(null);
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       alert(error instanceof Error ? error.message : String(error));
     } finally {
       setGuardandoEdicion(false);
@@ -94,6 +114,11 @@ export default function ObraElectronica() {
       await leerRespuestaApi(fetch(`${API}/obra-electronica/${id}`, { method: "DELETE" }));
       await cargar();
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setRegistros((prev) => prev.filter((registro) => registro.id !== id));
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       alert(error instanceof Error ? error.message : String(error));
     } finally {
       setEliminandoId(null);

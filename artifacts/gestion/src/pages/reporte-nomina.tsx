@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { Layout } from "@/components/Layout";
-import { leerRespuestaApi } from "@/lib/respuesta-api";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 import { formatCurrency } from "@/lib/utils";
 import { Check, Pencil, Printer, Trash2, X } from "lucide-react";
 
@@ -86,6 +90,36 @@ export default function ReporteNomina() {
       setEditando(null);
       await recargar();
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        const cambios = Object.fromEntries(
+          Object.entries(borrador).map(([campo, valor]) => [
+            campo,
+            campo === "fecha" ? valor : Number(valor),
+          ]),
+        );
+        setData((anterior: any) =>
+          anterior
+            ? {
+                ...anterior,
+                trabajadores: anterior.trabajadores?.map((trabajador: any) =>
+                  String(trabajador.trabajadorId) === String(trabajadorId)
+                    ? {
+                        ...trabajador,
+                        dias: trabajador.dias.map((dia: any) =>
+                          dia.fecha === fechaOriginal
+                            ? { ...dia, ...cambios }
+                            : dia,
+                        ),
+                      }
+                    : trabajador,
+                ),
+              }
+            : anterior,
+        );
+        setEditando(null);
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       alert(error instanceof Error ? error.message : String(error));
     } finally {
       setMutacionEnCurso(false);
@@ -103,6 +137,35 @@ export default function ReporteNomina() {
       setEditando(null);
       await recargar();
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setData((anterior: any) =>
+          anterior
+            ? {
+                ...anterior,
+                tensionadas: anterior.tensionadas?.map((tensionada: any) =>
+                  String(tensionada.id) === String(id)
+                    ? {
+                        ...tensionada,
+                        fecha: borrador[`${key}:fecha`],
+                        valor: Number(borrador[`${key}:valor`]),
+                      }
+                    : tensionada,
+                ),
+                totalTensionadas: (anterior.tensionadas || []).reduce(
+                  (total: number, tensionada: any) =>
+                    total +
+                    (String(tensionada.id) === String(id)
+                      ? Number(borrador[`${key}:valor`])
+                      : Number(tensionada.valor)),
+                  0,
+                ),
+              }
+            : anterior,
+        );
+        setEditando(null);
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       alert(error instanceof Error ? error.message : String(error));
     } finally {
       setMutacionEnCurso(false);
@@ -116,6 +179,28 @@ export default function ReporteNomina() {
       setEditando(null);
       await recargar();
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setData((anterior: any) =>
+          anterior
+            ? {
+                ...anterior,
+                tensionadas: anterior.tensionadas?.filter(
+                  (tensionada: any) => String(tensionada.id) !== String(id),
+                ),
+                totalTensionadas: (anterior.tensionadas || [])
+                  .filter((tensionada: any) => String(tensionada.id) !== String(id))
+                  .reduce(
+                    (total: number, tensionada: any) =>
+                      total + Number(tensionada.valor),
+                    0,
+                  ),
+              }
+            : anterior,
+        );
+        setEditando(null);
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
       alert(error instanceof Error ? error.message : String(error));
     } finally {
       setMutacionEnCurso(false);

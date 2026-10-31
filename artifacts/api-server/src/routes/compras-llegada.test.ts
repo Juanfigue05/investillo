@@ -138,6 +138,12 @@ async function evento(operation: string) {
   return registro;
 }
 
+async function olvidarRespuestaGuardada(operation: string): Promise<void> {
+  await db.update(eventosSincronizacionTable)
+    .set({ respuestaRemota: null })
+    .where(eq(eventosSincronizacionTable.operationId, operation));
+}
+
 describe("llegada de compras", () => {
   it("aplica una llegada una vez y registra su historial y referencia", async () => {
     const operation = operationId();
@@ -201,6 +207,7 @@ describe("llegada de compras", () => {
       .set("X-Operation-Id", operation)
       .send(llegada());
     const stockAfterFirst = await stock(productoId);
+    await olvidarRespuestaGuardada(operation);
     const second = await request(app)
       .put(`/api/compras/${compraId}`)
       .set("X-Operation-Id", operation)
@@ -510,6 +517,7 @@ describe("llegada de compras", () => {
       .set("X-Operation-Id", operation)
       .send(llegada());
     await db.delete(comprasTable).where(eq(comprasTable.id, compraId));
+    await olvidarRespuestaGuardada(operation);
     const retry = await request(app)
       .put(`/api/compras/${compraId}`)
       .set("X-Operation-Id", operation)
@@ -530,6 +538,7 @@ describe("llegada de compras", () => {
       .set("X-Operation-Id", operation)
       .send({ cantidadRecibida: 4, precioCompraRegistrado: 125 });
     await db.delete(comprasTable).where(eq(comprasTable.id, compraId));
+    await olvidarRespuestaGuardada(operation);
     const retry = await request(app)
       .patch(`/api/compras/${compraId}/corregir`)
       .set("X-Operation-Id", operation)

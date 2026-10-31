@@ -1,6 +1,10 @@
 import { useState, useMemo } from "react";
 import { Layout } from "@/components/Layout";
-import { leerRespuestaApi } from "@/lib/respuesta-api";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 import {
   useGetClientes,
   useCrearCliente,
@@ -194,7 +198,21 @@ export default function Clientes() {
         setForm({ ...emptyForm });
         setVehiculos([]);
       },
-      onError: (error: any) => setFormErrors([error?.message || "No se pudo guardar el cliente"]),
+      onError: (error: unknown) => {
+        if (esOperacionEncoladaOffline(error)) {
+          invalidate();
+          setShowForm(false);
+          setEditingId(null);
+          setForm({ ...emptyForm });
+          setVehiculos([]);
+          setFormErrors([]);
+          return;
+        }
+        if (esOperacionOfflineNoGuardada(error)) return;
+        setFormErrors([
+          error instanceof Error ? error.message : "No se pudo guardar el cliente",
+        ]);
+      },
     };
 
     if (editingId) {
@@ -354,6 +372,12 @@ export default function Clientes() {
       }
       queryClient.invalidateQueries({ queryKey: ["/api/clientes"] });
     } catch (err) {
+      if (esOperacionEncoladaOffline(err)) {
+        setConflictosTelefono([]);
+        queryClient.invalidateQueries({ queryKey: ["/api/clientes"] });
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(err)) return;
       alert("Error al aplicar: " + err);
     } finally {
       setResolviendoTelefonos(false);
@@ -383,6 +407,13 @@ export default function Clientes() {
         queryClient.invalidateQueries({ queryKey: ["/api/clientes"] });
       }
     } catch (err) {
+      if (esOperacionEncoladaOffline(err)) {
+        e.target.value = "";
+        setImportResultClientes(null);
+        queryClient.invalidateQueries({ queryKey: ["/api/clientes"] });
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(err)) return;
       setImportResultClientes({
         ok: false,
         total: 0,

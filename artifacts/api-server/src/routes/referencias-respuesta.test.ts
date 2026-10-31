@@ -1,7 +1,7 @@
 import "../lib/solo-base-de-pruebas";
 import { randomUUID } from "node:crypto";
 import ExcelJS from "exceljs";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { db } from "@workspace/db";
 import {
@@ -52,14 +52,28 @@ function operationId(): string {
 }
 
 async function referencias(id: string) {
-  const [evento] = await db
-    .select({ referencias: eventosSincronizacionTable.referenciasRespuesta })
-    .from(eventosSincronizacionTable)
-    .where(eq(eventosSincronizacionTable.operationId, id));
+  let evento:
+    | { referencias: unknown }
+    | undefined;
+  await vi.waitFor(async () => {
+    [evento] = await db
+      .select({
+        referencias: eventosSincronizacionTable.referenciasRespuesta,
+      })
+      .from(eventosSincronizacionTable)
+      .where(eq(eventosSincronizacionTable.operationId, id));
+    expect(evento).toBeDefined();
+  });
   return evento?.referencias as
     | ReferenciaRespuestaTest[]
     | null
     | undefined;
+}
+
+async function olvidarRespuestaGuardada(id: string): Promise<void> {
+  await db.update(eventosSincronizacionTable)
+    .set({ respuestaRemota: null })
+    .where(eq(eventosSincronizacionTable.operationId, id));
 }
 
 async function crearProducto(codigo: string) {
@@ -153,6 +167,7 @@ describe("referencias de respuesta en filas secundarias", () => {
         })),
       );
 
+      await olvidarRespuestaGuardada(operation);
       const repetido = await request(app)
         .post("/api/inventario-import/confirmar-nuevos")
         .set("X-Operation-Id", operation)
@@ -201,6 +216,7 @@ describe("referencias de respuesta en filas secundarias", () => {
         })),
       );
 
+      await olvidarRespuestaGuardada(operation);
       const repetido = await request(app)
         .post("/api/clientes-import/resolver-telefonos")
         .set("X-Operation-Id", operation)
@@ -343,7 +359,7 @@ describe("referencias de respuesta en filas secundarias", () => {
         expect(productos.length).toBeGreaterThan(0);
         expect(productos.map(({ codigo }) => codigo)).toEqual(caso.codigos);
         if (caso.endpoint === "/api/inventario-import/sincronizar") {
-          expect(await referencias(caso.operationId)).toBeUndefined();
+          expect(await referencias(caso.operationId)).toBeNull();
         } else {
           expect(await referencias(caso.operationId)).toEqual(
             productos.map((producto, index) => ({

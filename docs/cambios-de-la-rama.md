@@ -5,7 +5,9 @@ Este resumen reúne los cambios funcionales y operativos de la rama. No incluye 
 ## Sincronización bidireccional
 
 - Se implementó un outbox transaccional: las mutaciones cubiertas guardan el dato, su evento de sincronización y el registro de operación procesada en una sola transacción.
-- `operationId` permite reintentar una operación sin duplicar la escritura y recuperar la respuesta original. El middleware serializa solicitudes simultáneas con el mismo identificador y libera el bloqueo al terminar la petición.
+- `operationId` permite reintentar una operación sin duplicar la escritura y recuperar la respuesta original. El middleware serializa en memoria solicitudes simultáneas con el mismo identificador, consulta y guarda respuestas con consultas breves del pool, y conserva la protección final de la base de datos.
+- El candado en memoria supone una sola instancia del API. Con dos instancias, la clave primaria de `operaciones_sincronizadas` y la comprobación transaccional evitan duplicar la mutación, aunque una carrera entre instancias puede terminar en un conflicto HTTP en vez de repetir la primera respuesta.
+- Las respuestas exitosas se conservan en `eventos_sincronizacion`; solo se guarda `respuesta_remota` al actualizar un evento existente. Las filas `api_idempotente` sincronizadas no son eventos remotos ni operaciones locales pendientes, y la limpieza las elimina tras 60 días.
 - Se añadieron subida, descarga y coordinación de cambios (`sync:local`, `sync:pull`, `sync:all`), autenticación con `SYNC_TOKEN`, control de conflictos y acuse del cursor remoto.
 - `sync:init` compara filas e IDs máximos en las tablas cubiertas antes de guardar el punto de partida. Las equivalencias de IDs y las referencias de endpoint/respuesta permiten traducir relaciones entre bases.
 - El mapa de emisores, endpoints y relaciones está en [`referencias-sincronizacion.md`](./referencias-sincronizacion.md).
@@ -22,7 +24,14 @@ Este resumen reúne los cambios funcionales y operativos de la rama. No incluye 
 
 - Se incorporó un helper de respuesta HTTP para presentar rechazos del servidor. Las pantallas afectadas conservan el formulario ante error, evitan dobles envíos mientras guardan y muestran avisos comprensibles.
 - La calculadora de cierre admite importes abreviados en miles, y los buscadores de productos muestran más coincidencias con los formatos de detalle acordados.
-- La oficina puede operar con PostgreSQL local y conserva sus operaciones pendientes. La cola de IndexedDB y la lógica offline existente se mantienen; la sincronización reconcilia cambios cuando vuelve la conexión.
+- La cola global de IndexedDB guarda mutaciones del API cuando falta la red o falla la conexión. El cuadro offline informa si la operación quedó en cola o si no se pudo guardar; una operación encolada se trata como terminada en la pantalla y no se vuelve a encolar al capturar su error.
+- La oficina puede operar con PostgreSQL local y conserva sus operaciones pendientes. La sincronización reconcilia cambios cuando vuelve la conexión.
+
+### Pruebas manuales de la cola offline
+
+1. Abre Investillo, desconecta internet y registra una venta. Confirma el aviso de que quedó guardada en este dispositivo.
+2. Sin reconectar, registra una compra y un abono; confirma el mismo aviso en cada operación.
+3. Reconecta internet, espera a que termine la sincronización y revisa ventas, compras y abonos. Cada registro debe aparecer una sola vez.
 
 ## Importaciones y reportes
 
@@ -91,7 +100,7 @@ Configura estas variables en el servicio de Render antes de desplegar o reinicia
 - `CLAVE_ACCESO_REMOTO`: secreto de acceso remoto; consérvalo únicamente en la configuración privada de Render.
 - `NODE_VERSION=24`: versión de Node.js solicitada a Render.
 
-El arranque del API **no ejecuta migraciones ni crea automáticamente las tablas núcleo de sincronización**. `eventos_sincronizacion`, `operaciones_sincronizadas`, `referencias_sincronizacion`, `cursos_sincronizacion` y `base_sincronizacion` pertenecen al esquema Drizzle y deben existir por la migración aprobada correspondiente. Algunas tablas auxiliares se crean de forma diferida al usar su ruta, pero eso no aprovisiona el esquema de sincronización. No ejecutes `db:push` contra Aiven para resolver una tabla faltante.
+Cada arranque del API **no ejecuta migraciones ni crea las tablas núcleo de sincronización**. `eventos_sincronizacion`, `operaciones_sincronizadas`, `referencias_sincronizacion`, `cursos_sincronizacion` y `base_sincronizacion` pertenecen al esquema Drizzle y deben existir por la migración aprobada correspondiente. Ya con esas tablas instaladas, el middleware de idempotencia registra respuestas exitosas en `eventos_sincronizacion`, y `SYNC_CAPTURE_REMOTE=true` registra las mutaciones remotas en esa misma tabla; no son pasos de creación de esquema. Algunas tablas auxiliares, como `sesiones_acceso` y `cierre_diario_borradores`, se crean de forma diferida al usar su ruta, pero eso no aprovisiona el esquema de sincronización. No ejecutes `db:push` contra Aiven para resolver una tabla faltante.
 
 ### SQL de llaves foráneas e índices de la Orden 12
 
@@ -110,8 +119,10 @@ Aplica el archivo completo en cada base requerida, respetando su `BEGIN` y `COMM
 
 El workflow de verificación diaria está programado y GitHub ejecuta su horario desde la rama predeterminada (`main`); no es un monitor continuo de una rama de trabajo. Durante la primera puesta en marcha pueden existir eventos históricos antiguos en Aiven hasta completar el paso 6. Si llega una alerta en esa ventana planificada, conserva el log y confirma que el respaldo, la pausa de escrituras y el reinicio de metadata siguen pendientes o ya se completaron correctamente. Fuera de esa ventana, o si la alerta continúa después del reinicio, revisa `sync:status` y la verificación; no borres eventos para silenciar el aviso.
 
+Las respuestas exitosas de `X-Operation-Id` se guardan para que un reintento reciba el mismo estado y cuerpo. `limpiar-operaciones` elimina las operaciones anti-duplicado y los eventos sincronizados que superaron 60 días; no lo ejecutes contra una base equivocada y conserva los respaldos antes de cualquier mantenimiento.
+
 ### Límites conocidos
 
 - La guarda del respaldo que evita restaurar sobre el origen compara host, puerto y nombre de base; no reconoce que un alias de pooler y una conexión directa puedan terminar en la misma base.
 - No hay pruebas automáticas de interfaz que validen los mensajes y el estado visual de los formularios.
-- El middleware de `X-Operation-Id` retiene una conexión de PostgreSQL durante la petición y la ruta puede necesitar otra. Con un pool máximo de 11, esto se midió en la base local de pruebas; los resultados y su alcance están en el informe de la Orden 17.
+- El candado de `X-Operation-Id` vive en memoria y presupone una sola instancia del API. En dos instancias la base impide duplicar la mutación, pero puede responder un conflicto en vez de reproducir la primera respuesta.
