@@ -1,5 +1,6 @@
 import type { RequestHandler } from "express";
 import { pool } from "@workspace/db";
+import { logger } from "../lib/logger";
 
 const METODOS_MUTACION = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -18,7 +19,12 @@ export const bloqueoOperacion: RequestHandler = async (req, res, next) => {
     const liberar = () => {
       if (liberado) return;
       liberado = true;
-      client.release();
+      void client.query("SELECT pg_advisory_unlock(hashtext($1))", [operationId])
+        .then(() => client.release())
+        .catch((error: unknown) => {
+          logger.error({ err: error, operationId }, "No se pudo liberar el bloqueo de la operación");
+          client.release(error instanceof Error ? error : new Error(String(error)));
+        });
     };
     res.once("finish", () => {
       liberar();
