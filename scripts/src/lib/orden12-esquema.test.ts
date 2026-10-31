@@ -81,10 +81,15 @@ async function connect(databaseUrl: string): Promise<Client> {
 }
 
 function pushSchema(databaseUrl: string): void {
-  const command = process.env.ComSpec ?? "cmd.exe";
+  const command = process.platform === "win32"
+    ? process.env.ComSpec ?? "cmd.exe"
+    : "sh";
+  const args = process.platform === "win32"
+    ? ["/d", "/s", "/c", "pnpm exec drizzle-kit push --config ./drizzle.config.ts"]
+    : ["-c", "pnpm exec drizzle-kit push --config ./drizzle.config.ts"];
   const result = spawnSync(
     command,
-    ["/d", "/s", "/c", "pnpm exec drizzle-kit push --config ./drizzle.config.ts"],
+    args,
     {
       cwd: join(repoRoot, "lib", "db"),
       env: { ...process.env, DATABASE_URL: databaseUrl },

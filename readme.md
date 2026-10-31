@@ -696,6 +696,7 @@ Este procedimiento se usa una sola vez para preparar la sincronización bidirecc
 - **Nunca ejecutes `db:push` contra Aiven.** Espera a que la sincronización lleve al menos una semana estable; esta orden no forma parte del primer arranque ni se ejecuta durante la inicialización.
 - Antes de aplicarla, toma un respaldo verificado y detén todas las escrituras. Ejecuta manualmente [el SQL de la Orden 12](./docs/sql/orden-12-llaves-foraneas-e-indices.sql) tanto en Aiven como en la copia local. Si primero vas a copiar una base sobre la otra, aplícalo a la fuente antes de copiarla y verifica luego ambas.
 - El SQL conserva en `_respaldo_huerfanos` las filas huérfanas de historial de precios y mano de obra. Desvincula los historiales sin compra y la mano de obra sin venta; elimina los historiales cuyo producto ya no existe. Ese borrado cambia el conteo y la huella de `historial_precios`, por eso debe hacerse fuera del primer arranque de sincronización.
+- Si el SQL falla por cualquier llave, toda la transacción se revierte y no cambia nada. Copia el mensaje completo y no lo reintentes sin revisarlo.
 - Para comprobar cada base, confirma 17 llaves foráneas y 18 índices de esta orden, y revisa cuántas filas se respaldaron:
 
   ```sql
@@ -887,6 +888,8 @@ TRUNCATE TABLE
   cierre_diario,
   remachadas,
   grupos_trabajo_default,
+  descuentos_inventario,
+  obra_electronica,
   operaciones_sincronizadas,
   notas,
   conteo_monedas
@@ -895,6 +898,8 @@ RESTART IDENTITY CASCADE;
 
 4. Confirma que se ejecutó sin errores (mensaje verde de éxito).
 5. Abre el sistema — todas las listas deberían aparecer vacías, listas para empezar con información real.
+
+Con las llaves foráneas de la Orden 12, `CASCADE` también vaciaría `descuentos_inventario` y `obra_electronica` junto a productos y trabajadores; por eso aparecen explícitamente en la lista.
 
 **¿Qué significa cada palabra del comando?**
 
