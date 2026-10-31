@@ -1034,8 +1034,6 @@ La comprobación diaria revisa referencias huérfanas, diferencias entre `total_
 <a id="seccion-15"></a>
 ## 15. 🧰 CI, respaldos y mantenimiento
 
-El resumen de cambios de esta rama respecto a `main` está en [`docs/cambios-de-la-rama.md`](./docs/cambios-de-la-rama.md).
-
 ### Integración continua
 
 `.github/workflows/ci.yml` corre en cada push y pull request. Usa PostgreSQL 18 aislado, Node.js 24 y pnpm 11.22.0; valida el esquema de prueba, el typecheck, el build, las pruebas del API y las pruebas de scripts. Un job separado crea bases aisladas de sincronización y ejecuta `test:sync`. Un resultado verde no valida una migración aplicada a producción.
