@@ -34,7 +34,7 @@ Cuando abres Investillo, en el lado izquierdo de la pantalla ves un menú. Aquí
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 📊 **Dashboard**            | La pantalla principal — un resumen rápido: cuánto se vendió hoy, cuánto deben los clientes, cuánto se ha comprado, una gráfica de ventas, y una tarjeta para instalar la app.        |
 | 🚚 **Compras**              | Registra lo que compras a proveedores, con fecha de llegada elegible, registro en lote (varios productos del mismo proveedor a la vez), e historial agrupado por año y mes.          |
-| 🛒 **Ventas Diarias**       | Cada venta del día — qué se vendió, a cómo, y cómo te pagaron (Efectivo / Cuenta Ernesto / Cuenta Olga / Cuenta Juan). El stock baja solo, descontando primero de Local y luego de Bodega si hace falta. |
+| 🛒 **Ventas Diarias**       | Cada venta del día — qué se vendió, a cómo, y cómo te pagaron (Efectivo / Cuenta Ernesto / Cuenta Olga / Cuenta Juan). También permite repartir mano de obra, soldadura, chispeada y pulida entre trabajadores; al editar, muestra de nuevo los trabajadores y valores guardados. El stock baja solo, descontando primero de Local y luego de Bodega si hace falta. |
 | 💳 **Créditos**             | Para cuando un cliente se lleva algo y paga después — con filtros por fecha y por placa, y forma de pago registrada al abonar.                                                       |
 | 🤝 **Nos Debe**             | Igual que Créditos, pero para cuando es el negocio el que le debe/fía a alguien más.                                                                                                  |
 | 📦 **Inventario**           | Todos tus productos, con el stock dividido entre **Local** y **Bodega**, botón de **Trasladar Stock** entre los dos, Estado Activo/Inactivo, pestaña de **Remachadas**, y exportación/importación completa con vista previa de cambios antes de aplicar nada. |
@@ -48,7 +48,7 @@ Cuando abres Investillo, en el lado izquierdo de la pantalla ves un menú. Aquí
 
 ### La "Calculadora de Cierre"
 
-Hay un botón con un ícono de calculadora en la barra de arriba (visible desde cualquier página) — se usa para cuadrar la caja del día: sumar lo que entró, restar lo que se pagó por fuera, contar monedas y billetes, y ver si "cuadra" con lo esperado. El recuadro de "Diferencia" cambia de color según el resultado: verde apagado si cuadra exacto, verde fuerte si sobra dinero, rojo si falta. También incluye una consulta rápida de "Remachadas" (precio de remachar bandas por número) y un conteo persistente de monedas repartido entre Bolsa y Caja.
+Hay un botón con un ícono de calculadora en la barra de arriba (visible desde cualquier página) — se usa para cuadrar la caja del día: sumar lo que entró, restar lo que se pagó por fuera, contar monedas y billetes, y ver si "cuadra" con lo esperado. En los recuadros de suma y resta escribe los valores en miles: `12,5` o `12.5` equivalen a $12.500 y `36` equivale a $36.000. El recuadro de "Diferencia" cambia de color según el resultado: verde apagado si cuadra exacto, verde fuerte si sobra dinero, rojo si falta. También incluye una consulta rápida de "Remachadas" (muestra el nombre del producto) y un conteo persistente de monedas repartido entre Bolsa y Caja.
 
 ---
 
@@ -120,16 +120,18 @@ El backend requiere `DATABASE_URL` incluso para importar módulos en pruebas. Si
 
 - **Tema claro/oscuro:** botón en la barra superior (ícono de sol/luna) — útil sobre todo si hay mucha luz o reflejo de sol sobre la pantalla, ya que el modo oscuro se ve mal en esas condiciones. Recuerda tu elección entre sesiones.
 - **Barra de navegación colapsable:** se ve angosta (solo íconos) por defecto para dejar más espacio a la pantalla, y se expande sola al poner el mouse encima — se vuelve a encoger 5 segundos después de que el mouse se aleja.
-- **Buscador de productos mejorado:** al buscar un producto en Ventas, Créditos o Nos Debe, se puede buscar por nombre, código o marca, y se ve el stock y el precio antes de seleccionar.
+- **Buscador de productos:** permite buscar por nombre, código, referencia, tipo o marca. Muestra todas las coincidencias que corresponden a lo escrito, en una lista desplazable; en Ventas, Créditos y Nos Debe también muestra stock y precio. En Ventas Diarias los detalles aparecen como tipo, marca y referencia; en Compras, como tipo, marca y referencia / código.
 - **Instalable como PWA:** desde el Dashboard o desde la barra de direcciones del navegador (Chrome/Edge).
 
 ### 3.4 Cómo funciona el modo sin conexión y la sincronización
 
 - La computadora de la oficina trabaja contra su PostgreSQL local. Por eso, una caída de internet no debe detener las operaciones normales ni borrar las ventas que ya estaban registradas.
-- Si una operación del navegador no logra comunicarse con el API, queda guardada en IndexedDB como `pendiente`. Cuando vuelve la conexión, se intenta sincronizar inmediatamente y también cada 30 segundos mientras la aplicación está abierta.
+- Si una operación del navegador no logra comunicarse con el API, queda guardada en IndexedDB como `pendiente`. La ventana global de operaciones offline avisa si quedó guardada o si no se pudo guardar; la pantalla no muestra un segundo aviso ni vuelve a encolar una operación ya guardada. Cuando vuelve la conexión, se intenta sincronizar inmediatamente y también cada 30 segundos mientras la aplicación está abierta.
 - La tarea programada de Windows ejecuta `pnpm.cmd run sync:all` cada 5 minutos. Funciona aunque la aplicación web esté cerrada: primero sube las operaciones locales pendientes y con error, y después descarga cambios remotos.
-- Cada operación tiene un `operationId` único. El API conserva ese identificador y, si la misma operación se reintenta, devuelve el resultado anterior en lugar de crear otra venta. Las ventas nuevas se agregan; no reemplazan las ventas anteriores.
+- Cada operación tiene un `operationId` único. El API conserva la respuesta de las escrituras exitosas y, si recibe otra vez el mismo identificador, devuelve el resultado anterior en lugar de crear otra venta. Las ventas nuevas se agregan; no reemplazan las ventas anteriores.
+- Las escrituras recibidas por el API remoto también se registran para que la PC pueda descargarlas. Esos registros no se vuelven a tratar como operaciones locales pendientes ni se suben de regreso al servidor.
 - Las operaciones se procesan en orden. Un error de conexión se reintenta automáticamente; un error real del servidor queda marcado como `error` con su motivo para revisarlo antes de volver a intentar.
+- Para probar el flujo manualmente, sigue la lista breve de [pruebas sin internet](./docs/cambios-de-la-rama.md#pruebas-manuales-de-la-cola-offline).
 - Antes de usar una computadora sin internet, la base local debe tener una carga inicial de los datos históricos. No se debe restaurar una copia completa de Aiven encima de una base local que ya tenga operaciones nuevas.
 
 ### Tareas automáticas recomendadas (Programador de Tareas de Windows)
@@ -585,6 +587,8 @@ Render ejecuta el API y Aiven conserva la base PostgreSQL principal. El computad
 
 ### 8.2 Desplegar en Render
 
+Antes de fusionar o desplegar cambios, consulta la guía de [qué configurar y aplicar, y en qué orden](./docs/cambios-de-la-rama.md). Allí se mantiene el procedimiento operativo completo, incluidos los requisitos previos de base de datos y el primer arranque de sincronización.
+
 1. Crea cuenta en **[render.com](https://render.com)** (puedes entrar directo con tu cuenta de GitHub).
 2. Clic en **"New +"** → **"Web Service"** → conecta tu repositorio de GitHub.
 3. Llena el formulario así:
@@ -600,6 +604,8 @@ Render ejecuta el API y Aiven conserva la base PostgreSQL principal. El computad
    | `CLAVE_ACCESO_REMOTO` | una clave privada para abrir la aplicación |
    | `SYNC_TOKEN` | secreto aleatorio de al menos 32 bytes; también se configura en `.env.local` |
    | `TRUST_PROXY_HOPS` | `1` para Render detrás de un proxy |
+   | `CORS_ORIGINS` | origen web autorizado, solo si el frontend se sirve desde otro dominio |
+   | `NODE_VERSION` | `24` |
 5. Clic en **"Create Web Service"** y espera a que termine; Render te mostrará la dirección pública de tu servicio.
 
 Genera el token con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Guarda el mismo valor en Render y en `.env.local`, y no lo publiques ni lo subas a Git. Los scripts `sync:local` y `sync:pull` lo envían como `X-Sync-Token`; sin este token la sincronización se rechaza. El límite de intentos de acceso es de 5 fallos por IP cada 15 minutos y se guarda en memoria, por lo que está pensado para una sola instancia. `TRUST_PROXY_HOPS` debe corresponder al número real de proxies confiables; verifica esa configuración antes de usar el límite en producción.
@@ -928,7 +934,12 @@ Para que sepas qué esperar y qué no:
 
 - La oficina está documentada para Windows y PowerShell; CI también ejecuta validaciones en Linux. Usa PostgreSQL client tools 18 o posterior.
 - **No existe integración con contabilidad formal (PUC/NIIF) ni facturación electrónica DIAN** — se decidió, por ahora, que el sistema se enfoque solo en control interno.
+- No hay pruebas automáticas de interfaz; los flujos visuales y offline deben comprobarse manualmente en un navegador.
+- El candado de reintentos por `X-Operation-Id` está en memoria y presupone una sola instancia del API. La base protege contra mutaciones duplicadas entre instancias, pero una repetición simultánea podría recibir un conflicto en vez de la respuesta anterior.
+- La protección del respaldo contra restaurar sobre el origen compara host, puerto y nombre de base; no detecta que un alias de pooler y una conexión directa puedan llegar a la misma base.
 - La base PostgreSQL local permite operar sin internet. La sincronización cubre las rutas descritas en [`docs/referencias-sincronizacion.md`](./docs/referencias-sincronizacion.md); revisa los logs y el estado de la cola antes de asumir que una operación llegó a Aiven.
+- La cola offline del navegador y la cola de sincronización de PostgreSQL son capas distintas. La primera conserva solicitudes que el navegador no pudo enviar; la segunda conserva cambios locales para subirlos cuando vuelva la conexión. No borres los datos del navegador ni las filas pendientes de la base sin revisar antes su estado.
+- El diálogo global informa sobre operaciones encoladas o que no pudieron guardarse. Una operación encolada ya está pendiente de sincronización, no significa que ya haya llegado a Aiven.
 - Render ejecuta el API; Aiven es la base principal. Supabase es solamente una réplica auxiliar de respaldo y puede no tener el último estado si un respaldo falla.
 - La importación masiva de clientes detecta duplicados por nombre y por teléfono (compara solo los dígitos, sin importar el formato) — si un número ya está en uso, esa fila queda separada para revisión manual, no se omite en silencio. Correo no se valida contra duplicados.
 - Las respuestas de sincronización HTTP `409` quedan en conflicto y no se reintentan solas. Los errores transitorios se reintentan según su tipo; las operaciones con error deben revisarse antes de reactivarlas.
@@ -989,11 +1000,13 @@ API de Render ── transacción ── Aiven
 ```
 
 - Las rutas con sincronización guardan el cambio de negocio, el evento de `eventos_sincronizacion` y el registro en `operaciones_sincronizadas` en la misma transacción. Si una parte falla, no se confirma ninguna.
-- `operationId` identifica una petición lógica. Reintentar la misma operación no vuelve a crear el registro; el servidor entrega la respuesta que quedó guardada para esa operación.
+- `operationId` identifica una petición lógica. El API conserva las respuestas exitosas para responder igual si llega un reintento; una respuesta de error no se guarda para reproducirla.
+- Los eventos `api_idempotente` conservan la respuesta de una escritura y no se cuentan como cambios locales pendientes. Las capturas de escrituras remotas llevan origen `remoto`, para que la PC pueda descargarlas sin volver a subirlas.
 - `referencias_sincronizacion` relaciona IDs locales y remotos. Para filas anidadas, las referencias de endpoint y respuesta permiten traducir relaciones sin adivinar IDs.
 - `sync:init` es una operación inicial única: compara cantidad de filas e ID máximo en 21 tablas, y guarda el punto de partida solo si ambas bases están alineadas. No es un hash del contenido ni debe forzarse para ocultar diferencias.
 - `sync:local` sube eventos locales pendientes o con error. `sync:pull` descarga eventos de Render; `sync:all` ejecuta la subida antes de la descarga. La descarga confirma el cursor para que el servidor pueda retener y, tras el plazo establecido, limpiar eventos ya procesados.
 - `sync:status` muestra el punto de partida, el cursor y los eventos por origen/estado. La confirmación del cursor está diseñada para una sola PC sincronizadora; no inicialices una segunda oficina con el mismo estado sin un diseño y una prueba aparte.
+- Los eventos sincronizados se conservan hasta 60 días y luego el limpiador puede retirarlos. El API no crea automáticamente las tablas núcleo de sincronización al arrancar: deben estar instaladas mediante la migración aprobada. Para el orden de despliegue y el primer arranque, sigue la [guía operativa](./docs/cambios-de-la-rama.md#qué-aplicar-al-desplegar-y-en-qué-orden); nunca uses `db:push` en Aiven para resolver una tabla faltante.
 
 El inventario de endpoints, entidades, referencias y respuestas está en [`docs/referencias-sincronizacion.md`](./docs/referencias-sincronizacion.md). No edites directamente una base mientras el outbox tenga eventos sin procesar: podrías crear divergencias difíciles de resolver.
 
@@ -1003,7 +1016,9 @@ El inventario de endpoints, entidades, referencias y respuestas está en [`docs/
 ### Escrituras e idempotencia
 
 - En las rutas integradas, la fila de negocio, el evento de salida y la operación procesada se confirman juntos. Los fallos simulados de las pruebas verifican que no queden escrituras parciales.
-- Si llega dos veces el mismo `operationId`, incluso en paralelo, la API responde con el resultado ya registrado y no duplica el cambio.
+- Si llega dos veces el mismo `X-Operation-Id`, la API serializa esas solicitudes y, cuando la primera terminó correctamente, responde con el estado y el cuerpo guardados sin duplicar el cambio. Las respuestas de error no se guardan como resultado para repetir.
+- El control local evita retener una conexión de PostgreSQL durante toda la petición. La garantía contra escrituras duplicadas también está protegida por restricciones y comprobaciones de la base de datos.
+- El candado de memoria supone una sola instancia del API. Con varias instancias, la base sigue protegiendo los datos, pero una repetición simultánea podría recibir un conflicto en vez de la respuesta guardada.
 - En mano de obra, `total_ganado` se actualiza junto con las distribuciones; al reemplazar o borrar, se descuentan las distribuciones anteriores y se suman las nuevas dentro de la misma transacción.
 - Las respuestas de conflicto `409` se conservan como conflicto y no se reintentan automáticamente. La cola local no se debe borrar para "resolver" un conflicto.
 
@@ -1014,7 +1029,7 @@ El inventario de endpoints, entidades, referencias y respuestas está en [`docs/
 3. Si Render o Aiven no responden, conserva la operación pendiente y el log. La próxima ejecución puede reintentar un error transitorio; no copies datos manualmente entre bases.
 4. Si el mismo recurso se modificó remotamente después del último pull, la edición o eliminación local puede quedar en conflicto para evitar sobrescribir cambios no descargados. Ejecuta la descarga y resuelve el caso manualmente antes de volver a subir.
 
-La comprobación diaria revisa referencias huérfanas, diferencias entre `total_ganado` y sus distribuciones, eventos de sincronización en error/conflicto o pendientes por más de 72 horas, stock negativo, créditos sobre-abonados, líneas de crédito desalineadas y precios de venta inferiores al costo. El reporte señala problemas; no los corrige automáticamente.
+La comprobación diaria revisa referencias huérfanas, diferencias entre `total_ganado` y sus distribuciones, eventos de sincronización en error/conflicto o pendientes por más de 72 horas, stock negativo, créditos sobre-abonados, líneas de crédito desalineadas y precios de venta inferiores al costo. El reporte señala problemas; no los corrige automáticamente. Los eventos ya sincronizados se conservan hasta 60 días y después pueden eliminarse mediante el proceso de limpieza.
 
 <a id="seccion-15"></a>
 ## 15. 🧰 CI, respaldos y mantenimiento
@@ -1024,6 +1039,8 @@ El resumen de cambios de esta rama respecto a `main` está en [`docs/cambios-de-
 ### Integración continua
 
 `.github/workflows/ci.yml` corre en cada push y pull request. Usa PostgreSQL 18 aislado, Node.js 24 y pnpm 11.22.0; valida el esquema de prueba, el typecheck, el build, las pruebas del API y las pruebas de scripts. Un job separado crea bases aisladas de sincronización y ejecuta `test:sync`. Un resultado verde no valida una migración aplicada a producción.
+
+El workflow de verificación diaria se ejecuta desde `main`; no se ejecuta por el solo hecho de trabajar en una rama. La guía de despliegue explica cómo interpretar su alerta mientras se prepara la sincronización inicial.
 
 ### Respaldos automáticos
 
@@ -1055,7 +1072,7 @@ No escribas valores reales en el README, en capturas, tickets ni commits. Usa lo
 | `DATABASE_URL` | `.env.local`, `.env.api`, Render y GitHub Actions | Obligatoria para API y scripts que acceden a PostgreSQL. `.env.local` apunta a PostgreSQL local; `.env.api`/Render y el secret de verificación apuntan a Aiven; CI usa una base efímera. |
 | `PORT` | `.env.api`, `.env.local`, `.env.web`, Render | Puerto del API; es obligatorio para el servidor. Vite también puede usarlo para su servidor de desarrollo. |
 | `NODE_ENV` | local y Render | Selecciona comportamiento de desarrollo/producción. En Render usa `production`; `test` habilita ajustes reservados para pruebas. |
-| `CORS_ORIGINS` | API | Lista opcional, separada por comas, de orígenes web permitidos. El frontend servido por el mismo API no necesita agregarse. |
+| `CORS_ORIGINS` | API / Render | Lista opcional, separada por comas, de orígenes web permitidos. El frontend servido por el mismo API no necesita agregarse. |
 | `CLAVE_ACCESO_REMOTO` | Render | Clave de acceso a la aplicación remota. Configúrala en producción; nunca la publiques. |
 | `TRUST_PROXY_HOPS` | Render | Número de proxies confiables. Debe corresponder a la topología real; el despliegue documentado en Render usa `1`. |
 | `SYNC_TOKEN` | Render y `.env.local` | Secreto compartido obligatorio para sincronizar. Usa el mismo valor en ambos lados y al menos 32 bytes. |
