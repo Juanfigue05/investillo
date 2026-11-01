@@ -4,6 +4,7 @@ const { Pool } = pg;
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("Falta DATABASE_URL en el .env");
 
+const HORAS_MAXIMAS_EVENTO_PENDIENTE = 72;
 const pool = new Pool({ connectionString: DATABASE_URL });
 
 interface Problema {
@@ -50,6 +51,68 @@ async function verificarConsistencia() {
         categoria: "Referencia huérfana",
         detalle: `${row.referencia}: ${row.cantidad} registro(s)`,
       });
+    }
+  }
+
+  const totalesTrabajadores = await pool.query<{
+    id: number;
+    nombre: string;
+    total_ganado: string;
+    total_distribuido: string;
+  }>(`
+    SELECT t.id, t.nombre, t.total_ganado::text AS total_ganado,
+           COALESCE(SUM(d.valor), 0)::text AS total_distribuido
+    FROM trabajadores t
+    LEFT JOIN distribuciones_mano_obra d ON d.trabajador_id = t.id
+    GROUP BY t.id, t.nombre, t.total_ganado
+    HAVING t.total_ganado <> COALESCE(SUM(d.valor), 0)
+  `);
+  for (const row of totalesTrabajadores.rows) {
+    problemas.push({
+      categoria: "Total ganado desalineado",
+      detalle: `${row.nombre} (#${row.id}): total_ganado ${row.total_ganado}, distribuciones ${row.total_distribuido}`,
+    });
+  }
+
+  const tablasSincronizacion = await pool.query<{
+    eventos: string | null;
+    operaciones: string | null;
+  }>(`
+    SELECT to_regclass('public.eventos_sincronizacion') AS eventos,
+           to_regclass('public.operaciones_sincronizadas') AS operaciones
+  `);
+  const tablasSync = tablasSincronizacion.rows[0];
+  if (!tablasSync?.eventos || !tablasSync.operaciones) {
+    console.warn(
+      "Aviso: las tablas de sincronización no están instaladas; se omite esa sección de la revisión.",
+    );
+  } else {
+    const problemasSync = await pool.query<{
+      errores: string;
+      conflictos: string;
+      pendientes_antiguos: string;
+    }>(`
+      SELECT COUNT(*) FILTER (
+               WHERE origen = 'local' AND estado = 'error'
+             )::text AS errores,
+             COUNT(*) FILTER (
+               WHERE origen = 'local' AND estado = 'conflicto'
+             )::text AS conflictos,
+             COUNT(*) FILTER (
+               WHERE origen = 'local' AND estado = 'pendiente'
+                 AND creado_en < now() - ($1::integer * interval '1 hour')
+             )::text AS pendientes_antiguos
+      FROM eventos_sincronizacion
+    `, [HORAS_MAXIMAS_EVENTO_PENDIENTE]);
+    const estado = problemasSync.rows[0]!;
+    for (const [categoria, cantidad] of [
+      ["Eventos de sincronización con error", Number(estado.errores)],
+      ["Conflictos de sincronización", Number(estado.conflictos)],
+      [`Eventos pendientes por más de ${HORAS_MAXIMAS_EVENTO_PENDIENTE} horas`, Number(estado.pendientes_antiguos)],
+    ] as const) {
+      if (cantidad > 0) {
+        problemas.push({ categoria, detalle: `${cantidad} evento(s)` });
+      }
     }
   }
 

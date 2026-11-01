@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { eventosSincronizacionTable, obraElectronicaTable, operacionesSincronizadasTable, trabajadoresTable } from "@workspace/db/schema";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
+import { operacionYaProcesada } from "./lib/operacion-sincronizada";
 
 const router = Router();
 
@@ -45,58 +46,84 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const { trabajadorId, fecha, numeroFactura, vehiculo } = req.body;
   const id = Number(trabajadorId);
-  if (!Number.isInteger(id) || !fecha) { res.status(400).json({ error: "Empleado y fecha son obligatorios" }); return; }
   const valor = parseValor(req.body.valor);
-  if (valor <= 0) { res.status(400).json({ error: "El valor debe ser mayor que cero" }); return; }
-  const [trabajador] = await db.select({ id: trabajadoresTable.id, nombre: trabajadoresTable.nombre, obraElectronica: trabajadoresTable.obraElectronica })
-    .from(trabajadoresTable).where(eq(trabajadoresTable.id, id)).limit(1);
-  if (!trabajador) { res.status(404).json({ error: "Empleado no encontrado" }); return; }
-  if (!trabajador.obraElectronica) { res.status(403).json({ error: "Este empleado no tiene habilitada la obra electrónica" }); return; }
-  const [registro] = await db.insert(obraElectronicaTable).values({
-    trabajadorId: trabajador.id,
-    empleadoNombre: trabajador.nombre,
-    fecha,
-    numeroFactura: String(numeroFactura || "").trim(),
-    vehiculo: String(vehiculo || "").trim(),
-    valor: String(valor),
-  }).returning();
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "obra_electronica", entidadId: String(registro.id), tipo: "crear", metodo: "POST", endpoint: "/obra-electronica", payload: req.body, origen: "local" });
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "obra_electronica", recursoId: registro.id }).onConflictDoNothing();
-  res.status(201).json(mapRegistro(registro));
+  const resultado = await db.transaction(async (tx) => {
+    const ya = await operacionYaProcesada(tx, operationId);
+    if (ya) return { yaProcesado: ya } as const;
+    if (!Number.isInteger(id) || !fecha) return { error: "Empleado y fecha son obligatorios", status: 400 } as const;
+    if (valor <= 0) return { error: "El valor debe ser mayor que cero", status: 400 } as const;
+    const [trabajador] = await tx.select({ id: trabajadoresTable.id, nombre: trabajadoresTable.nombre, obraElectronica: trabajadoresTable.obraElectronica })
+      .from(trabajadoresTable).where(eq(trabajadoresTable.id, id)).limit(1);
+    if (!trabajador) return { error: "Empleado no encontrado", status: 404 } as const;
+    if (!trabajador.obraElectronica) return { error: "Este empleado no tiene habilitada la obra electrónica", status: 403 } as const;
+    const [registro] = await tx.insert(obraElectronicaTable).values({
+      trabajadorId: trabajador.id,
+      empleadoNombre: trabajador.nombre,
+      fecha,
+      numeroFactura: String(numeroFactura || "").trim(),
+      vehiculo: String(vehiculo || "").trim(),
+      valor: String(valor),
+    }).returning();
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "obra_electronica", entidadId: String(registro.id), tipo: "crear", metodo: "POST", endpoint: "/obra-electronica", payload: req.body, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "obra_electronica", recursoId: registro.id }).onConflictDoNothing();
+    return { registro } as const;
+  });
+  if (resultado.yaProcesado) {
+    res.status(200).json({ ok: true, yaProcesado: true, recursoId: resultado.yaProcesado.recursoId });
+    return;
+  }
+  if (resultado.status !== undefined) { res.status(resultado.status).json({ error: resultado.error }); return; }
+  res.status(201).json(mapRegistro(resultado.registro));
 });
 
 router.put("/:id", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = Number(req.params.id);
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const valor = parseValor(req.body.valor);
-  if (!Number.isInteger(id) || !req.body.fecha || valor <= 0) { res.status(400).json({ error: "Fecha y valor válido son obligatorios" }); return; }
-  const [registro] = await db.update(obraElectronicaTable).set({
-    fecha: req.body.fecha,
-    numeroFactura: String(req.body.numeroFactura || "").trim(),
-    vehiculo: String(req.body.vehiculo || "").trim(),
-    valor: String(valor),
-  }).where(eq(obraElectronicaTable.id, id)).returning();
-  if (!registro) { res.status(404).json({ error: "Registro no encontrado" }); return; }
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "obra_electronica", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/obra-electronica/${id}`, payload: req.body, origen: "local" });
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "obra_electronica", recursoId: id }).onConflictDoNothing();
-  res.json(mapRegistro(registro));
+  const resultado = await db.transaction(async (tx) => {
+    const ya = await operacionYaProcesada(tx, operationId);
+    if (ya) return { yaProcesado: ya } as const;
+    if (!Number.isInteger(id) || !req.body.fecha || valor <= 0) {
+      return { error: "Fecha y valor válido son obligatorios", status: 400 } as const;
+    }
+    const [registro] = await tx.update(obraElectronicaTable).set({
+      fecha: req.body.fecha,
+      numeroFactura: String(req.body.numeroFactura || "").trim(),
+      vehiculo: String(req.body.vehiculo || "").trim(),
+      valor: String(valor),
+    }).where(eq(obraElectronicaTable.id, id)).returning();
+    if (!registro) return { error: "Registro no encontrado", status: 404 } as const;
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "obra_electronica", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/obra-electronica/${id}`, payload: req.body, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "obra_electronica", recursoId: id }).onConflictDoNothing();
+    return { registro } as const;
+  });
+  if (resultado.yaProcesado) {
+    res.status(200).json({ ok: true, yaProcesado: true, recursoId: resultado.yaProcesado.recursoId });
+    return;
+  }
+  if (resultado.status !== undefined) { res.status(resultado.status).json({ error: resultado.error }); return; }
+  res.json(mapRegistro(resultado.registro));
 });
 
 router.delete("/:id", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = Number(req.params.id);
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
-  const [registro] = await db.delete(obraElectronicaTable).where(eq(obraElectronicaTable.id, id)).returning({ id: obraElectronicaTable.id });
-  if (!registro) { res.status(404).json({ error: "Registro no encontrado" }); return; }
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "obra_electronica", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/obra-electronica/${id}`, payload: {}, origen: "local" });
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "obra_electronica", recursoId: id }).onConflictDoNothing();
+  const resultado = await db.transaction(async (tx) => {
+    const ya = await operacionYaProcesada(tx, operationId);
+    if (ya) return { yaProcesado: ya } as const;
+    const [registro] = await tx.delete(obraElectronicaTable).where(eq(obraElectronicaTable.id, id)).returning({ id: obraElectronicaTable.id });
+    if (!registro) return { error: "Registro no encontrado" } as const;
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "obra_electronica", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/obra-electronica/${id}`, payload: {}, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "obra_electronica", recursoId: id }).onConflictDoNothing();
+    return { eliminado: true } as const;
+  });
+  if (resultado.yaProcesado) {
+    res.status(200).json({ ok: true, yaProcesado: true, recursoId: resultado.yaProcesado.recursoId });
+    return;
+  }
+  if ("error" in resultado) { res.status(404).json({ error: resultado.error }); return; }
   res.json({ ok: true });
 });
 

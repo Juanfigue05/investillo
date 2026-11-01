@@ -123,19 +123,29 @@ router.post("/", async (req, res) => {
   const errorTelefono = await validarTelefonos(telefono || null, telefono2 || null, null);
   if (errorTelefono) { res.status(400).json({ error: errorTelefono }); return; }
 
-  const cliente = await db.transaction(async (tx) => {
+  const resultado = await db.transaction(async (tx) => {
     const [created] = await tx
       .insert(clientesTable)
       .values({ nombre: nombre.trim(), telefono: telefono || null, telefono2: telefono2 || null, correo: correo || null, notas: notas || null })
       .returning();
+    let vehiculosCreados: Array<typeof vehiculosClienteTable.$inferSelect> = [];
     if (Array.isArray(vehiculos) && vehiculos.length > 0) {
       const validVehiculos = vehiculos.filter((v) => v.placa?.trim());
       if (validVehiculos.length > 0) {
-        await tx.insert(vehiculosClienteTable).values(
-          validVehiculos.map((v) => ({ clienteId: created.id, placa: v.placa.trim(), descripcion: v.descripcion || null })),
-        );
+        vehiculosCreados = await tx.insert(vehiculosClienteTable).values(
+          validVehiculos.map((v) => ({
+            clienteId: created.id,
+            placa: v.placa.trim(),
+            descripcion: v.descripcion || null,
+          })),
+        ).returning();
       }
     }
+    const referenciasRespuesta = vehiculosCreados.map((vehiculo, index) => ({
+      campo: `vehiculos.${index}.id`,
+      entidad: "vehiculo",
+      valorLocal: String(vehiculo.id),
+    }));
     if (!req.header("x-sync-apply")) {
       await tx.insert(eventosSincronizacionTable).values({
         operationId,
@@ -145,6 +155,7 @@ router.post("/", async (req, res) => {
         metodo: "POST",
         endpoint: "/clientes",
         payload: req.body,
+        referenciasRespuesta,
         origen: "local",
       });
     }
@@ -154,7 +165,7 @@ router.post("/", async (req, res) => {
       .onConflictDoNothing();
     return created;
   });
-  res.status(201).json(await mapCliente(cliente));
+  res.status(201).json(await mapCliente(resultado));
 });
 
 // PUT /clientes/:id

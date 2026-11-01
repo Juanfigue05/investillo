@@ -1,12 +1,44 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { comprasTable, eventosSincronizacionTable, historialPreciosTable, productosTable } from "@workspace/db/schema";
-import { eq,sql,and, gte } from "drizzle-orm";
+import { eq, sql, and, gte, inArray } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
 import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
 import { parseNumeroColombia } from "@workspace/api-zod";
+import {
+  actualizarCompraRequest,
+  corregirCompraRequest,
+  crearCompraRequest,
+  llegadaLoteComprasRequest,
+} from "@workspace/api-zod/write-requests";
+import { validarBody } from "../lib/validar-body";
 
 const router: IRouter = Router();
+type CompraTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+class CompraRouteError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+function errorStatus(error: unknown): number {
+  return error instanceof CompraRouteError ? error.status : 500;
+}
+
+async function operacionYaProcesada(
+  tx: CompraTransaction,
+  operationId: string,
+) {
+  const [operacion] = await tx
+    .select()
+    .from(operacionesSincronizadasTable)
+    .where(eq(operacionesSincronizadasTable.operationId, operationId));
+  return operacion;
+}
 
 function toNum(v: unknown): number {
   return typeof v === "string" ? Number(v) : Number(v);
@@ -58,6 +90,7 @@ router.get("/", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  if (!validarBody(crearCompraRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
@@ -103,55 +136,83 @@ interface LlegadaInput {
   fechaLlegada?: string;
 }
 
-async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
+async function procesarLlegadaCompra(
+  tx: CompraTransaction,
+  existing: typeof comprasTable.$inferSelect,
+  datos: LlegadaInput,
+) {
   const { estado, cantidadRecibida, cantidadLocal, cantidadBodega, nuevoPrecioCompra, nuevoPrecioVentaSinIva, tieneIva, proveedor, actualizarPrecioInventario, fechaLlegada } = datos;
 
-  const [existing] = await db.select().from(comprasTable).where(eq(comprasTable.id, id));
-  if (!existing) throw new Error(`Compra ${id} no encontrada`);
+  if (estado === "llegado" && existing.estado === "llegado") {
+    throw new CompraRouteError(
+      "Esta compra ya está marcada como llegada. Para cambiar sus datos, use la corrección de compra.",
+      409,
+    );
+  }
 
   let precioCompraFinal: number | null = null;
   let precioVentaFinal: number | null = null;
   let precioVentaSinIvaRegistrado: number | null = null;
+  let historialPrecioId: number | undefined;
   let preciosModificados = false;
 
-  if (estado === "llegado" && cantidadRecibida) {
-    const [producto] = await db.select().from(productosTable).where(eq(productosTable.id, existing.productoId));
-    if (producto) {
-      const cantidadNum = parseNumeroColombia(cantidadRecibida);
-      const updateProd: Record<string, unknown> = {
-        stockActual: sql`${productosTable.stockActual} + ${cantidadNum}`,
-        stockLocal: sql`${productosTable.stockLocal} + ${parseNumeroColombia(cantidadLocal || 0)}`,
-        stockBodega: sql`${productosTable.stockBodega} + ${parseNumeroColombia(cantidadBodega || 0)}`,
-        actualizadoEn: new Date(),
-      };
+  if (estado === "llegado") {
+    const cantidadNum = parseNumeroColombia(cantidadRecibida);
+    if (!Number.isFinite(cantidadNum) || cantidadNum <= 0) {
+      throw new CompraRouteError(
+        "La cantidad recibida debe ser mayor que cero.",
+        400,
+      );
+    }
+    const [producto] = await tx
+      .select()
+      .from(productosTable)
+      .where(eq(productosTable.id, existing.productoId));
+    if (!producto) {
+      throw new CompraRouteError(
+        `Producto ${existing.productoId} no encontrado para registrar la llegada.`,
+        404,
+      );
+    }
+    const updateProd: Record<string, unknown> = {
+      stockActual: sql`${productosTable.stockActual} + ${cantidadNum}`,
+      stockLocal: sql`${productosTable.stockLocal} + ${parseNumeroColombia(cantidadLocal || 0)}`,
+      stockBodega: sql`${productosTable.stockBodega} + ${parseNumeroColombia(cantidadBodega || 0)}`,
+      actualizadoEn: new Date(),
+    };
 
-      if (nuevoPrecioCompra !== undefined && nuevoPrecioCompra !== "") {
-        precioCompraFinal = parseNumeroColombia(nuevoPrecioCompra);
-        if (Math.abs(precioCompraFinal! - toNum(producto.precioCompra)) > 0.01) preciosModificados = true;
-        if (actualizarPrecioInventario !== false) updateProd.precioCompra = String(precioCompraFinal);
-      } else {
-        precioCompraFinal = toNum(producto.precioCompra);
+    if (nuevoPrecioCompra !== undefined && nuevoPrecioCompra !== "") {
+      precioCompraFinal = parseNumeroColombia(nuevoPrecioCompra);
+      if (Math.abs(precioCompraFinal - toNum(producto.precioCompra)) > 0.01) preciosModificados = true;
+      if (actualizarPrecioInventario !== false) updateProd.precioCompra = String(precioCompraFinal);
+    } else {
+      precioCompraFinal = toNum(producto.precioCompra);
+    }
+
+    if (nuevoPrecioVentaSinIva !== undefined && nuevoPrecioVentaSinIva !== "") {
+      const pvSinIva = parseNumeroColombia(nuevoPrecioVentaSinIva);
+      precioVentaSinIvaRegistrado = pvSinIva;
+      precioVentaFinal = calcPrecioConIva(pvSinIva);
+      if (Math.abs(precioVentaFinal - toNum(producto.precioVentaConIva)) > 0.01) preciosModificados = true;
+      if (actualizarPrecioInventario !== false) {
+        updateProd.precioVentaSinIva = String(pvSinIva);
+        updateProd.precioVentaConIva = String(precioVentaFinal);
+        if (tieneIva !== undefined) updateProd.tieneIva = Boolean(tieneIva);
       }
+    } else {
+      precioVentaFinal = toNum(producto.precioVentaConIva);
+      precioVentaSinIvaRegistrado = toNum(producto.precioVentaSinIva);
+    }
 
-      if (nuevoPrecioVentaSinIva !== undefined && nuevoPrecioVentaSinIva !== "") {
-        const pvSinIva = parseNumeroColombia(nuevoPrecioVentaSinIva);
-        precioVentaSinIvaRegistrado = pvSinIva;
-        precioVentaFinal = calcPrecioConIva(pvSinIva);
-        if (Math.abs(precioVentaFinal - toNum(producto.precioVentaConIva)) > 0.01) preciosModificados = true;
-        if (actualizarPrecioInventario !== false) {
-          updateProd.precioVentaSinIva = String(pvSinIva);
-          updateProd.precioVentaConIva = String(precioVentaFinal);
-          if (tieneIva !== undefined) updateProd.tieneIva = Boolean(tieneIva);
-        }
-      } else {
-        precioVentaFinal = toNum(producto.precioVentaConIva);
-        precioVentaSinIvaRegistrado = toNum(producto.precioVentaSinIva);
-      }
+    await tx
+      .update(productosTable)
+      .set(updateProd)
+      .where(eq(productosTable.id, existing.productoId));
 
-      await db.update(productosTable).set(updateProd).where(eq(productosTable.id, existing.productoId));
-
-      const hoy = fechaHoyColombia();
-      await db.insert(historialPreciosTable).values({
+    const hoy = fechaHoyColombia();
+    const [historialPrecio] = await tx
+      .insert(historialPreciosTable)
+      .values({
         productoId: existing.productoId,
         productoNombre: existing.productoNombre,
         productoCodigo: existing.productoCodigo,
@@ -159,15 +220,18 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
         precioVenta: String(precioVentaFinal),
         fecha: hoy,
         origen: "compra",
-        compraId: id,
+        compraId: existing.id,
         proveedor: proveedor || null,
         actualizoPrecioInventario: actualizarPrecioInventario !== false ? "si" : "no",
-      });
-    }
+      })
+      .returning({ id: historialPreciosTable.id });
+    historialPrecioId = historialPrecio.id;
   }
 
   const updateData: Partial<typeof comprasTable.$inferInsert> = { estado, actualizadoEn: new Date() };
-  if (cantidadRecibida) updateData.cantidadRecibida = String(parseNumeroColombia(cantidadRecibida));
+  if (cantidadRecibida !== undefined && cantidadRecibida !== null) {
+    updateData.cantidadRecibida = String(parseNumeroColombia(cantidadRecibida));
+  }
   if (estado === "llegado") updateData.fechaLlegada = fechaLlegada || fechaHoyColombia();
   if (proveedor !== undefined) updateData.proveedor = proveedor || null;
   if (precioCompraFinal !== null) updateData.precioCompraRegistrado = String(precioCompraFinal);
@@ -176,34 +240,94 @@ async function procesarLlegadaCompra(id: number, datos: LlegadaInput) {
     updateData.precioVentaRegistrado = String(precioVentaSinIvaRegistrado ?? precioVentaFinal);
   }
 
-  const [compra] = await db.update(comprasTable).set(updateData).where(eq(comprasTable.id, id)).returning();
-  return { compra, preciosModificados };
+  const [compra] = await tx
+    .update(comprasTable)
+    .set(updateData)
+    .where(eq(comprasTable.id, existing.id))
+    .returning();
+  return { compra, preciosModificados, historialPrecioId };
 }
 
 router.put("/:id", async (req, res) => {
+  if (!validarBody(actualizarCompraRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
-  if (operationId) {
-    const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-    if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
-  }
   const id = parseInt(req.params.id);
 
   try {
-    const { compra, preciosModificados } = await procesarLlegadaCompra(id, req.body);
-    if (!req.header("x-sync-apply")) {
-      await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "compra", entidadId: String(compra.id), tipo: "llegada", metodo: "PUT", endpoint: `/compras/${id}`, payload: req.body, origen: "local" });
+    const resultado = await db.transaction(async (tx) => {
+      const yaInicial = await operacionYaProcesada(tx, operationId);
+      if (yaInicial) {
+        return { yaProcesado: true as const, recursoId: yaInicial.recursoId };
+      }
+      const [existing] = await tx
+        .select()
+        .from(comprasTable)
+        .where(eq(comprasTable.id, id))
+        .for("update");
+      if (!existing) {
+        throw new CompraRouteError(`Compra ${id} no encontrada.`, 404);
+      }
+      const ya = await operacionYaProcesada(tx, operationId);
+      if (ya) {
+        return { yaProcesado: true as const, recursoId: ya.recursoId };
+      }
+
+      const { compra, preciosModificados, historialPrecioId } =
+        await procesarLlegadaCompra(tx, existing, req.body);
+      if (!req.header("x-sync-apply")) {
+        await tx.insert(eventosSincronizacionTable).values({
+          operationId,
+          entidad: "compra",
+          entidadId: String(compra.id),
+          tipo: "llegada",
+          metodo: "PUT",
+          endpoint: `/compras/${id}`,
+          payload: req.body,
+          referenciasRespuesta: historialPrecioId === undefined
+            ? []
+            : [{
+                campo: "_syncHistorialPrecioId",
+                entidad: "historial_precios",
+                valorLocal: String(historialPrecioId),
+              }],
+          origen: "local",
+        });
+      }
+      await tx.insert(operacionesSincronizadasTable).values({
+        operationId,
+        tipo: "compra",
+        recursoId: compra.id,
+      }).onConflictDoNothing();
+      return {
+        yaProcesado: false as const,
+        compra,
+        preciosModificados,
+        historialPrecioId,
+      };
+    });
+    if (resultado.yaProcesado) {
+      res.status(200).json({
+        ok: true,
+        yaProcesado: true,
+        recursoId: resultado.recursoId,
+      });
+      return;
     }
-    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra", recursoId: compra.id }).onConflictDoNothing();
-    res.json({ ...mapCompra(compra), preciosModificados });
+    res.json({
+      ...mapCompra(resultado.compra),
+      preciosModificados: resultado.preciosModificados,
+      _syncHistorialPrecioId: resultado.historialPrecioId,
+    });
   } catch (err) {
-    res.status(404).json({ error: String(err) });
+    res.status(errorStatus(err)).json({
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 });
 
 router.post("/lote-llegada", async (req, res) => {
+  if (!validarBody(llegadaLoteComprasRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const { proveedor, fechaLlegada, items } = req.body as { proveedor: string; fechaLlegada?: string; items: Array<{ id: number; cantidadRecibida: number; cantidadLocal?: number; cantidadBodega?: number; nuevoPrecioCompra: number; nuevoPrecioVentaSinIva: number; tieneIva: boolean; actualizarPrecioInventario: boolean }> };
 
   if (!Array.isArray(items) || items.length === 0) {
@@ -218,38 +342,140 @@ router.post("/lote-llegada", async (req, res) => {
       res.status(400).json({ error: `La cantidad recibida debe ser mayor que cero en el producto ${item.id}.` });
       return;
     }
+    if (!Number.isFinite(recibida)) {
+      res.status(400).json({ error: `La cantidad recibida no es válida en la compra ${item.id}.` });
+      return;
+    }
     if (Math.abs(recibida - distribuida) > 0.001) {
       res.status(400).json({ error: `La cantidad de Local + Bodega debe coincidir con la recibida en el producto ${item.id}.` });
       return;
     }
   }
-  
-  const resultados = [];
-  try {
-    for (const item of items) {
-      const { compra, preciosModificados } = await procesarLlegadaCompra(item.id, {
-      estado: "llegado",
-      cantidadRecibida: item.cantidadRecibida,
-      cantidadLocal: item.cantidadLocal,
-      cantidadBodega: item.cantidadBodega,
-      nuevoPrecioCompra: item.nuevoPrecioCompra,
-      nuevoPrecioVentaSinIva: item.nuevoPrecioVentaSinIva,
-      tieneIva: item.tieneIva,
-      proveedor,
-      fechaLlegada,
-      actualizarPrecioInventario: item.actualizarPrecioInventario,
-    });
-      resultados.push({ ...mapCompra(compra), preciosModificados });
-    }
-  } catch (err) {
-    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  const ids = items.map((item) => item.id);
+  if (new Set(ids).size !== ids.length) {
+    res.status(400).json({ error: "La misma compra no puede aparecer más de una vez en el lote." });
     return;
   }
 
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "compra_lote", entidadId: operationId, tipo: "lote_llegada", metodo: "POST", endpoint: "/compras/lote-llegada", payload: req.body, origen: "local" });
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra_lote", recursoId: null }).onConflictDoNothing();
+  try {
+    const resultado = await db.transaction(async (tx) => {
+      const yaInicial = await operacionYaProcesada(tx, operationId);
+      if (yaInicial) {
+        return { yaProcesado: true as const, recursoId: yaInicial.recursoId };
+      }
 
-  res.json({ ok: true, procesados: resultados.length, resultados });
+      const compras = await tx
+        .select()
+        .from(comprasTable)
+        .where(inArray(comprasTable.id, ids))
+        .orderBy(comprasTable.id)
+        .for("update");
+      const yaTrasBloqueo = await operacionYaProcesada(tx, operationId);
+      if (yaTrasBloqueo) {
+        return { yaProcesado: true as const, recursoId: yaTrasBloqueo.recursoId };
+      }
+      if (compras.length !== ids.length) {
+        const encontrados = new Set(compras.map((compra) => compra.id));
+        const faltante = ids.find((id) => !encontrados.has(id));
+        throw new CompraRouteError(
+          `Compra ${faltante} no encontrada.`,
+          404,
+        );
+      }
+      const compraPorId = new Map(compras.map((compra) => [compra.id, compra]));
+      for (const item of items) {
+        const compra = compraPorId.get(item.id);
+        if (compra?.estado === "llegado") {
+          throw new CompraRouteError(
+            `La compra ${item.id} ya está marcada como llegada. Use la corrección de compra.`,
+            409,
+          );
+        }
+      }
+
+      const resultados: Array<
+        ReturnType<typeof mapCompra> & {
+          preciosModificados: boolean;
+          _syncHistorialPrecioId?: number;
+        }
+      > = [];
+      const referenciasRespuesta: Array<{
+        campo: string;
+        entidad: string;
+        valorLocal: string;
+      }> = [];
+      for (const [index, item] of items.entries()) {
+        const compraExistente = compraPorId.get(item.id);
+        if (!compraExistente) {
+          throw new CompraRouteError(`Compra ${item.id} no encontrada.`, 404);
+        }
+        const { compra, preciosModificados, historialPrecioId } =
+          await procesarLlegadaCompra(tx, compraExistente, {
+            estado: "llegado",
+            cantidadRecibida: item.cantidadRecibida,
+            cantidadLocal: item.cantidadLocal,
+            cantidadBodega: item.cantidadBodega,
+            nuevoPrecioCompra: item.nuevoPrecioCompra,
+            nuevoPrecioVentaSinIva: item.nuevoPrecioVentaSinIva,
+            tieneIva: item.tieneIva,
+            proveedor,
+            fechaLlegada,
+            actualizarPrecioInventario: item.actualizarPrecioInventario,
+          });
+        resultados.push({
+          ...mapCompra(compra),
+          preciosModificados,
+          _syncHistorialPrecioId: historialPrecioId,
+        });
+        if (historialPrecioId !== undefined) {
+          referenciasRespuesta.push({
+            campo: `resultados.${index}._syncHistorialPrecioId`,
+            entidad: "historial_precios",
+            valorLocal: String(historialPrecioId),
+          });
+        }
+      }
+
+      if (!req.header("x-sync-apply")) {
+        await tx.insert(eventosSincronizacionTable).values({
+          operationId,
+          entidad: "compra_lote",
+          entidadId: operationId,
+          tipo: "lote_llegada",
+          metodo: "POST",
+          endpoint: "/compras/lote-llegada",
+          payload: req.body,
+          referenciasRespuesta,
+          origen: "local",
+        });
+      }
+      await tx.insert(operacionesSincronizadasTable).values({
+        operationId,
+        tipo: "compra_lote",
+        recursoId: null,
+      }).onConflictDoNothing();
+      return { yaProcesado: false as const, resultados };
+    });
+
+    if (resultado.yaProcesado) {
+      res.status(200).json({
+        ok: true,
+        yaProcesado: true,
+        recursoId: resultado.recursoId,
+      });
+      return;
+    }
+    const resultados = resultado.resultados;
+  res.json({
+    ok: true,
+    procesados: resultados.length,
+    resultados,
+  });
+  } catch (err) {
+    res.status(errorStatus(err)).json({
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 });
 
 router.delete("/:id", async (req, res) => {
@@ -277,20 +503,57 @@ router.delete("/:id", async (req, res) => {
 });
 
 router.patch("/:id/corregir", async (req, res) => {
+  if (!validarBody(corregirCompraRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = parseInt(req.params.id);
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const { cantidadRecibida, precioCompraRegistrado, precioVentaRegistrado } = req.body;
 
   try {
     const resultado = await db.transaction(async (tx) => {
-      const [existing] = await tx.select().from(comprasTable).where(eq(comprasTable.id, id));
-      if (!existing) throw new Error("Compra no encontrada");
+      const yaInicial = await operacionYaProcesada(tx, operationId);
+      if (yaInicial) {
+        return { yaProcesado: true as const, recursoId: yaInicial.recursoId };
+      }
+      const [existing] = await tx
+        .select()
+        .from(comprasTable)
+        .where(eq(comprasTable.id, id))
+        .for("update");
+      if (!existing) {
+        throw new CompraRouteError("Compra no encontrada.", 404);
+      }
+      const ya = await operacionYaProcesada(tx, operationId);
+      if (ya) {
+        return { yaProcesado: true as const, recursoId: ya.recursoId };
+      }
+      if (existing.estado !== "llegado") {
+        throw new CompraRouteError(
+          "Solo se puede corregir una compra que ya está marcada como llegada.",
+          409,
+        );
+      }
 
       const cantidadNueva = parseFloat(String(cantidadRecibida));
+      if (!Number.isFinite(cantidadNueva) || cantidadNueva <= 0) {
+        throw new CompraRouteError(
+          "La cantidad recibida corregida debe ser mayor que cero.",
+          400,
+        );
+      }
       const cantidadVieja = toNum(existing.cantidadRecibida);
       const delta = cantidadNueva - cantidadVieja;
+
+      const [producto] = await tx
+        .select()
+        .from(productosTable)
+        .where(eq(productosTable.id, existing.productoId))
+        .for("update");
+      if (!producto) {
+        throw new CompraRouteError(
+          `Producto ${existing.productoId} no encontrado para corregir la compra.`,
+          404,
+        );
+      }
 
       if (delta !== 0) {
         await tx.update(productosTable)
@@ -308,15 +571,39 @@ router.patch("/:id/corregir", async (req, res) => {
         .where(eq(comprasTable.id, id))
         .returning();
 
-      return actualizada;
+      if (!req.header("x-sync-apply")) {
+        await tx.insert(eventosSincronizacionTable).values({
+          operationId,
+          entidad: "compra",
+          entidadId: String(id),
+          tipo: "corregir",
+          metodo: "PATCH",
+          endpoint: `/compras/${id}/corregir`,
+          payload: req.body,
+          origen: "local",
+        });
+      }
+      await tx.insert(operacionesSincronizadasTable).values({
+        operationId,
+        tipo: "compra",
+        recursoId: id,
+      }).onConflictDoNothing();
+      return { yaProcesado: false as const, compra: actualizada };
     });
 
-    if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "compra", entidadId: String(id), tipo: "corregir", metodo: "PATCH", endpoint: `/compras/${id}/corregir`, payload: req.body, origen: "local" });
-    await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra", recursoId: id }).onConflictDoNothing();
-
-    res.json(mapCompra(resultado));
+    if (resultado.yaProcesado) {
+      res.status(200).json({
+        ok: true,
+        yaProcesado: true,
+        recursoId: resultado.recursoId,
+      });
+      return;
+    }
+    res.json(mapCompra(resultado.compra));
   } catch (err) {
-    res.status(400).json({ error: String(err) });
+    res.status(errorStatus(err)).json({
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 });
 

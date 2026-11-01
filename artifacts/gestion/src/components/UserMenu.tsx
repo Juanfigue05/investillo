@@ -230,7 +230,7 @@ export function UserMenu() {
           </div>
           <button type="button" onClick={() => { setSettingsOpen(true); setMenuOpen(false); }} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-muted"><Settings2 className="h-4 w-4" /> Configuración</button>
           <form action="/bloquear" method="post" className="border-t border-border">
-            <button type="submit" className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-destructive hover:bg-muted"><LockKeyhole className="h-4 w-4" /> Bloquear sesión</button>
+            <button type="submit" className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-destructive hover:bg-muted"><LockKeyhole className="h-4 w-4" /> Revocar sesión de este dispositivo</button>
           </form>
         </div>
       )}

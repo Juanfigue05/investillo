@@ -1,6 +1,10 @@
-import { pgTable, serial, text, numeric, timestamp, date, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, timestamp, date, integer, boolean, foreignKey, index, type PgTableExtraConfigValue } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
+import { sql } from "drizzle-orm";
 import { z } from "zod/v4";
+import { productosTable } from "./inventario";
+import { abonosCreditosTable } from "./creditos";
+import { manoObraTable } from "./manoobra";
 
 export const ventasDiariasTable = pgTable("ventas_diarias", {
   id: serial("id").primaryKey(),
@@ -25,7 +29,33 @@ export const ventasDiariasTable = pgTable("ventas_diarias", {
   afectaInventario: boolean("afecta_inventario").notNull().default(true),
   manoObraId: integer("mano_obra_id"),
   creadoEn: timestamp("creado_en").defaultNow(),
-});
+}, (table): PgTableExtraConfigValue[] => [
+  foreignKey({
+    name: "ventas_diarias_credito_abono_id_fk",
+    columns: [table.creditoAbonoId],
+    foreignColumns: [abonosCreditosTable.id],
+  }),
+  foreignKey({
+    name: "ventas_diarias_producto_id_fk",
+    columns: [table.productoId],
+    foreignColumns: [productosTable.id],
+  }),
+  foreignKey({
+    name: "ventas_diarias_mano_obra_id_fk",
+    columns: [table.manoObraId],
+    foreignColumns: [manoObraTable.id],
+  }).onDelete("set null"),
+  index("ventas_diarias_fecha_idx").on(table.fecha),
+  index("ventas_diarias_credito_abono_id_idx")
+    .on(table.creditoAbonoId)
+    .where(sql`${table.creditoAbonoId} IS NOT NULL`),
+  index("ventas_diarias_producto_id_idx")
+    .on(table.productoId)
+    .where(sql`${table.productoId} IS NOT NULL`),
+  index("ventas_diarias_mano_obra_id_idx")
+    .on(table.manoObraId)
+    .where(sql`${table.manoObraId} IS NOT NULL`),
+]);
 
 export const insertVentaDiariaSchema = createInsertSchema(ventasDiariasTable).omit({ id: true, creadoEn: true });
 export type InsertVentaDiaria = z.infer<typeof insertVentaDiariaSchema>;

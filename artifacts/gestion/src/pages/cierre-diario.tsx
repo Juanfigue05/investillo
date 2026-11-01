@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetTrabajadores } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
@@ -8,6 +8,11 @@ import { toast } from "@/hooks/use-toast";
 import { CalculadoraCierre } from "@/components/CalculadoraCierre";
 import { Calculator as CalcIcon } from "lucide-react";
 import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 
 // ---------- types ----------
 interface ConceptoEntrada {
@@ -145,6 +150,7 @@ function ConceptoRows({
 // ---------- Panel de Grupos de Trabajo ----------
 function GruposTrabajoPanel({
   open, onClose, trabajadores, gruposDefault, recargarGruposDefault,
+  quitarGrupoDefault,
   gruposDia, setGruposDia,
 }: {
   open: boolean;
@@ -152,11 +158,14 @@ function GruposTrabajoPanel({
   trabajadores: { id: number; nombre: string }[];
   gruposDefault: GrupoDefault[];
   recargarGruposDefault: () => void;
+  quitarGrupoDefault: (id: number) => void;
   gruposDia: GrupoTrabajoDia[];
   setGruposDia: React.Dispatch<React.SetStateAction<GrupoTrabajoDia[]>>;
 }) {
   const [nuevoGrupoIds, setNuevoGrupoIds] = useState<number[]>([]);
   const [nuevoEsPermanente, setNuevoEsPermanente] = useState(false);
+  const [guardandoGrupo, setGuardandoGrupo] = useState(false);
+  const [desactivandoGrupoId, setDesactivandoGrupoId] = useState<number | null>(null);
 
   if (!open) return null;
 
@@ -165,7 +174,7 @@ function GruposTrabajoPanel({
   };
 
   const crearGrupo = async () => {
-    if (nuevoGrupoIds.length < 2) return;
+    if (nuevoGrupoIds.length < 2 || guardandoGrupo) return;
 
     const idsNormalizados = [...new Set(nuevoGrupoIds)].sort((a, b) => a - b);
     const yaExisteHoy = gruposDia.some((grupo) => {
@@ -178,25 +187,66 @@ function GruposTrabajoPanel({
       return;
     }
 
-    if (nuevoEsPermanente) {
-      const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
-      await fetch(`${API}/grupos-trabajo`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trabajadorIds: idsNormalizados }),
-      });
-      recargarGruposDefault();
-    }
+    setGuardandoGrupo(true);
+    try {
+      if (nuevoEsPermanente) {
+        const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
+        await leerRespuestaApi(fetch(`${API}/grupos-trabajo`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ trabajadorIds: idsNormalizados }),
+        }));
+        recargarGruposDefault();
+      }
 
-    setGruposDia((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, trabajadorIds: idsNormalizados, moEntradas: emptyMO() }]);setNuevoGrupoIds([]);
-    setNuevoEsPermanente(false);
+      setGruposDia((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, trabajadorIds: idsNormalizados, moEntradas: emptyMO() }]);setNuevoGrupoIds([]);
+      setNuevoEsPermanente(false);
+    } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setGruposDia((prev) => [
+          ...prev,
+          {
+            id: `offline-${Date.now()}-${Math.random()}`,
+            trabajadorIds: idsNormalizados,
+            moEntradas: emptyMO(),
+          },
+        ]);
+        setNuevoGrupoIds([]);
+        setNuevoEsPermanente(false);
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
+      toast({
+        title: "No se pudo guardar el grupo",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setGuardandoGrupo(false);
+    }
   };
 
   const desactivarDefault = async (id: number) => {
-    if (!confirm("¿Desactivar este grupo permanente? Desde mañana ya no se agregará solo.")) return;
-    const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
-    await fetch(`${API}/grupos-trabajo/${id}/desactivar`, { method: "PATCH" });
-    recargarGruposDefault();
+    if (desactivandoGrupoId !== null || !confirm("¿Desactivar este grupo permanente? Desde mañana ya no se agregará solo.")) return;
+    setDesactivandoGrupoId(id);
+    try {
+      const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
+      await leerRespuestaApi(fetch(`${API}/grupos-trabajo/${id}/desactivar`, { method: "PATCH" }));
+      recargarGruposDefault();
+    } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        quitarGrupoDefault(id);
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
+      toast({
+        title: "No se pudo desactivar el grupo",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setDesactivandoGrupoId(null);
+    }
   };
 
   const nombrePorId = (id: number) => trabajadores.find((t) => t.id === id)?.nombre || `Trabajador ${id}`;
@@ -277,8 +327,8 @@ function GruposTrabajoPanel({
                 <input type="checkbox" checked={nuevoEsPermanente} onChange={(e) => setNuevoEsPermanente(e.target.checked)} className="accent-primary" />
                 Dejarlo activo todos los días (hasta que yo lo desactive)
               </label>
-              <button onClick={crearGrupo} disabled={nuevoGrupoIds.length < 2} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 disabled:opacity-40 text-sm">
-                <Plus className="w-4 h-4" /> Agregar a hoy
+              <button onClick={crearGrupo} disabled={nuevoGrupoIds.length < 2 || guardandoGrupo} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 disabled:opacity-40 text-sm">
+                <Plus className="w-4 h-4" /> {guardandoGrupo ? "Guardando..." : "Agregar a hoy"}
               </button>
             </div>
           </div>
@@ -293,7 +343,7 @@ function GruposTrabajoPanel({
                   <div className="flex flex-wrap gap-1">
                     {g.nombres.map((n) => <span key={n} className="text-xs font-medium bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded-md">{n}</span>)}
                   </div>
-                  <button onClick={() => desactivarDefault(g.id)} className="text-xs text-destructive hover:underline">Desactivar</button>
+                  <button onClick={() => desactivarDefault(g.id)} disabled={desactivandoGrupoId !== null} className="text-xs text-destructive hover:underline disabled:opacity-50">{desactivandoGrupoId === g.id ? "Desactivando..." : "Desactivar"}</button>
                 </div>
               ))}
             </div>
@@ -309,13 +359,11 @@ const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/,
 const CIERRE_ACTIVO_KEY = "investillo-cierre-activo";
 
 async function guardarCierre(fecha: string, datos: unknown, totalPagar: number, editar: boolean) {
-  const res = await fetch(`${API}/cierre-diario`, {
+  return leerRespuestaApi(fetch(`${API}/cierre-diario`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ fecha, datos, totalPagar, editar }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  }));
 }
 
 // ---------- helpers: restore from snapshot ----------
@@ -356,6 +404,7 @@ export default function CierreDiario() {
 
   const fechaHoy = fechaHoyColombia();
   const [fechaCierre, setFechaCierre] = useState(() => fechaCierreActiva(fechaHoy));
+  const falloBorradorAvisado = useRef(false);
   const hoyLabel = new Date(fechaCierre + "T12:00:00").toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const hoyStr = hoyLabel.charAt(0).toUpperCase() + hoyLabel.slice(1);
 
@@ -403,6 +452,9 @@ export default function CierreDiario() {
   const cargarGruposDefault = async () => {
     const res = await fetch(`${API}/grupos-trabajo`);
     setGruposDefault(await res.json());
+  };
+  const quitarGrupoDefault = (id: number) => {
+    setGruposDefault((prev) => prev.filter((grupo) => grupo.id !== id));
   };
 
   useEffect(() => { cargarGruposDefault(); }, []);
@@ -480,7 +532,26 @@ export default function CierreDiario() {
       ),
     };
     const timer = window.setTimeout(() => {
-      guardarBorrador(fechaCierre, datos).catch(() => undefined);
+      guardarBorrador(fechaCierre, datos)
+        .then(() => {
+          falloBorradorAvisado.current = false;
+        })
+        .catch((error) => {
+          if (
+            esOperacionEncoladaOffline(error) ||
+            esOperacionOfflineNoGuardada(error)
+          ) {
+            falloBorradorAvisado.current = false;
+            return;
+          }
+          if (!navigator.onLine || falloBorradorAvisado.current) return;
+          falloBorradorAvisado.current = true;
+          toast({
+            title: "No se pudo guardar el borrador",
+            description: error instanceof Error ? error.message : String(error),
+            variant: "destructive",
+          });
+        });
       try { sessionStorage.setItem(CIERRE_ACTIVO_KEY, fechaCierre); } catch { /* almacenamiento de sesión no es la fuente de datos */ }
     }, 350);
     return () => window.clearTimeout(timer);
@@ -574,6 +645,13 @@ export default function CierreDiario() {
       setGuardadoOk(true);
       setTimeout(() => setGuardadoOk(false), 3000);
     } catch (e) {
+      if (esOperacionEncoladaOffline(e)) {
+        setEditado(false);
+        setGuardadoOk(true);
+        setTimeout(() => setGuardadoOk(false), 3000);
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(e)) return;
       const operationId = obtenerIdOperacionOffline(e);
       if (navigator.onLine && !operationId) {
         alert("Error al guardar: " + e);
@@ -654,6 +732,7 @@ export default function CierreDiario() {
           trabajadores={trabajadores || []}
           gruposDefault={gruposDefault}
           recargarGruposDefault={cargarGruposDefault}
+          quitarGrupoDefault={quitarGrupoDefault}
           gruposDia={gruposDia}
           setGruposDia={setGruposDia}
         />
@@ -806,10 +885,9 @@ function fechaCierreActiva(fechaPorDefecto: string) {
 }
 
 async function guardarBorrador(fecha: string, datos: unknown) {
-  const res = await fetch(`${API}/cierre-diario/borrador`, {
+  await leerRespuestaApi(fetch(`${API}/cierre-diario/borrador`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ fecha, datos }),
-  });
-  if (!res.ok) throw new Error(await res.text());
+  }));
 }

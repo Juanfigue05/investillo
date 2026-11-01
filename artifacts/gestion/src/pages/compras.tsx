@@ -21,6 +21,11 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { encolarOperacion, esFalloDeRed, obtenerIdOperacionOffline } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 import { Pencil } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 
@@ -303,6 +308,7 @@ export default function Compras() {
   );
   const [editCantidad, setEditCantidad] = useState("");
   const [editPrecioCompra, setEditPrecioCompra] = useState("");
+  const [guardandoCorreccion, setGuardandoCorreccion] = useState(false);
   const [deleteCompraId, setDeleteCompraId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -368,6 +374,17 @@ export default function Compras() {
           setPrecioConfirm(null);
         },
         onError: async (error) => {
+          if (esOperacionEncoladaOffline(error)) {
+            queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+            queryClient.invalidateQueries({
+              queryKey: ["/api/historial-precios"],
+            });
+            setLlegadaOpen(null);
+            setPrecioConfirm(null);
+            return;
+          }
+          if (esOperacionOfflineNoGuardada(error)) return;
           if (!esFalloDeRed(error)) {
             toast({
               title: "No se pudo guardar",
@@ -480,6 +497,13 @@ export default function Compras() {
           setProductoSeleccionado(null);
         },
         onError: async (error) => {
+          if (esOperacionEncoladaOffline(error)) {
+            queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+            setShowAddForm(false);
+            setProductoSeleccionado(null);
+            return;
+          }
+          if (esOperacionOfflineNoGuardada(error)) return;
           if (!esFalloDeRed(error)) {
             toast({
               title: "No se pudo guardar",
@@ -1000,28 +1024,52 @@ export default function Compras() {
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={async () => {
-                    await fetch(
-                      `${API}/compras/${editandoLlegadaId}/corregir`,
-                      {
+                    if (guardandoCorreccion || editandoLlegadaId === null) return;
+                    setGuardandoCorreccion(true);
+                    try {
+                      await leerRespuestaApi(fetch(
+                        `${API}/compras/${editandoLlegadaId}/corregir`,
+                        {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                           cantidadRecibida: editCantidad,
                           precioCompraRegistrado: editPrecioCompra,
                         }),
-                      },
-                    );
-                    queryClient.invalidateQueries({
-                      queryKey: ["/api/compras"],
-                    });
-                    queryClient.invalidateQueries({
-                      queryKey: ["/api/inventario"],
-                    });
-                    setEditandoLlegadaId(null);
+                        },
+                      ));
+                      await queryClient.invalidateQueries({
+                        queryKey: ["/api/compras"],
+                      });
+                      await queryClient.invalidateQueries({
+                        queryKey: ["/api/inventario"],
+                      });
+                      setEditandoLlegadaId(null);
+                    } catch (error) {
+                      if (esOperacionEncoladaOffline(error)) {
+                        await queryClient.invalidateQueries({
+                          queryKey: ["/api/compras"],
+                        });
+                        await queryClient.invalidateQueries({
+                          queryKey: ["/api/inventario"],
+                        });
+                        setEditandoLlegadaId(null);
+                        return;
+                      }
+                      if (esOperacionOfflineNoGuardada(error)) return;
+                      toast({
+                        title: "No se pudo guardar la corrección",
+                        description: error instanceof Error ? error.message : String(error),
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setGuardandoCorreccion(false);
+                    }
                   }}
+                  disabled={guardandoCorreccion}
                   className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm"
                 >
-                  Guardar corrección
+                  {guardandoCorreccion ? "Guardando..." : "Guardar corrección"}
                 </button>
                 <button
                   onClick={() => setEditandoLlegadaId(null)}

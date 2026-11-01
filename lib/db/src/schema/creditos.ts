@@ -1,6 +1,8 @@
-import { pgTable, serial, text, numeric, timestamp, date, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, timestamp, date, integer, foreignKey, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
+import { sql } from "drizzle-orm";
 import { z } from "zod/v4";
+import { productosTable } from "./inventario";
 
 export const creditosTable = pgTable("creditos", {
   id: serial("id").primaryKey(),
@@ -18,7 +20,7 @@ export const creditosTable = pgTable("creditos", {
   ordenImpresion: integer("orden_impresion"),
   creadoEn: timestamp("creado_en").defaultNow(),
   actualizadoEn: timestamp("actualizado_en").defaultNow(),
-});
+}, (table) => [index("creditos_tipo_idx").on(table.tipo)]);
 
 export const creditoLineasTable = pgTable("credito_lineas", {
   id: serial("id").primaryKey(),
@@ -35,7 +37,22 @@ export const creditoLineasTable = pgTable("credito_lineas", {
   valorAbonado: numeric("valor_abonado", { precision: 15, scale: 2 }).notNull().default("0"),
   cantidadLocalDescontada: numeric("cantidad_local_descontada", { precision: 15, scale: 3 }).notNull().default("0"),
   cantidadBodegaDescontada: numeric("cantidad_bodega_descontada", { precision: 15, scale: 3 }).notNull().default("0"),
-});
+}, (table) => [
+  foreignKey({
+    name: "credito_lineas_credito_id_fk",
+    columns: [table.creditoId],
+    foreignColumns: [creditosTable.id],
+  }),
+  foreignKey({
+    name: "credito_lineas_producto_id_fk",
+    columns: [table.productoId],
+    foreignColumns: [productosTable.id],
+  }),
+  index("credito_lineas_credito_id_idx").on(table.creditoId),
+  index("credito_lineas_producto_id_idx")
+    .on(table.productoId)
+    .where(sql`${table.productoId} IS NOT NULL`),
+]);
 
 /** Historial de pagos/abonos a un crédito (para auditoría) */
 export const abonosCreditosTable = pgTable("abonos_creditos", {
@@ -47,7 +64,14 @@ export const abonosCreditosTable = pgTable("abonos_creditos", {
   /** JSON: [{lineaId, valor}] — detalle por línea para poder revertir exactamente */
   lineaDetalle: text("linea_detalle"),
   creadoEn: timestamp("creado_en").defaultNow(),
-});
+}, (table) => [
+  foreignKey({
+    name: "abonos_creditos_credito_id_fk",
+    columns: [table.creditoId],
+    foreignColumns: [creditosTable.id],
+  }),
+  index("abonos_creditos_credito_id_idx").on(table.creditoId),
+]);
 
 export const insertCreditoSchema = createInsertSchema(creditosTable).omit({ id: true, creadoEn: true, actualizadoEn: true });
 export const insertCreditoLineaSchema = createInsertSchema(creditoLineasTable).omit({ id: true });
