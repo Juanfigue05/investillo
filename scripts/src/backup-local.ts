@@ -9,7 +9,7 @@ if (!databaseUrl) throw new Error("Falta DATABASE_URL en .env.local");
 
 const backupDir = path.resolve(process.env.LOCAL_BACKUP_DIR || "backups/local");
 const retentionDays = Number(process.env.LOCAL_BACKUP_RETENTION_DAYS || 30);
-const pgDump = process.env.PG_DUMP_PATH || "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe";
+const pgDump = process.env.PG_DUMP_PATH || "C:\\Program Files\\PostgreSQL\\18\\bin\\pg_dump.exe";
 const parsed = new URL(databaseUrl);
 const databaseName = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
 

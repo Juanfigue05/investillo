@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { eventosSincronizacionTable, operacionesSincronizadasTable, trabajadoresTable, pagosSeguroTable } from "@workspace/db/schema";
 import { eq, sum } from "drizzle-orm";
+import { operacionYaProcesada } from "./lib/operacion-sincronizada";
 
 const router: IRouter = Router();
 
@@ -50,64 +51,75 @@ router.get("/", async (_req, res) => {
 
 router.post("/", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const { nombre, descuentoSeguro, descuentoOtros, activo, incluyeNomina, aplicaDescuento30, obraElectronica, numeroSeguro, telefono, correo, eps, aplicaSeguro } = req.body;
 
-  const trabajador = await db.transaction(async (tx) => {
+  const resultado = await db.transaction(async (tx) => {
+    const ya = await operacionYaProcesada(tx, operationId);
+    if (ya) return { yaProcesado: ya } as const;
     const [created] = await tx.insert(trabajadoresTable).values({
-    nombre,
-    descuentoSeguro: String(parseFloat(descuentoSeguro || 0)),
-    descuentoOtros: String(parseFloat(descuentoOtros || 0)),
-    activo: activo !== undefined ? Boolean(activo) : true,
-    incluyeNomina: incluyeNomina !== undefined ? Boolean(incluyeNomina) : true,
-    aplicaDescuento30: aplicaDescuento30 !== undefined ? Boolean(aplicaDescuento30) : true,
-    obraElectronica: Boolean(obraElectronica),
-    numeroSeguro: numeroSeguro || null,
-    telefono: telefono || null,
-    correo: correo || null,
-    eps: eps || null,
-    aplicaSeguro: Boolean(aplicaSeguro),
+      nombre,
+      descuentoSeguro: String(parseFloat(descuentoSeguro || 0)),
+      descuentoOtros: String(parseFloat(descuentoOtros || 0)),
+      activo: activo !== undefined ? Boolean(activo) : true,
+      incluyeNomina: incluyeNomina !== undefined ? Boolean(incluyeNomina) : true,
+      aplicaDescuento30: aplicaDescuento30 !== undefined ? Boolean(aplicaDescuento30) : true,
+      obraElectronica: Boolean(obraElectronica),
+      numeroSeguro: numeroSeguro || null,
+      telefono: telefono || null,
+      correo: correo || null,
+      eps: eps || null,
+      aplicaSeguro: Boolean(aplicaSeguro),
     }).returning();
     if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "trabajador", entidadId: String(created.id), tipo: "crear", metodo: "POST", endpoint: "/trabajadores", payload: req.body, origen: "local" });
     await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "trabajador", recursoId: created.id }).onConflictDoNothing();
-    return created;
+    return { trabajador: created } as const;
   });
 
-  res.status(201).json(await mapTrabajador(trabajador));
+  if (resultado.yaProcesado) {
+    res.status(200).json({ ok: true, yaProcesado: true, recursoId: resultado.yaProcesado.recursoId });
+    return;
+  }
+  res.status(201).json(await mapTrabajador(resultado.trabajador));
 });
 
 router.put("/:id", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const id = parseInt(req.params.id);
   const { nombre, descuentoSeguro, descuentoOtros, activo, incluyeNomina, aplicaDescuento30, obraElectronica, numeroSeguro, telefono, correo, eps, aplicaSeguro, fechaProximoPagoSeguro } = req.body;
 
-  const [trabajador] = await db
-    .update(trabajadoresTable)
-    .set({
-      nombre,
-      descuentoSeguro: descuentoSeguro !== undefined ? String(parseFloat(descuentoSeguro)) : undefined,
-      descuentoOtros: descuentoOtros !== undefined ? String(parseFloat(descuentoOtros)) : undefined,
-      activo: activo !== undefined ? Boolean(activo) : undefined,
-      incluyeNomina: incluyeNomina !== undefined ? Boolean(incluyeNomina) : undefined,
-      aplicaDescuento30: aplicaDescuento30 !== undefined ? Boolean(aplicaDescuento30) : undefined,
-      obraElectronica: obraElectronica !== undefined ? Boolean(obraElectronica) : undefined,
-      numeroSeguro: numeroSeguro !== undefined ? (numeroSeguro || null) : undefined,
-      telefono: telefono !== undefined ? (telefono || null) : undefined,
-      correo: correo !== undefined ? (correo || null) : undefined,
-      eps: eps !== undefined ? (eps || null) : undefined,
-      aplicaSeguro: aplicaSeguro !== undefined ? Boolean(aplicaSeguro) : undefined,
-      fechaProximoPagoSeguro: fechaProximoPagoSeguro !== undefined ? (fechaProximoPagoSeguro || null) : undefined,
-    })
-    .where(eq(trabajadoresTable.id, id))
-    .returning();
-
-  if (!trabajador) { res.status(404).json({ error: "Trabajador no encontrado" }); return; }
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "trabajador", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/trabajadores/${id}`, payload: req.body, origen: "local" });
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "trabajador", recursoId: id }).onConflictDoNothing();
-  res.json(await mapTrabajador(trabajador));
+  const resultado = await db.transaction(async (tx) => {
+    const ya = await operacionYaProcesada(tx, operationId);
+    if (ya) return { yaProcesado: ya } as const;
+    const [trabajador] = await tx
+      .update(trabajadoresTable)
+      .set({
+        nombre,
+        descuentoSeguro: descuentoSeguro !== undefined ? String(parseFloat(descuentoSeguro)) : undefined,
+        descuentoOtros: descuentoOtros !== undefined ? String(parseFloat(descuentoOtros)) : undefined,
+        activo: activo !== undefined ? Boolean(activo) : undefined,
+        incluyeNomina: incluyeNomina !== undefined ? Boolean(incluyeNomina) : undefined,
+        aplicaDescuento30: aplicaDescuento30 !== undefined ? Boolean(aplicaDescuento30) : undefined,
+        obraElectronica: obraElectronica !== undefined ? Boolean(obraElectronica) : undefined,
+        numeroSeguro: numeroSeguro !== undefined ? (numeroSeguro || null) : undefined,
+        telefono: telefono !== undefined ? (telefono || null) : undefined,
+        correo: correo !== undefined ? (correo || null) : undefined,
+        eps: eps !== undefined ? (eps || null) : undefined,
+        aplicaSeguro: aplicaSeguro !== undefined ? Boolean(aplicaSeguro) : undefined,
+        fechaProximoPagoSeguro: fechaProximoPagoSeguro !== undefined ? (fechaProximoPagoSeguro || null) : undefined,
+      })
+      .where(eq(trabajadoresTable.id, id))
+      .returning();
+    if (!trabajador) return { noEncontrado: true } as const;
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "trabajador", entidadId: String(id), tipo: "actualizar", metodo: "PUT", endpoint: `/trabajadores/${id}`, payload: req.body, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "trabajador", recursoId: id }).onConflictDoNothing();
+    return { trabajador } as const;
+  });
+  if (resultado.yaProcesado) {
+    res.status(200).json({ ok: true, yaProcesado: true, recursoId: resultado.yaProcesado.recursoId });
+    return;
+  }
+  if ("noEncontrado" in resultado) { res.status(404).json({ error: "Trabajador no encontrado" }); return; }
+  res.json(await mapTrabajador(resultado.trabajador));
 });
 
 // ── Pagos de seguro ──────────────────────────────────────────────────────
@@ -124,35 +136,48 @@ router.get("/:id/pagos-seguro", async (req, res) => {
 
 router.post("/:id/pagos-seguro", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   const trabajadorId = parseInt(req.params.id);
   const { fecha, monto } = req.body;
 
-  if (!fecha || !monto || toNum(monto) <= 0) {
-    res.status(400).json({ error: "fecha y monto son requeridos" });
+  const resultado = await db.transaction(async (tx) => {
+    const ya = await operacionYaProcesada(tx, operationId);
+    if (ya) return { yaProcesado: ya } as const;
+    if (!fecha || !monto || toNum(monto) <= 0) return { invalido: true } as const;
+    const [pago] = await tx
+      .insert(pagosSeguroTable)
+      .values({ trabajadorId, fecha, monto: String(toNum(monto)) })
+      .returning();
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "pago_seguro", entidadId: String(pago.id), tipo: "crear", metodo: "POST", endpoint: "/trabajadores/{trabajadorId}/pagos-seguro", referenciasEndpoint: [{ marcador: "{trabajadorId}", entidad: "trabajador", valorLocal: String(trabajadorId) }], payload: req.body, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "pago_seguro", recursoId: pago.id }).onConflictDoNothing();
+    return { pago } as const;
+  });
+  if (resultado.yaProcesado) {
+    res.status(200).json({ ok: true, yaProcesado: true, recursoId: resultado.yaProcesado.recursoId });
     return;
   }
-
-  const [pago] = await db
-    .insert(pagosSeguroTable)
-    .values({ trabajadorId, fecha, monto: String(toNum(monto)) })
-    .returning();
-
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "pago_seguro", entidadId: String(pago.id), tipo: "crear", metodo: "POST", endpoint: "/trabajadores/{trabajadorId}/pagos-seguro", referenciasEndpoint: [{ marcador: "{trabajadorId}", entidad: "trabajador", valorLocal: String(trabajadorId) }], payload: req.body, origen: "local" });
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "pago_seguro", recursoId: pago.id }).onConflictDoNothing();
-
-  res.status(201).json({ id: pago.id, fecha: pago.fecha, monto: toNum(pago.monto) });
+  if ("invalido" in resultado) { res.status(400).json({ error: "fecha y monto son requeridos" }); return; }
+  res.status(201).json({
+    id: resultado.pago.id,
+    fecha: resultado.pago.fecha,
+    monto: toNum(resultado.pago.monto),
+  });
 });
 
 router.delete("/:id/pagos-seguro/:pagoId", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const pagoId = parseInt(req.params.pagoId);
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
-  await db.delete(pagosSeguroTable).where(eq(pagosSeguroTable.id, pagoId));
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "pago_seguro", entidadId: String(pagoId), tipo: "eliminar", metodo: "DELETE", endpoint: "/trabajadores/{trabajadorId}/pagos-seguro/{id}", referenciasEndpoint: [{ marcador: "{trabajadorId}", entidad: "trabajador", valorLocal: String(req.params.id) }], payload: {}, origen: "local" });
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "pago_seguro", recursoId: pagoId }).onConflictDoNothing();
+  const resultado = await db.transaction(async (tx) => {
+    const ya = await operacionYaProcesada(tx, operationId);
+    if (ya) return { yaProcesado: ya } as const;
+    await tx.delete(pagosSeguroTable).where(eq(pagosSeguroTable.id, pagoId));
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "pago_seguro", entidadId: String(pagoId), tipo: "eliminar", metodo: "DELETE", endpoint: "/trabajadores/{trabajadorId}/pagos-seguro/{id}", referenciasEndpoint: [{ marcador: "{trabajadorId}", entidad: "trabajador", valorLocal: String(req.params.id) }], payload: {}, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "pago_seguro", recursoId: pagoId }).onConflictDoNothing();
+    return { eliminado: true } as const;
+  });
+  if (resultado.yaProcesado) {
+    res.status(200).json({ ok: true, yaProcesado: true, recursoId: resultado.yaProcesado.recursoId });
+    return;
+  }
   res.json({ ok: true });
 });
 

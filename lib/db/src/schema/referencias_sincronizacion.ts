@@ -1,4 +1,11 @@
-import { pgTable, text, timestamp, index, primaryKey } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  index,
+  primaryKey,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 /** Relaciona el ID serial local con el ID que asigno la base remota. */
 export const referenciasSincronizacionTable = pgTable(
@@ -15,5 +22,8 @@ export const referenciasSincronizacionTable = pgTable(
       table.entidad,
       table.idLocal,
     ),
+    entidadRemotoUnique: uniqueIndex(
+      "referencias_sincronizacion_entidad_remoto_uidx",
+    ).on(table.entidad, table.idRemoto),
   }),
 );

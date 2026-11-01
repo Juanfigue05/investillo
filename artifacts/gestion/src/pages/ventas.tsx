@@ -18,6 +18,10 @@ import { ManoObraSelector, calcularDistribucion } from "@/components/ManoObraSel
 import { encolarOperacion, obtenerIdOperacionOffline } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { esFalloDeRed } from "@/lib/offline-db";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+} from "@/lib/respuesta-api";
 import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
 import { SearchableSelect, type ProductoOpcion } from "@/components/SearchableSelect";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
@@ -43,6 +47,13 @@ function agregarFilaOptimista(queryClient: any, fecha: string, fila: any) {
     ...(old || []),
     { id: idTemporal, ...fila, _pendiente: true },
   ]);
+  return idTemporal;
+}
+
+function quitarFilaOptimista(queryClient: any, fecha: string, idTemporal: number) {
+  queryClient.setQueryData(["/api/ventas", { fecha }], (old: any[] = []) =>
+    (old || []).filter((fila) => fila.id !== idTemporal),
+  );
 }
 
 interface EditValues {
@@ -119,6 +130,9 @@ export default function VentasDiarias() {
       queryClient.setQueryData(["/api/ventas", { fecha }], nuevoOrden);
       await queryClient.invalidateQueries({ queryKey: ["/api/ventas", { fecha }] });
     } catch (error) {
+      if (esOperacionEncoladaOffline(error)) return;
+      setOrdenLocal(ventasOrdenadas);
+      if (esOperacionOfflineNoGuardada(error)) return;
       toast({
         title: "No se pudo guardar el orden",
         description: error instanceof Error ? error.message : String(error),
@@ -142,6 +156,7 @@ export default function VentasDiarias() {
     valoresFijados: {} as Record<number, number>,
     formaPago: "efectivo",
   });
+  const [guardandoManoObra, setGuardandoManoObra] = useState(false);
 
   const [stockAlerta, setStockAlerta] = useState<{ stock: number; minimo: number } | null>(null);
 
@@ -370,6 +385,19 @@ export default function VentasDiarias() {
           queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
           setEditingId(null);
         },
+        onError: (error) => {
+          if (esOperacionEncoladaOffline(error)) {
+            queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+            setEditingId(null);
+            return;
+          }
+          if (esOperacionOfflineNoGuardada(error)) return;
+          toast({
+            title: "No se pudo guardar",
+            description: error instanceof Error ? error.message : String(error),
+            variant: "destructive",
+          });
+        },
       }
     );
   };
@@ -378,6 +406,7 @@ export default function VentasDiarias() {
     if (!newRow.referencia) { alert("Escribe una referencia / No. Remisión"); return; }
 
     if (modoActual === "manoobra" || modoActual === "soldadura") {
+      if (guardandoManoObra) return;
       if (!newRow.precioManoObra || newRow.trabajadoresSeleccionados.length === 0) {
         alert("Llena el valor del servicio y selecciona los trabajadores");
         return;
@@ -401,15 +430,16 @@ export default function VentasDiarias() {
         setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioManoObra: 0, trabajadoresSeleccionados: [], valoresFijados: {} }));
 
       setOrdenLocal(null);
-      agregarFilaOptimista(queryClient, fecha, {
+      const idTemporal = agregarFilaOptimista(queryClient, fecha, {
         referencia: newRow.referencia, tipoLinea: "manoobra",
         productoNombre: servicioActual, productoMarca: payloadManoObra.productoMarca,
         cantidad: 1, precioCompraUnidad: 0, precioVentaUnidad: valor, precioVentaTotal: valor, beneficio: valor,
       });
 
+      setGuardandoManoObra(true);
       (async () => {
-        if (navigator.onLine) {
-          try {
+        try {
+          if (navigator.onLine) {
             const res = await fetch(`${API}/ventas/manoobra`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -423,21 +453,43 @@ export default function VentasDiarias() {
               return;
             }
             if (navigator.onLine) {
+              quitarFilaOptimista(queryClient, fecha, idTemporal);
               const errData = await res.json().catch(() => null);
               toast({ title: "No se pudo guardar", description: errData?.error || `Error del servidor (${res.status})`, variant: "destructive" });
               return;
             }
-          } catch (error) {
-            // sigue abajo, se encola
-            await encolarOperacion({ operationId: obtenerIdOperacionOffline(error), tipo: "manoobra_venta", metodo: "POST", endpoint: "/ventas/manoobra", payload: payloadManoObra });
-            toast({ title: "Guardado sin conexión", description: "Esta mano de obra se sincronizará automáticamente cuando vuelva internet." });
+          }
+          await encolarOperacion({ tipo: "manoobra_venta", metodo: "POST", endpoint: "/ventas/manoobra", payload: payloadManoObra });
+          limpiarFilaManoObra();
+        } catch (error) {
+          if (esOperacionEncoladaOffline(error)) {
             limpiarFilaManoObra();
             return;
           }
+          if (esOperacionOfflineNoGuardada(error)) {
+            quitarFilaOptimista(queryClient, fecha, idTemporal);
+            return;
+          }
+          if (!esFalloDeRed(error)) {
+            quitarFilaOptimista(queryClient, fecha, idTemporal);
+            toast({
+              title: "No se pudo guardar",
+              description: error instanceof Error ? error.message : String(error),
+              variant: "destructive",
+            });
+            return;
+          }
+          await encolarOperacion({
+            operationId: obtenerIdOperacionOffline(error),
+            tipo: "manoobra_venta",
+            metodo: "POST",
+            endpoint: "/ventas/manoobra",
+            payload: payloadManoObra,
+          });
+          limpiarFilaManoObra();
+        } finally {
+          setGuardandoManoObra(false);
         }
-        await encolarOperacion({ tipo: "manoobra_venta", metodo: "POST", endpoint: "/ventas/manoobra", payload: payloadManoObra });
-        toast({ title: "Guardado sin conexión", description: "Esta mano de obra se sincronizará automáticamente cuando vuelva internet." });
-        limpiarFilaManoObra();
       })();
 
       return;
@@ -454,7 +506,7 @@ export default function VentasDiarias() {
       };
 
       setOrdenLocal(null);
-      agregarFilaOptimista(queryClient, fecha, payloadAbono);
+      const idTemporal = agregarFilaOptimista(queryClient, fecha, payloadAbono);
 
       crearMutation.mutate(
         { data: payloadAbono },
@@ -466,12 +518,23 @@ export default function VentasDiarias() {
             setNewRow((prev) => ({ ...prev, productoSeleccionado: "", productoNombreManual: "", valorAbono: 0 }));
           },
           onError: async (error) => {
+            if (esOperacionEncoladaOffline(error)) {
+              queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+              setNewRow((prev) => ({ ...prev, productoSeleccionado: "", productoNombreManual: "", valorAbono: 0 }));
+              return;
+            }
+            if (esOperacionOfflineNoGuardada(error)) {
+              quitarFilaOptimista(queryClient, fecha, idTemporal);
+              return;
+            }
             if (!esFalloDeRed(error)) {
+              quitarFilaOptimista(queryClient, fecha, idTemporal);
               toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
               return;
             }
             await encolarOperacion({ operationId: obtenerIdOperacionOffline(error), tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadAbono });
-            toast({ title: "Guardado sin conexión", description: "Este abono se sincronizará automáticamente cuando vuelva internet." });
             setNewRow((prev) => ({ ...prev, productoSeleccionado: "", productoNombreManual: "", valorAbono: 0 }));
           },
         }
@@ -509,7 +572,7 @@ export default function VentasDiarias() {
     };
 
     setOrdenLocal(null);
-    agregarFilaOptimista(queryClient, fecha, payloadVenta);
+    const idTemporal = agregarFilaOptimista(queryClient, fecha, payloadVenta);
 
     crearMutation.mutate(
       { data: payloadVenta },
@@ -522,12 +585,24 @@ export default function VentasDiarias() {
           setStockAlerta(null);
         },
         onError: async (error) => {
+          if (esOperacionEncoladaOffline(error)) {
+            queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+            setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: "", precioVenta: "", precioVentaTotal: "" }));
+            setStockAlerta(null);
+            return;
+          }
+          if (esOperacionOfflineNoGuardada(error)) {
+            quitarFilaOptimista(queryClient, fecha, idTemporal);
+            return;
+          }
           if (!esFalloDeRed(error)) {
+            quitarFilaOptimista(queryClient, fecha, idTemporal);
             toast({ title: "No se pudo guardar", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
             return;
           }
           await encolarOperacion({ operationId: obtenerIdOperacionOffline(error), tipo: "venta", metodo: "POST", endpoint: "/ventas", payload: payloadVenta });
-          toast({ title: "Guardado sin conexión", description: "Esta venta se sincronizará automáticamente cuando vuelva internet." });
           setNewRow((prev) => ({ ...prev, productoSeleccionado: "", marca: "", cantidad: "1", precioCompra: "", precioVenta: "", precioVentaTotal: "" }));
           setStockAlerta(null);
         },
@@ -547,6 +622,8 @@ export default function VentasDiarias() {
       {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/historial"] }),
         onError: (error) => {
+          if (esOperacionEncoladaOffline(error)) return;
+          if (esOperacionOfflineNoGuardada(error)) return;
           queryClient.invalidateQueries({ queryKey: ["/api/historial"] });
           toast({
             title: "No se pudo guardar el historial",
@@ -685,7 +762,7 @@ export default function VentasDiarias() {
                 )}
                 <tr ref={newRowRef} className={`no-print bg-background/40 scroll-mt-24 ${modoActual === "manoobra" || modoActual === "soldadura" ? "row-manoobra" : modoActual === "abono" ? "row-credito" : ""}`}>
                   <td className="p-2 no-print">
-                    <button onClick={handleAddRow} disabled={crearMutation.isPending} className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow" title="Guardar fila">
+                    <button onClick={handleAddRow} disabled={crearMutation.isPending || guardandoManoObra} className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow" title="Guardar fila">
                       <Save className="w-4 h-4" />
                     </button>
                   </td>
@@ -764,6 +841,21 @@ export default function VentasDiarias() {
               queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
               queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
               setDeleteVentaId(null);
+            },
+            onError: (error) => {
+              if (esOperacionEncoladaOffline(error)) {
+                queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+                queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+                queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+                setDeleteVentaId(null);
+                return;
+              }
+              if (esOperacionOfflineNoGuardada(error)) return;
+              toast({
+                title: "No se pudo eliminar la venta",
+                description: error instanceof Error ? error.message : String(error),
+                variant: "destructive",
+              });
             },
           });
         }}

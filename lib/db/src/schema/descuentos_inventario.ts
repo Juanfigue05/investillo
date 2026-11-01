@@ -1,4 +1,5 @@
-import { pgTable, serial, text, numeric, timestamp, integer, uuid } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, timestamp, integer, uuid, foreignKey } from "drizzle-orm/pg-core";
+import { productosTable } from "./inventario";
 
 export const descuentosInventarioTable = pgTable("descuentos_inventario", {
   id: serial("id").primaryKey(),
@@ -15,6 +16,12 @@ export const descuentosInventarioTable = pgTable("descuentos_inventario", {
   precioCompra: numeric("precio_compra", { precision: 15, scale: 2 }).notNull(),
   precioVenta: numeric("precio_venta", { precision: 15, scale: 2 }).notNull(),
   creadoEn: timestamp("creado_en").defaultNow().notNull(),
-});
+}, (table) => [
+  foreignKey({
+    name: "descuentos_inventario_producto_id_fk",
+    columns: [table.productoId],
+    foreignColumns: [productosTable.id],
+  }),
+]);
 
 export type DescuentoInventario = typeof descuentosInventarioTable.$inferSelect;

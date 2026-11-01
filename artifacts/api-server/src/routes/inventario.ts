@@ -4,6 +4,12 @@ import { eventosSincronizacionTable, productosTable } from "@workspace/db/schema
 import { eq, lte, sql } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
 import { parseNumeroColombia } from "@workspace/api-zod";
+import {
+  actualizarProductoRequest,
+  actualizarStockRequest,
+  crearProductoRequest,
+} from "@workspace/api-zod/write-requests";
+import { validarBody } from "../lib/validar-body";
 
 const router: IRouter = Router();
 
@@ -73,6 +79,7 @@ router.get("/:id", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  if (!validarBody(crearProductoRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db
@@ -129,6 +136,7 @@ router.post("/", async (req, res) => {
 });
 
 router.put("/:id", async (req, res) => {
+  if (!validarBody(actualizarProductoRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   if (operationId) {
     const [ya] = await db
@@ -199,6 +207,7 @@ router.put("/:id", async (req, res) => {
 });
 
 router.put("/:id/stock", async (req, res) => {
+  if (!validarBody(actualizarStockRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
   if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }

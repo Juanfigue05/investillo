@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
 import { Layout } from "@/components/Layout";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 import { formatCurrency } from "@/lib/utils";
 import { Check, Pencil, Printer, Trash2, X } from "lucide-react";
 
@@ -66,6 +71,7 @@ export default function ReporteNomina() {
       setTrabajadoresSeleccionados((vista?.trabajadores || []).map((t: any) => String(t.trabajadorId)));
     }
   };
+  const [mutacionEnCurso, setMutacionEnCurso] = useState(false);
 
   const fmtFecha = (f: string) => new Date(f + "T12:00:00").toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit" });
   const iniciarEdicion = (key: string, d: any) => {
@@ -73,31 +79,132 @@ export default function ReporteNomina() {
     setBorrador({ fecha: d.fecha, valor: String(d.valor), descuentoOtros: String(d.descuentoOtros), seguro: String(d.seguro), total: String(Math.max(0, Number(d.total) || 0)) });
   };
   const guardarDia = async (fechaOriginal: string, trabajadorId: number, key: string) => {
-    const res = await fetch(`${API}/reportes/nomina/dia`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fechaOriginal, trabajadorId, ...Object.fromEntries(Object.entries(borrador).map(([k, v]) => [k, k === "fecha" ? v : Number(v)])) }),
-    });
-    if (!res.ok) { alert((await res.json().catch(() => null))?.error || "No se pudo guardar"); return; }
-    setEditando(null);
-    await recargar();
+    if (mutacionEnCurso) return;
+    setMutacionEnCurso(true);
+    try {
+      await leerRespuestaApi(fetch(`${API}/reportes/nomina/dia`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fechaOriginal, trabajadorId, ...Object.fromEntries(Object.entries(borrador).map(([k, v]) => [k, k === "fecha" ? v : Number(v)])) }),
+      }));
+      setEditando(null);
+      await recargar();
+    } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        const cambios = Object.fromEntries(
+          Object.entries(borrador).map(([campo, valor]) => [
+            campo,
+            campo === "fecha" ? valor : Number(valor),
+          ]),
+        );
+        setData((anterior: any) =>
+          anterior
+            ? {
+                ...anterior,
+                trabajadores: anterior.trabajadores?.map((trabajador: any) =>
+                  String(trabajador.trabajadorId) === String(trabajadorId)
+                    ? {
+                        ...trabajador,
+                        dias: trabajador.dias.map((dia: any) =>
+                          dia.fecha === fechaOriginal
+                            ? { ...dia, ...cambios }
+                            : dia,
+                        ),
+                      }
+                    : trabajador,
+                ),
+              }
+            : anterior,
+        );
+        setEditando(null);
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
+      alert(error instanceof Error ? error.message : String(error));
+    } finally {
+      setMutacionEnCurso(false);
+    }
   };
   const guardarTensionada = async (id: number, key: string) => {
-    const res = await fetch(`${API}/tensionadas/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fecha: borrador[`${key}:fecha`], valor: Number(borrador[`${key}:valor`]) }),
-    });
-    if (!res.ok) { alert((await res.json().catch(() => null))?.error || "No se pudo guardar la tensionada"); return; }
-    setEditando(null);
-    await recargar();
+    if (mutacionEnCurso) return;
+    setMutacionEnCurso(true);
+    try {
+      await leerRespuestaApi(fetch(`${API}/tensionadas/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fecha: borrador[`${key}:fecha`], valor: Number(borrador[`${key}:valor`]) }),
+      }));
+      setEditando(null);
+      await recargar();
+    } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setData((anterior: any) =>
+          anterior
+            ? {
+                ...anterior,
+                tensionadas: anterior.tensionadas?.map((tensionada: any) =>
+                  String(tensionada.id) === String(id)
+                    ? {
+                        ...tensionada,
+                        fecha: borrador[`${key}:fecha`],
+                        valor: Number(borrador[`${key}:valor`]),
+                      }
+                    : tensionada,
+                ),
+                totalTensionadas: (anterior.tensionadas || []).reduce(
+                  (total: number, tensionada: any) =>
+                    total +
+                    (String(tensionada.id) === String(id)
+                      ? Number(borrador[`${key}:valor`])
+                      : Number(tensionada.valor)),
+                  0,
+                ),
+              }
+            : anterior,
+        );
+        setEditando(null);
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
+      alert(error instanceof Error ? error.message : String(error));
+    } finally {
+      setMutacionEnCurso(false);
+    }
   };
   const eliminarTensionada = async (id: number) => {
-    if (!confirm("¿Eliminar esta tensionada? Esta acción no se puede deshacer.")) return;
-    const res = await fetch(`${API}/tensionadas/${id}`, { method: "DELETE" });
-    if (!res.ok) { alert("No se pudo eliminar la tensionada"); return; }
-    setEditando(null);
-    await recargar();
+    if (mutacionEnCurso || !confirm("¿Eliminar esta tensionada? Esta acción no se puede deshacer.")) return;
+    setMutacionEnCurso(true);
+    try {
+      await leerRespuestaApi(fetch(`${API}/tensionadas/${id}`, { method: "DELETE" }));
+      setEditando(null);
+      await recargar();
+    } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        setData((anterior: any) =>
+          anterior
+            ? {
+                ...anterior,
+                tensionadas: anterior.tensionadas?.filter(
+                  (tensionada: any) => String(tensionada.id) !== String(id),
+                ),
+                totalTensionadas: (anterior.tensionadas || [])
+                  .filter((tensionada: any) => String(tensionada.id) !== String(id))
+                  .reduce(
+                    (total: number, tensionada: any) =>
+                      total + Number(tensionada.valor),
+                    0,
+                  ),
+              }
+            : anterior,
+        );
+        setEditando(null);
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
+      alert(error instanceof Error ? error.message : String(error));
+    } finally {
+      setMutacionEnCurso(false);
+    }
   };
 
   const trabajadores = vista?.trabajadores || [];

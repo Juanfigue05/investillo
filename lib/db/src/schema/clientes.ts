@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, integer, foreignKey, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -19,7 +19,14 @@ export const vehiculosClienteTable = pgTable("vehiculos_cliente", {
   placa: text("placa").notNull(),
   descripcion: text("descripcion"),
   creadoEn: timestamp("creado_en").defaultNow(),
-});
+}, (table) => [
+  foreignKey({
+    name: "vehiculos_cliente_cliente_id_fk",
+    columns: [table.clienteId],
+    foreignColumns: [clientesTable.id],
+  }),
+  index("vehiculos_cliente_cliente_id_idx").on(table.clienteId),
+]);
 
 export const insertClienteSchema = createInsertSchema(clientesTable).omit({ id: true, creadoEn: true, actualizadoEn: true });
 export const insertVehiculoClienteSchema = createInsertSchema(vehiculosClienteTable).omit({ id: true, creadoEn: true });

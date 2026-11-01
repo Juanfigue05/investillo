@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { platform } from "node:os";
 import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { validarDestinoBackup } from "./lib/backup-destino";
 
 const esWindows = platform() === "win32";
 const PG_BIN = process.env.PG_BIN_PATH;
@@ -40,6 +41,7 @@ const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_BUCKET = process.env.R2_BUCKET;
 
 if (!SOURCE_URL) throw new Error("Falta SOURCE_DATABASE_URL en el .env");
+if (AIVEN_URL) validarDestinoBackup(SOURCE_URL, AIVEN_URL);
 
 const BACKUP_DIR = join(process.cwd(), "backups");
 mkdirSync(BACKUP_DIR, { recursive: true });
@@ -47,41 +49,59 @@ mkdirSync(BACKUP_DIR, { recursive: true });
 const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 const fileName = `investillo_${timestamp}.dump`;
 const filePath = join(BACKUP_DIR, fileName);
+type Paso = { estado: "pendiente" | "completo" | "fallido" | "omitido"; detalle?: string };
+const pasos: Record<"local" | "replica" | "r2", Paso> = {
+  local: { estado: "pendiente" },
+  replica: { estado: "pendiente" },
+  r2: { estado: "pendiente" },
+};
 
-console.log("[1/3] Generando respaldo desde Supabase...");
-console.log(`Usando pg_dump: ${PG_DUMP}`);
-verificarVersionPostgres(PG_DUMP);
-verificarVersionPostgres(PG_RESTORE);
-execFileSync(
-  PG_DUMP,
-  [
-    `--dbname=${SOURCE_URL}`,
-    "--schema=public",
-    "--no-owner",
-    "--no-privileges",
-    "-F",
-    "c",
-    "-f",
-    filePath,
-  ],
-  { stdio: "inherit" },
-);
-console.log(`Respaldo local guardado en ${filePath}`);
-
-const { statSync } = await import("node:fs");
-const stats = statSync(filePath);
-const TAMANO_MINIMO_ESPERADO = 10 * 1024; // 10 KB — un respaldo real de tu base de datos siempre pesa más que esto
-if (stats.size < TAMANO_MINIMO_ESPERADO) {
-  throw new Error(
-    `⚠️ El archivo de respaldo se ve sospechosamente pequeño (${stats.size} bytes) — puede estar vacío o corrupto. Revisa manualmente antes de confiar en este respaldo.`,
-  );
+function detalleSeguro(error: unknown): string {
+  const mensaje = error instanceof Error ? error.message : String(error);
+  return mensaje.replace(/postgres(?:ql)?:\/\/[^\s"'`]+/gi, "[URL oculta]");
 }
-console.log(
-  `✅ Verificado: el archivo pesa ${(stats.size / 1024 / 1024).toFixed(2)} MB — tamaño razonable.`,
-);
 
-if (AIVEN_URL) {
-  console.log("[2/3] Restaurando respaldo en Aiven...");
+function informarPaso(nombre: string, paso: Paso): void {
+  const detalle = paso.detalle ? ` — ${paso.detalle}` : "";
+  console.log(`${nombre}: ${paso.estado}${detalle}`);
+}
+
+try {
+  console.log("[1/3] Generando y validando respaldo local desde Aiven...");
+  console.log(`Usando pg_dump: ${PG_DUMP}`);
+  verificarVersionPostgres(PG_DUMP);
+  verificarVersionPostgres(PG_RESTORE);
+  execFileSync(
+    PG_DUMP,
+    [
+      `--dbname=${SOURCE_URL}`,
+      "--schema=public",
+      "--no-owner",
+      "--no-privileges",
+      "-F",
+      "c",
+      "-f",
+      filePath,
+    ],
+    { stdio: "inherit" },
+  );
+
+  const { statSync } = await import("node:fs");
+  const stats = statSync(filePath);
+  const TAMANO_MINIMO_ESPERADO = 10 * 1024;
+  if (stats.size < TAMANO_MINIMO_ESPERADO) {
+    throw new Error(`El archivo parece incompleto (${stats.size} bytes; mínimo 10240).`);
+  }
+  pasos.local = {
+    estado: "completo",
+    detalle: `archivo verificado (${(stats.size / 1024 / 1024).toFixed(2)} MB)`,
+  };
+} catch (error) {
+  pasos.local = { estado: "fallido", detalle: detalleSeguro(error) };
+}
+
+if (pasos.local.estado === "completo" && AIVEN_URL) {
+  console.log("[2/3] Restaurando respaldo en la réplica Supabase...");
   try {
     execFileSync(
       PG_RESTORE,
@@ -94,47 +114,64 @@ if (AIVEN_URL) {
       ],
       { stdio: "inherit" },
     );
-    console.log("Restaurado en Aiven correctamente.");
-  } catch (err) {
-    console.error("No se pudo restaurar en Aiven:", err);
+    pasos.replica = { estado: "completo" };
+  } catch (error) {
+    pasos.replica = { estado: "fallido", detalle: detalleSeguro(error) };
   }
+} else if (!AIVEN_URL) {
+  pasos.replica = { estado: "omitido", detalle: "AIVEN_DATABASE_URL no definido" };
 } else {
-  console.log("[2/3] AIVEN_DATABASE_URL no definido, se omite.");
+  pasos.replica = { estado: "omitido", detalle: "no hay un respaldo local válido" };
 }
 
-if (R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET) {
+if (pasos.local.estado === "completo" && R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET) {
   console.log("[3/3] Subiendo respaldo a Cloudflare R2...");
-  const s3 = new S3Client({
-    region: "auto",
-    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: R2_ACCESS_KEY_ID,
-      secretAccessKey: R2_SECRET_ACCESS_KEY,
-    },
-  });
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: fileName,
-      Body: readFileSync(filePath),
-    }),
-  );
-  console.log("Subido a Cloudflare R2 correctamente.");
+  try {
+    const s3 = new S3Client({
+      region: "auto",
+      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: R2_ACCESS_KEY_ID,
+        secretAccessKey: R2_SECRET_ACCESS_KEY,
+      },
+    });
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: fileName,
+        Body: readFileSync(filePath),
+      }),
+    );
 
-  // Limpieza automática: conserva solo las N copias MÁS RECIENTES, borra todo lo demás.
-  const COPIAS_A_CONSERVAR = 6;
-  const lista = await s3.send(new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: "investillo_" }));
-  const objetos = (lista.Contents ?? [])
-    .filter((o) => o.Key && o.LastModified)
-    .sort((a, b) => b.LastModified!.getTime() - a.LastModified!.getTime()); // más nuevo primero
-
-  const aBorrar = objetos.slice(COPIAS_A_CONSERVAR); // todo lo que sobre después de las primeras N
-  for (const obj of aBorrar) {
-    await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: obj.Key! }));
+    const COPIAS_A_CONSERVAR = 6;
+    const lista = await s3.send(new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: "investillo_" }));
+    const objetos = (lista.Contents ?? [])
+      .filter((o) => o.Key && o.LastModified)
+      .sort((a, b) => b.LastModified!.getTime() - a.LastModified!.getTime());
+    const aBorrar = objetos.slice(COPIAS_A_CONSERVAR);
+    for (const obj of aBorrar) {
+      await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: obj.Key! }));
+    }
+    pasos.r2 = {
+      estado: "completo",
+      detalle: `subido; ${Math.min(COPIAS_A_CONSERVAR, objetos.length)} respaldos conservados, ${aBorrar.length} eliminados`,
+    };
+  } catch (error) {
+    pasos.r2 = { estado: "fallido", detalle: detalleSeguro(error) };
   }
-  console.log(`🧹 Limpieza en R2: se conservan las ${Math.min(COPIAS_A_CONSERVAR, objetos.length)} más recientes, se eliminaron ${aBorrar.length}.`);
+} else if (!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET)) {
+  pasos.r2 = { estado: "omitido", detalle: "faltan variables de R2" };
 } else {
-  console.log("[3/3] Variables de R2 no definidas, se omite.");
+  pasos.r2 = { estado: "omitido", detalle: "no hay un respaldo local válido" };
 }
 
-console.log("✅ Respaldo completo (local + Aiven + R2).");
+console.log("\nResumen del respaldo:");
+informarPaso("Local", pasos.local);
+informarPaso("Réplica", pasos.replica);
+informarPaso("R2", pasos.r2);
+
+if (Object.values(pasos).some((paso) => paso.estado === "fallido")) {
+  process.exitCode = 1;
+} else {
+  console.log("Respaldo completado sin fallos en los pasos ejecutados.");
+}

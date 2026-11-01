@@ -4,6 +4,11 @@ import { useGetHistorialPrecios } from "@workspace/api-client-react";
 import { coincideBusqueda, formatCurrencyDecimal } from "@/lib/utils";
 import { Eye, Search, Trash2, TrendingDown, TrendingUp, X, Minus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import {
+  esOperacionEncoladaOffline,
+  esOperacionOfflineNoGuardada,
+  leerRespuestaApi,
+} from "@/lib/respuesta-api";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+$/g, "").replace(/\/+/g, "/");
 const formatCurrency = formatCurrencyDecimal;
@@ -41,11 +46,23 @@ export default function HistorialPreciosPage() {
     if (!confirmar?.[0]) return;
     setEliminando(true);
     try {
-      const response = await fetch(`${API}/historial-precios/producto/${confirmar[0].productoId}`, { method: "DELETE" });
-      if (!response.ok) throw new Error(await response.text());
+      await leerRespuestaApi(fetch(`${API}/historial-precios/producto/${confirmar[0].productoId}`, { method: "DELETE" }));
       await queryClient.invalidateQueries({ queryKey: ["/api/historial-precios"] });
       setConfirmar(null);
-    } catch { alert("No se pudo eliminar el historial del producto"); }
+    } catch (error) {
+      if (esOperacionEncoladaOffline(error)) {
+        const productoId = confirmar[0].productoId;
+        queryClient.setQueryData<Registro[]>(
+          ["/api/historial-precios"],
+          (anterior) =>
+            anterior?.filter((registro) => registro.productoId !== productoId),
+        );
+        setConfirmar(null);
+        return;
+      }
+      if (esOperacionOfflineNoGuardada(error)) return;
+      alert(error instanceof Error ? error.message : String(error));
+    }
     finally { setEliminando(false); }
   };
   return <Layout><div className="space-y-5">

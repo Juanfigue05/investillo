@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { eventosSincronizacionTable, historialPreciosTable, operacionesSincronizadasTable, productosTable } from "@workspace/db/schema";
 import { desc, eq } from "drizzle-orm";
+import { operacionYaProcesada } from "./lib/operacion-sincronizada";
 
 const router: IRouter = Router();
 
@@ -40,24 +41,40 @@ router.get("/", async (req, res) => {
 router.delete("/producto/:productoId", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const productoId = parseInt(req.params.productoId);
-  if (isNaN(productoId)) { res.status(400).json({ error: "productoId inválido" }); return; }
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
-  const eliminados = await db.delete(historialPreciosTable).where(eq(historialPreciosTable.productoId, productoId)).returning({ id: historialPreciosTable.id });
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "historial_precios", entidadId: String(productoId), tipo: "eliminar_producto", metodo: "DELETE", endpoint: `/historial-precios/producto/${productoId}`, payload: {}, origen: "local" });
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "historial_precios_producto", recursoId: productoId }).onConflictDoNothing();
-  res.json({ ok: true, eliminados: eliminados.length });
+  const resultado = await db.transaction(async (tx) => {
+    const ya = await operacionYaProcesada(tx, operationId);
+    if (ya) return { yaProcesado: ya } as const;
+    if (isNaN(productoId)) return { invalido: true } as const;
+    const eliminados = await tx.delete(historialPreciosTable).where(eq(historialPreciosTable.productoId, productoId)).returning({ id: historialPreciosTable.id });
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "historial_precios", entidadId: String(productoId), tipo: "eliminar_producto", metodo: "DELETE", endpoint: `/historial-precios/producto/${productoId}`, payload: {}, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "historial_precios_producto", recursoId: productoId }).onConflictDoNothing();
+    return { eliminados: eliminados.length } as const;
+  });
+  if (resultado.yaProcesado) {
+    res.status(200).json({ ok: true, yaProcesado: true, recursoId: resultado.yaProcesado.recursoId });
+    return;
+  }
+  if ("invalido" in resultado) { res.status(400).json({ error: "productoId inválido" }); return; }
+  res.json({ ok: true, eliminados: resultado.eliminados });
 });
 
 router.delete("/:id", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
   const id = parseInt(req.params.id);
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
-  if (isNaN(id)) { res.status(400).json({ error: "id inválido" }); return; }
-  await db.delete(historialPreciosTable).where(eq(historialPreciosTable.id, id));
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "historial_precios", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/historial-precios/${id}`, payload: {}, origen: "local" });
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "historial_precios", recursoId: id }).onConflictDoNothing();
+  const resultado = await db.transaction(async (tx) => {
+    const ya = await operacionYaProcesada(tx, operationId);
+    if (ya) return { yaProcesado: ya } as const;
+    if (isNaN(id)) return { invalido: true } as const;
+    await tx.delete(historialPreciosTable).where(eq(historialPreciosTable.id, id));
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "historial_precios", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/historial-precios/${id}`, payload: {}, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "historial_precios", recursoId: id }).onConflictDoNothing();
+    return { eliminado: true } as const;
+  });
+  if (resultado.yaProcesado) {
+    res.status(200).json({ ok: true, yaProcesado: true, recursoId: resultado.yaProcesado.recursoId });
+    return;
+  }
+  if ("invalido" in resultado) { res.status(400).json({ error: "id inválido" }); return; }
   res.json({ ok: true });
 });
 
