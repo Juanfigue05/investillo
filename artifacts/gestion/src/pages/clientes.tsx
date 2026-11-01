@@ -6,6 +6,8 @@ import {
   leerRespuestaApi,
 } from "@/lib/respuesta-api";
 import {
+  useGetCreditos,
+  useAbonarCredito,
   useGetClientes,
   useCrearCliente,
   useActualizarCliente,
@@ -14,9 +16,15 @@ import {
   useActualizarVehiculo,
   useEliminarVehiculo,
   type Cliente,
+  type Credito,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatTelefono, soloDigitos } from "@/lib/utils";
+import {
+  fechaHoyColombia,
+  formatCurrency,
+  formatTelefono,
+  soloDigitos,
+} from "@/lib/utils";
 import {
   Plus,
   Search,
@@ -33,7 +41,18 @@ import {
   Upload,
   Loader2,
   FileDown,
+  CreditCard,
+  CalendarDays,
+  ArrowDownLeft,
+  ArrowUpRight,
 } from "lucide-react";
+import {
+  encolarOperacion,
+  esFalloDeRed,
+  obtenerIdOperacionOffline,
+} from "@/lib/offline-db";
+import { toast } from "@/hooks/use-toast";
+import { readDailyIvaPreference } from "@workspace/api-zod";
 interface VehiculoForm {
   id?: number;
   placa: string;
@@ -67,10 +86,54 @@ const emptyForm = {
 };
 const emptyVeh: VehiculoForm = { placa: "", descripcion: "" };
 
+function normalizarNombreCliente(nombre: string): string {
+  return nombre.trim().toLocaleLowerCase("es");
+}
+
+function obtenerCreditosCliente(
+  cliente: Cliente,
+  creditos: Credito[],
+  clientes: Cliente[],
+): Credito[] {
+  const nombreNormalizado = normalizarNombreCliente(cliente.nombre);
+  const clientesMismoNombre = clientes.filter(
+    (item) => normalizarNombreCliente(item.nombre) === nombreNormalizado,
+  );
+  const telefonosCliente = [cliente.telefono, cliente.telefono2]
+    .map((telefono) => soloDigitos(telefono))
+    .filter(Boolean);
+
+  return creditos.filter((credito) => {
+    if (credito.clienteId === cliente.id) return true;
+    if (credito.clienteId != null) return false;
+    if (normalizarNombreCliente(credito.nombreCliente) !== nombreNormalizado) {
+      return false;
+    }
+    if (clientesMismoNombre.length === 1) return true;
+    const telefonoCredito = soloDigitos(credito.telefonoCliente);
+    return Boolean(
+      telefonoCredito && telefonosCliente.includes(telefonoCredito),
+    );
+  });
+}
+
+function fechaCuenta(fecha: string | Date): string {
+  const fechaIso = String(fecha).slice(0, 10);
+  return new Date(`${fechaIso}T12:00:00`).toLocaleDateString("es-CO");
+}
+
 /** Renderiza la gestión de clientes, vehículos e importaciones. */
 export default function Clientes() {
   const queryClient = useQueryClient();
   const { data: clientes, isLoading } = useGetClientes({});
+  const {
+    data: creditos,
+    isLoading: isLoadingCreditos,
+    isError: errorAlCargarCreditos,
+    error: errorCreditos,
+    refetch: recargarCreditos,
+  } = useGetCreditos({ tipo: "credito" });
+  const abonarMutation = useAbonarCredito();
 
   // Form state
   const [showForm, setShowForm] = useState(false);
@@ -84,9 +147,15 @@ export default function Clientes() {
     clientes: string[];
   } | null>(null);
   const [busqueda, setBusqueda] = useState("");
-  const [ordenNombre, setOrdenNombre] = useState<"az" | "za">("az");
+  const [ordenNombre, setOrdenNombre] = useState<
+    "az" | "za" | "saldo_desc" | "saldo_asc"
+  >("az");
   const [soloSinTelefono, setSoloSinTelefono] = useState(false);
   const [soloConDosTelefonos, setSoloConDosTelefonos] = useState(false);
+  const [clienteCuenta, setClienteCuenta] = useState<Cliente | null>(null);
+  const [pagoCreditoId, setPagoCreditoId] = useState<number | null>(null);
+  const [pagoValor, setPagoValor] = useState("");
+  const [pagoNota, setPagoNota] = useState("");
 
   // Expanded vehicle detail per client card
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -297,6 +366,26 @@ export default function Clientes() {
     }
   };
 
+  const saldoPendientePorCliente = useMemo(() => {
+    const saldos = new Map<number, number>();
+    for (const cliente of clientes ?? []) {
+      const saldo = obtenerCreditosCliente(
+        cliente,
+        creditos ?? [],
+        clientes ?? [],
+      ).reduce(
+        (total, credito) => total + Math.max(0, credito.valorRestante),
+        0,
+      );
+      saldos.set(cliente.id, saldo);
+    }
+    return saldos;
+  }, [clientes, creditos]);
+
+  const saldoPendienteTotal = Array.from(
+    saldoPendientePorCliente.values(),
+  ).reduce((total, saldo) => total + saldo, 0);
+
   // ── Filtering ────────────────────────────────────────────────────
   const q = busqueda.toLowerCase();
   const filtered = useMemo(() => {
@@ -322,12 +411,177 @@ export default function Clientes() {
     }).filter((c) => !soloConDosTelefonos || Boolean(c.telefono?.trim() && (c as any).telefono2?.trim()));
 
     return resultados.sort((a, b) => {
+      if (ordenNombre === "saldo_desc" || ordenNombre === "saldo_asc") {
+        const comparacion =
+          (saldoPendientePorCliente.get(a.id) ?? 0) -
+          (saldoPendientePorCliente.get(b.id) ?? 0);
+        if (comparacion !== 0) {
+          return ordenNombre === "saldo_desc" ? -comparacion : comparacion;
+        }
+      }
       const comparacion = a.nombre.localeCompare(b.nombre, "es", {
         sensitivity: "base",
       });
-      return ordenNombre === "az" ? comparacion : -comparacion;
+      return ordenNombre === "za" ? -comparacion : comparacion;
     });
-  }, [clientes, q, ordenNombre, soloSinTelefono, soloConDosTelefonos]);
+  }, [
+    clientes,
+    q,
+    ordenNombre,
+    soloSinTelefono,
+    soloConDosTelefonos,
+    saldoPendientePorCliente,
+  ]);
+
+  const creditosCuenta = clienteCuenta
+    ? obtenerCreditosCliente(clienteCuenta, creditos ?? [], clientes ?? [])
+    : [];
+  const creditosPendientesCuenta = creditosCuenta.filter(
+    (credito) => credito.valorRestante > 0.01,
+  );
+  const creditoAbonoSeleccionado =
+    creditosPendientesCuenta.find((credito) => credito.id === pagoCreditoId) ??
+    creditosPendientesCuenta[0];
+  const movimientosCuenta = creditosCuenta
+    .flatMap((credito) => [
+      {
+        id: `credito-${credito.id}`,
+        fecha: String(credito.fechaFactura).slice(0, 10),
+        tipo: "credito" as const,
+        descripcion:
+          credito.concepto || credito.descripcion || `Crédito #${credito.id}`,
+        valor: credito.valorCredito,
+      },
+      ...credito.abonos.map((abono) => ({
+        id: `abono-${abono.id}`,
+        fecha: String(abono.fecha).slice(0, 10),
+        tipo: "abono" as const,
+        descripcion: abono.notas || `Abono al crédito #${credito.id}`,
+        valor: abono.valorTotal,
+      })),
+    ])
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+  const abrirEstadoCuenta = (cliente: Cliente) => {
+    const creditosCliente = obtenerCreditosCliente(
+      cliente,
+      creditos ?? [],
+      clientes ?? [],
+    );
+    const pendienteMayor = creditosCliente
+      .filter((credito) => credito.valorRestante > 0.01)
+      .sort((a, b) => b.valorRestante - a.valorRestante)[0];
+    setClienteCuenta(cliente);
+    setPagoCreditoId(pendienteMayor?.id ?? null);
+    setPagoValor("");
+    setPagoNota("");
+  };
+
+  const registrarAbonoCuenta = () => {
+    const credito = creditoAbonoSeleccionado;
+    const valorIngresado = Number(pagoValor);
+    const valor = Math.round(valorIngresado * 100) / 100;
+    if (!credito || !Number.isFinite(valor) || valor <= 0) {
+      toast({
+        title: "Valor inválido",
+        description: "Ingresa un valor de abono mayor que cero.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (valor > credito.valorRestante + 0.01) {
+      toast({
+        title: "El abono supera el saldo",
+        description: `El saldo de este crédito es ${formatCurrency(credito.valorRestante)}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    let restante = Math.round(valor * 100) / 100;
+    const lineas: Array<{ lineaId: number; valor: number }> = [];
+    for (const linea of credito.lineas) {
+      const saldoLinea = Math.max(0, linea.valorRestante);
+      const valorLinea = Math.round(Math.min(restante, saldoLinea) * 100) / 100;
+      if (valorLinea > 0) {
+        lineas.push({ lineaId: linea.id, valor: valorLinea });
+        restante = Math.round((restante - valorLinea) * 100) / 100;
+      }
+      if (restante <= 0.01) break;
+    }
+    if (lineas.length === 0 || restante > 0.01) {
+      toast({
+        title: "No se pudo distribuir el abono",
+        description: "Verifica que el crédito tenga líneas con saldo pendiente.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const fecha = fechaHoyColombia();
+    const tieneIva = credito.lineas.some(
+      (linea) => linea.productoNombre === "IVA (19%)",
+    );
+    const incluirIvaVentasDiarias =
+      tieneIva && readDailyIvaPreference(localStorage)
+        ? window.confirm(
+            "Este crédito tiene una línea de IVA. ¿Deseas incluirla también en Ventas Diarias?",
+          )
+        : false;
+    const payload = {
+      valor,
+      lineas,
+      fechaAbono: fecha,
+      fechaVentaDiaria: fecha,
+      customRef: pagoNota.trim() || undefined,
+      formaPago: "efectivo",
+      registrarIvaVentasDiarias: incluirIvaVentasDiarias,
+    };
+    const completarAbono = (mensaje: string) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/creditos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ventas"] });
+      setPagoValor("");
+      setPagoNota("");
+      toast({ title: mensaje });
+    };
+
+    abonarMutation.mutate(
+      { id: credito.id, data: payload },
+      {
+        onSuccess: () => completarAbono("Abono registrado"),
+        onError: async (error: unknown) => {
+          if (!esFalloDeRed(error)) {
+            toast({
+              title: "No se pudo registrar el abono",
+              description:
+                error instanceof Error ? error.message : String(error),
+              variant: "destructive",
+            });
+            return;
+          }
+          try {
+            await encolarOperacion({
+              operationId: obtenerIdOperacionOffline(error),
+              tipo: "credito",
+              metodo: "POST",
+              endpoint: `/creditos/${credito.id}/abono`,
+              payload,
+            });
+            completarAbono("Abono guardado sin conexión");
+          } catch (errorOffline) {
+            toast({
+              title: "No se pudo guardar el abono",
+              description:
+                errorOffline instanceof Error
+                  ? errorOffline.message
+                  : String(errorOffline),
+              variant: "destructive",
+            });
+          }
+        },
+      },
+    );
+  };
 
   const isSaving = crearMutation.isPending || actualizarMutation.isPending;
 
@@ -438,7 +692,13 @@ export default function Clientes() {
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">
               {clientes
-                ? `${clientes.length} cliente${clientes.length === 1 ? "" : "s"} registrado${clientes.length === 1 ? "" : "s"}`
+                ? `${clientes.length} cliente${clientes.length === 1 ? "" : "s"} registrado${clientes.length === 1 ? "" : "s"} · Saldo pendiente: ${
+                    isLoadingCreditos
+                      ? "cargando..."
+                      : errorAlCargarCreditos
+                        ? "no disponible"
+                        : formatCurrency(saldoPendienteTotal)
+                  }`
                 : "Cargando..."}
             </p>
           </div>
@@ -480,6 +740,27 @@ export default function Clientes() {
             </button>
           </div>
         </div>
+
+        {errorAlCargarCreditos && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm"
+          >
+            <p className="text-destructive">
+              No se pudo cargar el estado de cuenta:{" "}
+              {errorCreditos instanceof Error
+                ? errorCreditos.message
+                : String(errorCreditos)}
+            </p>
+            <button
+              type="button"
+              onClick={() => void recargarCreditos()}
+              className="rounded-lg border border-destructive/30 px-3 py-1.5 font-medium text-destructive hover:bg-destructive/10"
+            >
+              Reintentar
+            </button>
+          </div>
+        )}
 
         {/* Search and filters */}
         <div className="flex flex-col lg:flex-row gap-3 lg:items-start">
@@ -616,11 +897,21 @@ export default function Clientes() {
               <span>Ordenar:</span>
               <select
                 value={ordenNombre}
-                onChange={(e) => setOrdenNombre(e.target.value as "az" | "za")}
+                onChange={(e) =>
+                  setOrdenNombre(
+                    e.target.value as
+                      | "az"
+                      | "za"
+                      | "saldo_desc"
+                      | "saldo_asc",
+                  )
+                }
                 className="bg-card border border-border rounded-xl px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="az">Nombre A-Z</option>
                 <option value="za">Nombre Z-A</option>
+                <option value="saldo_desc">Mayor saldo pendiente</option>
+                <option value="saldo_asc">Menor saldo pendiente</option>
               </select>
             </label>
 
@@ -1113,8 +1404,284 @@ export default function Clientes() {
                     </div>
                   )}
                 </div>
+
+                <div className="border-t border-border pt-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-muted-foreground">
+                      Saldo pendiente
+                    </p>
+                    <p className="font-semibold text-sm text-amber-500">
+                      {isLoadingCreditos
+                        ? "Cargando..."
+                        : errorAlCargarCreditos
+                          ? "No disponible"
+                          : formatCurrency(
+                              saldoPendientePorCliente.get(c.id) ?? 0,
+                            )}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => abrirEstadoCuenta(c)}
+                    disabled={isLoadingCreditos || errorAlCargarCreditos}
+                    className="inline-flex items-center gap-2 rounded-xl border border-primary/30 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+                  >
+                    <CreditCard className="h-4 w-4" />
+                    Estado de cuenta
+                  </button>
+                </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {clienteCuenta && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-6"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setClienteCuenta(null);
+              }
+            }}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="estado-cuenta-titulo"
+              className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl"
+            >
+              <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-border bg-card px-5 py-4 sm:px-6">
+                <div className="min-w-0">
+                  <h2
+                    id="estado-cuenta-titulo"
+                    className="truncate text-lg font-bold text-foreground"
+                  >
+                    {clienteCuenta.nombre}
+                  </h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {formatTelefono(clienteCuenta.telefono) || "Sin teléfono"}
+                    {clienteCuenta.correo ? ` · ${clienteCuenta.correo}` : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setClienteCuenta(null)}
+                  aria-label="Cerrar estado de cuenta"
+                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </header>
+
+              <div className="space-y-5 p-5 sm:p-6">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-border bg-muted/40 p-4">
+                    <p className="text-xs text-muted-foreground">Saldo pendiente</p>
+                    <p className="mt-1 text-lg font-bold text-amber-500">
+                      {formatCurrency(
+                        creditosCuenta.reduce(
+                          (total, credito) =>
+                            total + Math.max(0, credito.valorRestante),
+                          0,
+                        ),
+                      )}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-muted/40 p-4">
+                    <p className="text-xs text-muted-foreground">Total acreditado</p>
+                    <p className="mt-1 text-lg font-bold text-foreground">
+                      {formatCurrency(
+                        creditosCuenta.reduce(
+                          (total, credito) => total + credito.valorCredito,
+                          0,
+                        ),
+                      )}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-muted/40 p-4">
+                    <p className="text-xs text-muted-foreground">Total abonado</p>
+                    <p className="mt-1 text-lg font-bold text-emerald-500">
+                      {formatCurrency(
+                        creditosCuenta.reduce(
+                          (total, credito) => total + credito.valorAbonado,
+                          0,
+                        ),
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {creditosPendientesCuenta.length > 0 ? (
+                  <form
+                    className="space-y-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      registrarAbonoCuenta();
+                    }}
+                  >
+                    <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                      <ArrowDownLeft className="h-4 w-4" />
+                      Registrar abono
+                    </div>
+                    <label className="block space-y-1 text-xs text-muted-foreground">
+                      <span>Crédito pendiente</span>
+                      <select
+                        value={creditoAbonoSeleccionado?.id ?? ""}
+                        onChange={(event) =>
+                          setPagoCreditoId(Number(event.target.value))
+                        }
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                      >
+                        {creditosPendientesCuenta.map((credito) => (
+                          <option key={credito.id} value={credito.id}>
+                            {credito.concepto || `Crédito #${credito.id}`} · saldo{" "}
+                            {formatCurrency(credito.valorRestante)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                      <label className="space-y-1 text-xs text-muted-foreground">
+                        <span>Valor del abono (COP)</span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          max={creditoAbonoSeleccionado?.valorRestante}
+                          value={pagoValor}
+                          onChange={(event) => setPagoValor(event.target.value)}
+                          placeholder="Ej. 120000"
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                        />
+                      </label>
+                      <label className="space-y-1 text-xs text-muted-foreground">
+                        <span>Nota o referencia (opcional)</span>
+                        <input
+                          type="text"
+                          value={pagoNota}
+                          onChange={(event) => setPagoNota(event.target.value)}
+                          placeholder="Referencia del pago"
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        disabled={abonarMutation.isPending || !creditoAbonoSeleccionado}
+                        className="self-end rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        {abonarMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          "Abonar"
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+                    {creditosCuenta.length > 0
+                      ? "Este cliente no tiene créditos pendientes."
+                      : "Este cliente aún no tiene créditos registrados."}
+                  </div>
+                )}
+
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="font-semibold text-foreground">
+                      Créditos pendientes
+                    </h3>
+                    <span className="text-xs text-muted-foreground">
+                      {creditosPendientesCuenta.length} crédito
+                      {creditosPendientesCuenta.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  {creditosPendientesCuenta.length > 0 ? (
+                    <div className="space-y-2">
+                      {creditosPendientesCuenta.map((credito) => (
+                        <div
+                          key={credito.id}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-3"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {credito.concepto || `Crédito #${credito.id}`}
+                            </p>
+                            <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                              <CalendarDays className="h-3 w-3" />
+                              {fechaCuenta(credito.fechaFactura)}
+                              {credito.placaVehiculo
+                                ? ` · ${credito.placaVehiculo}`
+                                : ""}
+                            </p>
+                          </div>
+                          <p className="font-semibold text-amber-500">
+                            {formatCurrency(credito.valorRestante)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="rounded-xl border border-border p-4 text-sm text-muted-foreground">
+                      No hay créditos pendientes.
+                    </p>
+                  )}
+                </section>
+
+                <section className="space-y-3">
+                  <h3 className="font-semibold text-foreground">
+                    Historial de la cuenta
+                  </h3>
+                  {movimientosCuenta.length > 0 ? (
+                    <div className="overflow-hidden rounded-xl border border-border">
+                      {movimientosCuenta.map((movimiento) => (
+                        <div
+                          key={movimiento.id}
+                          className="flex items-center gap-3 border-b border-border p-3 last:border-b-0"
+                        >
+                          <span
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                              movimiento.tipo === "credito"
+                                ? "bg-amber-500/15 text-amber-600"
+                                : "bg-emerald-500/15 text-emerald-600"
+                            }`}
+                          >
+                            {movimiento.tipo === "credito" ? (
+                              <ArrowUpRight className="h-4 w-4" />
+                            ) : (
+                              <ArrowDownLeft className="h-4 w-4" />
+                            )}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {movimiento.tipo === "credito"
+                                ? `Crédito · ${movimiento.descripcion}`
+                                : `Abono · ${movimiento.descripcion}`}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {fechaCuenta(movimiento.fecha)}
+                            </p>
+                          </div>
+                          <p
+                            className={`whitespace-nowrap text-sm font-semibold ${
+                              movimiento.tipo === "credito"
+                                ? "text-amber-600"
+                                : "text-emerald-600"
+                            }`}
+                          >
+                            {movimiento.tipo === "credito" ? "+" : "−"}
+                            {formatCurrency(movimiento.valor)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="rounded-xl border border-border p-4 text-sm text-muted-foreground">
+                      No hay movimientos para mostrar.
+                    </p>
+                  )}
+                </section>
+              </div>
+            </section>
           </div>
         )}
       </div>

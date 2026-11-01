@@ -4,6 +4,7 @@ import {
   abonosCreditosTable,
   creditoLineasTable,
   creditosTable,
+  clientesTable,
   distribucionesTable,
   manoObraTable,
   productosTable,
@@ -38,6 +39,34 @@ type CreditoManoObraInput = {
 };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function resolverClienteId(
+  tx: Tx,
+  nombreCliente: string,
+  telefonoCliente?: string | null,
+): Promise<number | null> {
+  const nombreNormalizado = nombreCliente.trim().toLocaleLowerCase("es");
+  const candidatos = await tx
+    .select({
+      id: clientesTable.id,
+      telefono: clientesTable.telefono,
+      telefono2: clientesTable.telefono2,
+    })
+    .from(clientesTable)
+    .where(sql`lower(trim(${clientesTable.nombre})) = ${nombreNormalizado}`);
+
+  const telefonoNormalizado = (telefonoCliente ?? "").replace(/\D/g, "");
+  if (telefonoNormalizado) {
+    const coincidenciasTelefono = candidatos.filter((cliente) =>
+      [cliente.telefono, cliente.telefono2].some(
+        (telefono) => (telefono ?? "").replace(/\D/g, "") === telefonoNormalizado,
+      ),
+    );
+    if (coincidenciasTelefono.length === 1) return coincidenciasTelefono[0].id;
+  }
+
+  return candidatos.length === 1 ? candidatos[0].id : null;
+}
 
 /**
  * Ajusta el stock de un producto dentro de una transacción.
@@ -262,6 +291,7 @@ async function mapCredito(c: typeof creditosTable.$inferSelect) {
     : [];
   return {
     id: c.id,
+    clienteId: c.clienteId ?? null,
     tipo: c.tipo ?? "credito",
     concepto: c.concepto ?? null,
     fechaFactura: c.fechaFactura,
@@ -284,22 +314,23 @@ async function mapCredito(c: typeof creditosTable.$inferSelect) {
           })),
         }
       : null,
-    abonos: abonos.map((a) => ({
-      id: a.id,
-      creditoId: a.creditoId,
-      fecha: a.fecha,
-      valorTotal: toNum(a.valorTotal),
-      notas: a.notas ?? null,
-      creadoEn: a.creadoEn,
-      lineas: (() => {
-        try {
-          const detalle = JSON.parse(a.lineaDetalle || "null");
-          return Array.isArray(detalle) ? detalle : (detalle?.lineas ?? []);
-        } catch {
-          return [];
-        }
-      })(),
-    })),
+    abonos: abonos.map((a) => {
+      let detalle: { ref?: string; lineas?: unknown } | null = null;
+      try {
+        detalle = JSON.parse(a.lineaDetalle || "null");
+      } catch {
+        detalle = null;
+      }
+      return {
+        id: a.id,
+        creditoId: a.creditoId,
+        fecha: a.fecha,
+        valorTotal: toNum(a.valorTotal),
+        notas: a.notas ?? detalle?.ref ?? null,
+        creadoEn: a.creadoEn,
+        lineas: Array.isArray(detalle) ? detalle : (detalle?.lineas ?? []),
+      };
+    }),
     creadoEn: c.creadoEn,
     actualizadoEn: c.actualizadoEn,
   };
@@ -483,9 +514,11 @@ router.post("/", async (req, res) => {
     credito = await db.transaction(async (tx) => {
     let lineasDelCredito: Array<{ id: number }> = [];
       const ventasGeneradas: Array<{ id: number }> = [];
+      const clienteId = await resolverClienteId(tx, nombreCliente, telefonoCliente);
       const [created] = await tx
       .insert(creditosTable)
       .values({
+        clienteId,
         tipo: tipo ?? "credito",
         concepto: concepto || null,
         fechaFactura,
@@ -692,9 +725,14 @@ router.put("/:id", async (req, res) => {
     let referenciasLineasNuevas: Array<{ campo: string; entidad: string; valorLocal: string }> = [];
     let ventasGeneradas: Array<{ id: number }> = [];
     let manoObraId: number | null = null;
+    const clienteId = existing.clienteId ?? await resolverClienteId(
+      tx,
+      nombreCliente ?? existing.nombreCliente,
+      telefonoCliente !== undefined ? telefonoCliente : existing.telefonoCliente,
+    );
     const [updated] = await tx
       .update(creditosTable)
-      .set(updateData)
+      .set({ ...updateData, clienteId })
       .where(eq(creditosTable.id, id))
       .returning();
 

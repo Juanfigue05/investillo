@@ -10,4 +10,9 @@ import type { CreditoAbonoLineaInput } from "./creditoAbonoLineaInput";
 export interface CreditoAbonoInput {
   valor: number;
   lineas: CreditoAbonoLineaInput[];
+  fechaAbono?: Date;
+  fechaVentaDiaria?: Date;
+  customRef?: string;
+  formaPago?: string;
+  registrarIvaVentasDiarias?: boolean;
 }

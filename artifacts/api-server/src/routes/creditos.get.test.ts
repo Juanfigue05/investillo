@@ -4,10 +4,14 @@ import request from "supertest";
 import app from "../app";
 
 const creditosCreados: number[] = [];
+const clientesCreados: number[] = [];
 
 afterEach(async () => {
   for (const id of creditosCreados.splice(0)) {
     await request(app).delete(`/api/creditos/${id}`);
+  }
+  for (const id of clientesCreados.splice(0)) {
+    await request(app).delete(`/api/clientes/${id}`);
   }
 });
 
@@ -35,6 +39,40 @@ describe("GET /api/creditos/:id", () => {
             precioCompra: 0,
           },
         ],
+      });
+
+      it("vincula el crédito con un cliente registrado de nombre y teléfono coincidentes", async () => {
+        const nombre = `Cliente con cuenta ${Date.now()}`;
+        const telefono = `310${Date.now().toString().slice(-7)}`;
+        const cliente = await request(app)
+          .post("/api/clientes")
+          .send({ nombre, telefono });
+
+        expect(cliente.status).toBe(201);
+        clientesCreados.push(cliente.body.id as number);
+
+        const creado = await request(app)
+          .post("/api/creditos")
+          .send({
+            tipo: "credito",
+            concepto: `TEST-CLIENTE-CREDITO-${Date.now()}`,
+            fechaFactura: new Date().toISOString().slice(0, 10),
+            nombreCliente: nombre,
+            telefonoCliente: telefono,
+            valorCredito: 100,
+            lineas: [
+              {
+                productoNombre: "Línea vinculada",
+                cantidad: 1,
+                precioVenta: 100,
+                precioCompra: 0,
+              },
+            ],
+          });
+
+        expect(creado.status).toBe(201);
+        creditosCreados.push(creado.body.id as number);
+        expect(creado.body.clienteId).toBe(cliente.body.id);
       });
 
     expect(creado.status).toBe(201);

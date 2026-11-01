@@ -150,6 +150,7 @@ export interface AbonoCredito {
 
 export interface Credito {
   id: number;
+  clienteId?: number | null;
   /** 'credito' | 'nosdebe' */
   tipo: string;
   /** No. Remision / referencia del credito */
@@ -238,6 +239,7 @@ export interface CreditoAbonoInput {
   fechaVentaDiaria?: string;
   customRef?: string;
   formaPago?: string;
+  registrarIvaVentasDiarias?: boolean;
 }
 
 export interface HistorialPrecio {

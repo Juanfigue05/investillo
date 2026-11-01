@@ -2,10 +2,11 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
   clientesTable,
+  creditosTable,
   eventosSincronizacionTable,
   vehiculosClienteTable,
 } from "@workspace/db/schema";
-import { eq, desc, ilike, or, and, isNotNull } from "drizzle-orm";
+import { eq, desc, ilike, or, and, isNotNull, isNull, sql } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
 
 const router: IRouter = Router();
@@ -200,6 +201,21 @@ router.put("/:id", async (req, res) => {
   if (notas !== undefined) update.notas = notas || null;
 
   const updated = await db.transaction(async (tx) => {
+    const nombreAnterior = existing.nombre.trim().toLocaleLowerCase("es");
+    const clientesConNombreAnterior = await tx
+      .select({ id: clientesTable.id })
+      .from(clientesTable)
+      .where(sql`lower(trim(${clientesTable.nombre})) = ${nombreAnterior}`);
+    if (clientesConNombreAnterior.length === 1 && clientesConNombreAnterior[0].id === id) {
+      await tx
+        .update(creditosTable)
+        .set({ clienteId: id })
+        .where(and(
+          eq(creditosTable.tipo, "credito"),
+          isNull(creditosTable.clienteId),
+          sql`lower(trim(${creditosTable.nombreCliente})) = ${nombreAnterior}`,
+        ));
+    }
     const [row] = await tx.update(clientesTable).set(update).where(eq(clientesTable.id, id)).returning();
     if (!req.header("x-sync-apply")) {
       await tx.insert(eventosSincronizacionTable).values({

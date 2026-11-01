@@ -386,6 +386,7 @@ export const GetCreditosQueryParams = zod.object({
 
 export const GetCreditosResponseItem = zod.object({
   id: zod.number(),
+  clienteId: zod.number().nullish(),
   tipo: zod.string().describe("'credito' | 'nosdebe'"),
   concepto: zod
     .string()
@@ -442,6 +443,10 @@ export const CrearCreditoBody = zod.object({
   descripcion: zod.string().nullish(),
   valorCredito: zod.number(),
   valorAbonado: zod.number(),
+  abonoInicialFecha: zod.coerce.date().optional(),
+  abonoInicialVentaFecha: zod.coerce.date().optional(),
+  abonoInicialRef: zod.string().optional(),
+  abonoInicialFormaPago: zod.string().optional(),
   lineas: zod.array(
     zod.object({
       id: zod.number().nullish(),
@@ -488,10 +493,16 @@ export const AbonarCreditoBody = zod.object({
       valor: zod.number(),
     }),
   ),
+  fechaAbono: zod.coerce.date().optional(),
+  fechaVentaDiaria: zod.coerce.date().optional(),
+  customRef: zod.string().optional(),
+  formaPago: zod.string().optional(),
+  registrarIvaVentasDiarias: zod.boolean().optional(),
 });
 
 export const AbonarCreditoResponse = zod.object({
   id: zod.number(),
+  clienteId: zod.number().nullish(),
   tipo: zod.string().describe("'credito' | 'nosdebe'"),
   concepto: zod
     .string()
@@ -544,6 +555,7 @@ export const EliminarAbonoCreditoParams = zod.object({
 
 export const EliminarAbonoCreditoResponse = zod.object({
   id: zod.number(),
+  clienteId: zod.number().nullish(),
   tipo: zod.string().describe("'credito' | 'nosdebe'"),
   concepto: zod
     .string()
@@ -602,10 +614,16 @@ export const EditarAbonoCreditoBody = zod.object({
       valor: zod.number(),
     }),
   ),
+  fechaAbono: zod.coerce.date().optional(),
+  fechaVentaDiaria: zod.coerce.date().optional(),
+  customRef: zod.string().optional(),
+  formaPago: zod.string().optional(),
+  registrarIvaVentasDiarias: zod.boolean().optional(),
 });
 
 export const EditarAbonoCreditoResponse = zod.object({
   id: zod.number(),
+  clienteId: zod.number().nullish(),
   tipo: zod.string().describe("'credito' | 'nosdebe'"),
   concepto: zod
     .string()
@@ -700,6 +718,7 @@ export const ActualizarCreditoBody = zod.object({
 
 export const ActualizarCreditoResponse = zod.object({
   id: zod.number(),
+  clienteId: zod.number().nullish(),
   tipo: zod.string().describe("'credito' | 'nosdebe'"),
   concepto: zod
     .string()

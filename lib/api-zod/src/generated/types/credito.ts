@@ -10,6 +10,7 @@ import type { CreditoLinea } from "./creditoLinea";
 
 export interface Credito {
   id: number;
+  clienteId?: number | null;
   /** 'credito' | 'nosdebe' */
   tipo: string;
   /** No. Remision / referencia del credito */

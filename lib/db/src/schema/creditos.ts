@@ -3,9 +3,11 @@ import { createInsertSchema } from "drizzle-zod";
 import { sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { productosTable } from "./inventario";
+import { clientesTable } from "./clientes";
 
 export const creditosTable = pgTable("creditos", {
   id: serial("id").primaryKey(),
+  clienteId: integer("cliente_id"),
   /** 'credito' | 'nosdebe' */
   tipo: text("tipo").notNull().default("credito"),
   /** No. Remisión / referencia — obligatorio para tipo='credito', null para 'nosdebe' */
@@ -20,7 +22,15 @@ export const creditosTable = pgTable("creditos", {
   ordenImpresion: integer("orden_impresion"),
   creadoEn: timestamp("creado_en").defaultNow(),
   actualizadoEn: timestamp("actualizado_en").defaultNow(),
-}, (table) => [index("creditos_tipo_idx").on(table.tipo)]);
+}, (table) => [
+  foreignKey({
+    name: "creditos_cliente_id_fk",
+    columns: [table.clienteId],
+    foreignColumns: [clientesTable.id],
+  }).onDelete("set null"),
+  index("creditos_tipo_idx").on(table.tipo),
+  index("creditos_cliente_id_idx").on(table.clienteId),
+]);
 
 export const creditoLineasTable = pgTable("credito_lineas", {
   id: serial("id").primaryKey(),

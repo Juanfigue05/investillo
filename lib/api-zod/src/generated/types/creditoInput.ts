@@ -18,6 +18,10 @@ export interface CreditoInput {
   descripcion?: string | null;
   valorCredito: number;
   valorAbonado: number;
+  abonoInicialFecha?: Date;
+  abonoInicialVentaFecha?: Date;
+  abonoInicialRef?: string;
+  abonoInicialFormaPago?: string;
   lineas: CreditoLineaInput[];
   manoObra?: CreditoManoObraInput;
 }
