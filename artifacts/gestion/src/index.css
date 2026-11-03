@@ -437,6 +437,22 @@ html.light::-webkit-scrollbar-thumb:hover {
   .nomina-print-page {
     display: block !important;
     width: 100% !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .nomina-print-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  .nomina-report-print--landscape .nomina-tensionadas {
+    width: 100% !important;
+    margin-bottom: 2mm;
+    page-break-after: auto;
+    break-after: auto;
   }
 
   .nomina-trabajador {

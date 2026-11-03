@@ -47,6 +47,8 @@ export default function ReporteNomina() {
   const [borrador, setBorrador] = useState<Record<string, string>>({});
   const [imprimirTensionadas, setImprimirTensionadas] = useState(true);
   const [trabajadoresSeleccionados, setTrabajadoresSeleccionados] = useState<string[]>([]);
+  const [printMenu, setPrintMenu] = useState(false);
+  const [printOrientation, setPrintOrientation] = useState<"portrait" | "landscape">("portrait");
 
   useEffect(() => {
     setCargando(true);
@@ -208,10 +210,33 @@ export default function ReporteNomina() {
   };
 
   const trabajadores = vista?.trabajadores || [];
-  const paginasDeTrabajadores = Array.from(
-    { length: Math.ceil(trabajadores.length / 4) },
-    (_, indice) => trabajadores.slice(indice * 4, indice * 4 + 4),
-  );
+  const incluirTensionadasEnPrimeraPagina = printOrientation === "landscape" && imprimirTensionadas;
+  const paginasDeTrabajadores = incluirTensionadasEnPrimeraPagina
+    ? [
+        trabajadores.slice(0, 2),
+        ...Array.from(
+          { length: Math.ceil(Math.max(0, trabajadores.length - 2) / 4) },
+          (_, indice) => trabajadores.slice(2 + indice * 4, 2 + (indice + 1) * 4),
+        ),
+      ].filter((pagina) => pagina.length > 0)
+    : Array.from(
+        { length: Math.ceil(trabajadores.length / 4) },
+        (_, indice) => trabajadores.slice(indice * 4, indice * 4 + 4),
+      );
+  const handlePrintWithOrientation = (orientation: "portrait" | "landscape") => {
+    const previousStyle = document.getElementById("__nomina_print_page_size");
+    previousStyle?.remove();
+
+    const style = document.createElement("style");
+    style.id = "__nomina_print_page_size";
+    style.textContent = `@page { size: letter ${orientation}; margin: 4mm; }`;
+    document.head.appendChild(style);
+    window.addEventListener("afterprint", () => style.remove(), { once: true });
+
+    setPrintOrientation(orientation);
+    setPrintMenu(false);
+    requestAnimationFrame(() => window.print());
+  };
 
   return (
     <Layout>
@@ -224,9 +249,21 @@ export default function ReporteNomina() {
             <button onClick={() => setMostrarEjemplo((actual) => !actual)} className="px-4 py-2 bg-secondary text-secondary-foreground rounded-xl text-sm font-medium">
               {mostrarEjemplo ? "Datos reales" : "Vista de ejemplo"}
             </button>
-            <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium">
-              <Printer className="w-4 h-4" /> Imprimir
-            </button>
+            <div className="relative">
+              <button onClick={() => setPrintMenu((open) => !open)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium">
+                <Printer className="w-4 h-4" /> Imprimir
+              </button>
+              {printMenu && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-xl shadow-2xl overflow-hidden w-52">
+                  <button onClick={() => handlePrintWithOrientation("portrait")} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted text-sm text-left transition-colors">
+                    <span className="text-base">📄</span> Vertical (retrato)
+                  </button>
+                  <button onClick={() => handlePrintWithOrientation("landscape")} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted text-sm text-left transition-colors">
+                    <span className="text-base">📃</span> Horizontal (paisaje)
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -258,7 +295,7 @@ export default function ReporteNomina() {
         {cargando ? (
           <p className="text-center py-10 text-muted-foreground">Cargando...</p>
         ) : (
-          <div className="flex flex-wrap gap-4 items-start justify-center print:gap-2 nomina-report-print">
+          <div className={`flex flex-wrap gap-4 items-start justify-center print:gap-2 nomina-report-print${printOrientation === "landscape" ? " nomina-report-print--landscape" : ""}`}>
             <div className={`border-2 border-cyan-500 rounded-lg overflow-hidden text-xs nomina-tensionadas ${imprimirTensionadas ? "" : "print-omit"}`} style={{ minWidth: 180 }}>
               <div className="bg-cyan-400 text-black font-bold text-center py-1">
                 TENSIONADAS MES {NOMBRES_MES[parseInt(mes.split("-")[1])].toUpperCase()} {mes.split("-")[0]}
