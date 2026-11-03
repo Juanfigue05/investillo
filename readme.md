@@ -694,20 +694,17 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
 
 7. **Pausa las escrituras y verifica la copia.** Desde que se toma el respaldo hasta que `sync:init` termina correctamente, no crees, edites ni borres datos en Render/Aiven ni en el portátil. Pausa importaciones, tareas programadas y cualquier aplicación que escriba. Compara los conteos de las tablas principales con Aiven y confirma que existen las tablas de sincronización del servidor. `base_sincronizacion` no se espera en Aiven ni en el dump; se crea en el portátil en el paso siguiente. Si falta otra tabla o hay diferencias, detente; no ejecutes `db:push` contra Aiven como parte de este procedimiento.
 
-8. **Crea `base_sincronizacion` solo en la base local.** La tabla guarda el punto de partida que `sync:init` calcula para esta computadora. No se crea al iniciar el API y no forma parte del respaldo de Aiven. Abre PowerShell desde la carpeta del proyecto y conéctate a la base local nueva; `psql` pedirá la contraseña local si hace falta:
+   En los pasos 8–10, ejecuta esta consulta de solo lectura antes y después de cada archivo SQL. Cambia el nombre de la base a `investillo_ensayo` durante el ensayo. El uso de `-c` aquí es solo para esta consulta; los bloques SQL se guardan en archivos y se ejecutan con `-f`:
 
    ```powershell
-   & 'C:\Program Files\PostgreSQL\18\bin\psql.exe' --host localhost --port 5433 --username postgres --dbname investillo_sync_local
+   & 'C:\Program Files\PostgreSQL\18\bin\psql.exe' -X -v ON_ERROR_STOP=1 --host localhost --port 5433 --username postgres --dbname investillo_sync_local -c "SELECT current_database(), inet_server_addr(), inet_server_port(), current_setting('transaction_read_only');"
    ```
 
-   En el ensayo usa `investillo_ensayo` como nombre de base en lugar de `investillo_sync_local`. Dentro de `psql`, primero confirma el destino:
+   Continúa solo si el resultado muestra la base local esperada, `127.0.0.1` o `::1`, el puerto `5433` y `transaction_read_only` en `off`. Detente si algo no coincide.
 
-   ```sql
-   SELECT current_database(), inet_server_addr(), inet_server_port(),
-          current_setting('transaction_read_only');
-   ```
+8. **Crea `base_sincronizacion` solo en la base local.** La tabla guarda el punto de partida que `sync:init` calcula para esta computadora. No se crea al iniciar el API y no forma parte del respaldo de Aiven. Guarda el bloque siguiente en un archivo `.sql` codificado como UTF-8, por ejemplo `C:\ruta\bloque-1-base-sincronizacion.sql`. No abras una consola interactiva de `psql`, no pegues el bloque y no lo ejecutes con `-c`. Ejecuta el archivo desde PowerShell en la base local nueva; `psql` pedirá la contraseña local si hace falta:
 
-   Continúa solo si la base es la local esperada, la dirección es `127.0.0.1` o `::1`, el puerto es `5433` y `transaction_read_only` es `off`. Después pega este bloque completo. La comprobación dentro de la transacción vuelve a validar el destino y aborta si ya existe la tabla, para no ocultar una base o un esquema inesperado:
+   En el ensayo usa `investillo_ensayo` como nombre de base en lugar de `investillo_sync_local`. La comprobación dentro del bloque vuelve a validar el destino y aborta si ya existe la tabla, para no ocultar una base o un esquema inesperado:
 
    ```sql
    BEGIN;
@@ -721,7 +718,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
        RAISE EXCEPTION 'Destino incorrecto: se requiere una base local en localhost:5433 con escritura habilitada';
      END IF;
      IF to_regclass('public.base_sincronizacion') IS NOT NULL THEN
-       RAISE EXCEPTION 'public.base_sincronizacion ya existe; detente e inspecciona su definición';
+       RAISE EXCEPTION 'public.base_sincronizacion ya existe; detente e inspecciona su definicion';
      END IF;
    END $$;
 
@@ -734,9 +731,15 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
    COMMIT;
    ```
 
+   Ejecuta el archivo; cambia `investillo_sync_local` por `investillo_ensayo` durante el ensayo:
+
+   ```powershell
+   & 'C:\Program Files\PostgreSQL\18\bin\psql.exe' -X -v ON_ERROR_STOP=1 -a -e --host localhost --port 5433 --username postgres --dbname investillo_sync_local -f 'C:\ruta\bloque-1-base-sincronizacion.sql'
+   ```
+
    Este paso nunca se ejecuta contra Aiven. Si la comprobación falla o `CREATE TABLE` devuelve un error, no pruebes otro destino ni uses `db:push`; detente y revisa la conexión. Comprueba que se creó con `SELECT to_regclass('public.base_sincronizacion');`.
 
-9. **Archiva y aparta los pendientes históricos solo en el portátil.** Antes de ejecutar cualquier SQL, vuelve a comprobar la conexión con `current_database()`, `inet_server_addr()` y `inet_server_port()`. El destino tiene que ser `investillo_sync_local` en `localhost:5433` (o `investillo_ensayo` para el ensayo). Ejecuta este bloque únicamente conectado a la base local restaurada. La prueba termina en `ROLLBACK`, por lo que no conserva cambios:
+9. **Archiva y aparta los pendientes históricos solo en el portátil.** Antes de ejecutar cualquier SQL, vuelve a comprobar la conexión con `current_database()`, `inet_server_addr()` y `inet_server_port()`. El destino tiene que ser `investillo_sync_local` en `localhost:5433` (o `investillo_ensayo` para el ensayo). Guarda el bloque siguiente en un archivo `.sql` codificado como UTF-8, por ejemplo `C:\ruta\bloque-2-archivar-eventos.sql`. Nunca lo ejecutes con `-c` ni pegues el bloque en una consola interactiva. La primera prueba termina en `ROLLBACK`, por lo que no conserva cambios. Antes de guardar una versión aprobada con `COMMIT`, revisa toda la salida de la prueba:
 
    ```sql
    BEGIN;
@@ -751,6 +754,22 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
      END IF;
      IF to_regclass('public.eventos_sincronizacion_archivo_pre_sync') IS NOT NULL THEN
        RAISE EXCEPTION 'El archivo pre_sync ya existe; detente e inspecciona el ensayo antes de continuar';
+     END IF;
+   END $$;
+
+   SELECT origen, estado, count(*) AS cantidad
+   FROM public.eventos_sincronizacion
+   GROUP BY origen, estado
+   ORDER BY origen, estado;
+
+   DO $$
+   DECLARE problemas bigint;
+   BEGIN
+     SELECT count(*) INTO problemas
+     FROM public.eventos_sincronizacion
+     WHERE estado IN ('error', 'conflicto');
+     IF problemas > 0 THEN
+       RAISE EXCEPTION 'Hay % eventos en error o conflicto; revisalos manualmente', problemas;
      END IF;
    END $$;
 
@@ -831,13 +850,32 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
    ROLLBACK;
    ```
 
-   Revisa que `archivados` y `marcados_sincronizados` coincidan y que `eventos_locales_sin_resolver` sea cero. Si aparece un error, un conflicto o un conteo inesperado, detente; no repitas con `COMMIT`.
+   Ejecuta el archivo con la base local como destino. En el ensayo usa `investillo_ensayo`; en la preparación real, usa `investillo_sync_local`:
 
-10. **Reinicia metadata únicamente en la base local.** Después de archivar y marcar los eventos objetivo, vacía el cursor y las equivalencias heredadas del dump local. `cursos_sincronizacion` contiene el cursor anterior; `base_sincronizacion` contiene el punto de partida antiguo; `referencias_sincronizacion` conserva mapeos de IDs que no se deben reutilizar al empezar desde una copia nueva. No borres `eventos_sincronizacion`, la tabla de archivo, `operaciones_sincronizadas` ni ninguna tabla de negocio.
+   ```powershell
+   & 'C:\Program Files\PostgreSQL\18\bin\psql.exe' -X -v ON_ERROR_STOP=1 -a -e --host localhost --port 5433 --username postgres --dbname investillo_ensayo -f 'C:\ruta\bloque-2-archivar-eventos.sql'
+   ```
+
+   Revisa los conteos por origen y estado y que `archivados` y `marcados_sincronizados` coincidan y que `eventos_locales_sin_resolver` sea cero. Si aparece un error, un conflicto o un conteo inesperado, detente; no repitas con `COMMIT` sin autorización. Para la ejecución aprobada, cambia únicamente la última línea del archivo de `ROLLBACK;` a `COMMIT;` y vuelve a comprobar el destino antes de ejecutarlo. Este bloque nunca se ejecuta contra Aiven.
+
+10. **Reinicia metadata únicamente en la base local.** Después de archivar y marcar los eventos objetivo, vacía el cursor y las equivalencias heredadas del dump local. `cursos_sincronizacion` contiene el cursor anterior; `base_sincronizacion` contiene el punto de partida antiguo; `referencias_sincronizacion` conserva mapeos de IDs que no se deben reutilizar al empezar desde una copia nueva. El bloque aborta antes de borrar metadata si no existe el archivo de eventos, está vacío, no coincide con los eventos marcados o quedan eventos locales pendientes, en error o en conflicto. También comprueba que los conteos de `eventos_sincronizacion` y `operaciones_sincronizadas` no cambien. No borres ninguna tabla de negocio.
+
+   Guarda el bloque en un archivo `.sql` codificado como UTF-8, por ejemplo `C:\ruta\bloque-3-reiniciar-metadata.sql`. Nunca lo ejecutes con `-c` ni pegues el bloque en una consola interactiva. Este bloque nunca se ejecuta contra Aiven.
 
    ```sql
    BEGIN;
    DO $$
+   DECLARE
+     archivados bigint;
+     marcados bigint;
+     sin_resolver bigint;
+     eventos_antes bigint;
+     eventos_despues bigint;
+     operaciones_antes bigint;
+     operaciones_despues bigint;
+     cursos_restantes bigint;
+     referencias_restantes bigint;
+     huellas_restantes bigint;
    BEGIN
      IF current_database() NOT IN ('investillo_sync_local', 'investillo_ensayo')
         OR inet_server_addr() IS NULL
@@ -846,21 +884,75 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
         OR current_setting('transaction_read_only') <> 'off' THEN
        RAISE EXCEPTION 'Destino incorrecto: se requiere una base local en localhost:5433 con escritura habilitada';
      END IF;
+
+     IF to_regclass('public.eventos_sincronizacion_archivo_pre_sync') IS NULL THEN
+       RAISE EXCEPTION 'No existe el archivo pre_sync; detente y revisa el paso anterior';
+     END IF;
+
+     SELECT count(*) INTO archivados
+     FROM public.eventos_sincronizacion_archivo_pre_sync;
+     IF archivados = 0 THEN
+       RAISE EXCEPTION 'El archivo pre_sync esta vacio; detente y revisa el paso anterior';
+     END IF;
+
+     SELECT count(*) INTO sin_resolver
+     FROM public.eventos_sincronizacion
+     WHERE origen = 'local' AND estado IN ('pendiente', 'error', 'conflicto');
+
+     SELECT count(*) INTO marcados
+     FROM public.eventos_sincronizacion AS evento
+     JOIN public.eventos_sincronizacion_archivo_pre_sync AS archivo
+       ON archivo.operation_id = evento.operation_id
+     WHERE evento.origen = 'local' AND evento.estado = 'sincronizado'
+       AND archivo.estado = 'pendiente';
+
+     IF sin_resolver <> 0 OR archivados <> marcados THEN
+       RAISE EXCEPTION 'Verificacion del archivo fallo: eventos locales sin resolver %, archivados %, marcados %',
+         sin_resolver, archivados, marcados;
+     END IF;
+
+     SELECT count(*) INTO eventos_antes FROM public.eventos_sincronizacion;
+     SELECT count(*) INTO operaciones_antes FROM public.operaciones_sincronizadas;
+
+     DELETE FROM public.cursos_sincronizacion;
+     DELETE FROM public.referencias_sincronizacion;
+     DELETE FROM public.base_sincronizacion;
+
+     SELECT count(*) INTO cursos_restantes FROM public.cursos_sincronizacion;
+     SELECT count(*) INTO referencias_restantes FROM public.referencias_sincronizacion;
+     SELECT count(*) INTO huellas_restantes FROM public.base_sincronizacion;
+     SELECT count(*) INTO eventos_despues FROM public.eventos_sincronizacion;
+     SELECT count(*) INTO operaciones_despues FROM public.operaciones_sincronizadas;
+
+     IF cursos_restantes <> 0 OR referencias_restantes <> 0 OR huellas_restantes <> 0 THEN
+       RAISE EXCEPTION 'La metadata no quedo vacia: cursos %, referencias %, huellas %',
+         cursos_restantes, referencias_restantes, huellas_restantes;
+     END IF;
+     IF eventos_antes <> eventos_despues OR operaciones_antes <> operaciones_despues THEN
+       RAISE EXCEPTION 'Cambio el conteo de eventos u operaciones durante el reinicio de metadata';
+     END IF;
+     RAISE NOTICE 'Conteos verificados: eventos_sincronizacion antes %, despues %; operaciones_sincronizadas antes %, despues %',
+       eventos_antes, eventos_despues, operaciones_antes, operaciones_despues;
    END $$;
 
-   DELETE FROM public.cursos_sincronizacion;
-   DELETE FROM public.referencias_sincronizacion;
-   DELETE FROM public.base_sincronizacion;
    SELECT
      (SELECT count(*) FROM public.cursos_sincronizacion) AS cursos_restantes,
      (SELECT count(*) FROM public.referencias_sincronizacion) AS referencias_restantes,
-     (SELECT count(*) FROM public.base_sincronizacion) AS huellas_restantes;
+     (SELECT count(*) FROM public.base_sincronizacion) AS huellas_restantes,
+     (SELECT count(*) FROM public.eventos_sincronizacion) AS eventos_sincronizacion,
+     (SELECT count(*) FROM public.operaciones_sincronizadas) AS operaciones_sincronizadas;
    COMMIT;
    ```
 
-   **Este SQL nunca se ejecuta contra Aiven.** Confirma que las tres cantidades finales sean cero antes de continuar.
+   Ejecuta el archivo en la base local adecuada: usa `investillo_sync_local` en la preparación real y `investillo_ensayo` para el ensayo:
 
-11. **Inicializa y revisa el estado.** Mantén pausadas las escrituras. Desde la raíz del repositorio, ejecuta:
+   ```powershell
+   & 'C:\Program Files\PostgreSQL\18\bin\psql.exe' -X -v ON_ERROR_STOP=1 -a -e --host localhost --port 5433 --username postgres --dbname investillo_sync_local -f 'C:\ruta\bloque-3-reiniciar-metadata.sql'
+   ```
+
+   Confirma que las tres cantidades de metadata sean cero. Los conteos de eventos y operaciones deben ser los mismos que antes de ejecutar el bloque.
+
+11. **SOLO EN EL PORTÁTIL: inicializa y revisa el estado.** Mantén pausadas las escrituras. Verifica que `.env.local` apunte a `investillo_sync_local` en `localhost:5433` y que la URL remota sea la de Render. Desde la raíz del repositorio, ejecuta:
 
    ```powershell
    pnpm run sync:init
