@@ -16,9 +16,9 @@ if (!localUrl) {
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const migrationPath = join(
   repoRoot,
-  "docs",
+  "scripts",
   "sql",
-  "orden-12-llaves-foraneas-e-indices.sql",
+  "llaves-foraneas-e-indices.sql",
 );
 const foreignKeys = [
   ["abonos_creditos_credito_id_fk", "abonos_creditos"],
@@ -158,11 +158,11 @@ async function dataSnapshot(client: Client) {
 }
 
 async function seedOrphans(client: Client): Promise<void> {
-  const codigo = `ORDEN12-${randomUUID()}`;
+  const codigo = `INTEGRIDAD-${randomUUID()}`;
   const product = await client.query<{ id: number }>(
     `INSERT INTO productos (
        nombre, codigo, precio_compra, precio_venta_sin_iva, precio_venta_con_iva
-     ) VALUES ('Producto test Orden 12', $1, 100, 200, 238)
+     ) VALUES ('Producto test integridad', $1, 100, 200, 238)
      RETURNING id`,
     [codigo],
   );
@@ -175,22 +175,22 @@ async function seedOrphans(client: Client): Promise<void> {
     await client.query(
       `INSERT INTO historial_precios (
          producto_id, producto_nombre, precio_compra, precio_venta, fecha, compra_id
-       ) VALUES ($1, 'Historial test Orden 12', 100, 200, '2026-10-30', $2)`,
+       ) VALUES ($1, 'Historial test integridad', 100, 200, '2026-10-30', $2)`,
       [orphanProduct, orphanPurchase],
     );
   }
   await client.query(
     `INSERT INTO mano_obra (fecha, descripcion, valor_total, venta_id)
-     VALUES ('2026-10-30', 'Mano de obra test Orden 12', 100, 2000000004)`,
+     VALUES ('2026-10-30', 'Mano de obra test integridad', 100, 2000000004)`,
   );
 }
 
-test("el SQL de Orden 12 equivale al esquema Drizzle y se puede repetir sin cambios", async () => {
+test("la migración de integridad coincide con Drizzle y se puede repetir sin cambios", async () => {
   const adminUrl = assertLoopbackUrl(localUrl!);
   const admin = await connect(adminUrl.toString());
   const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
-  const directDatabase = `o12_direct_${suffix}`;
-  const migrationDatabase = `o12_sql_${suffix}`;
+  const directDatabase = `schema_direct_${suffix}`;
+  const migrationDatabase = `schema_migration_${suffix}`;
   const created: string[] = [];
   const connections: Client[] = [];
 
@@ -244,7 +244,7 @@ test("el SQL de Orden 12 equivale al esquema Drizzle y se puede repetir sin camb
     assert.deepEqual(await dataSnapshot(migrated), beforeRetry);
     assert.deepEqual(await metadata(migrated), metadataDirect);
     console.log(
-      `Orden 12 local temporal: 3 historiales antes, 2 después; 1 mano_obra sin cambios; respaldo 2/1/1 por origen; SQL ${elapsedMs.toFixed(1)} ms.`,
+      `Migración local: 3 historiales antes, 2 después; 1 mano_obra sin cambios; respaldo 2/1/1 por origen; SQL ${elapsedMs.toFixed(1)} ms.`,
     );
   } finally {
     try {

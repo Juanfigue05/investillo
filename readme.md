@@ -131,7 +131,10 @@ El backend requiere `DATABASE_URL` incluso para importar módulos en pruebas. Si
 - Cada operación tiene un `operationId` único. El API conserva la respuesta de las escrituras exitosas y, si recibe otra vez el mismo identificador, devuelve el resultado anterior en lugar de crear otra venta. Las ventas nuevas se agregan; no reemplazan las ventas anteriores.
 - Las escrituras recibidas por el API remoto también se registran para que la PC pueda descargarlas. Esos registros no se vuelven a tratar como operaciones locales pendientes ni se suben de regreso al servidor.
 - Las operaciones se procesan en orden. Un error de conexión se reintenta automáticamente; un error real del servidor queda marcado como `error` con su motivo para revisarlo antes de volver a intentar.
-- Para probar el flujo manualmente, sigue la lista breve de [pruebas sin internet](./docs/cambios-de-la-rama.md#pruebas-manuales-de-la-cola-offline).
+- Para probar la cola offline del navegador:
+  1. Desconecta internet, registra una venta y confirma que la aplicación avise que quedó guardada en este dispositivo.
+  2. Sin reconectar, registra una compra y un abono; confirma que ambos también queden en cola.
+  3. Reconecta internet, espera la sincronización y verifica que cada registro aparezca una sola vez.
 - Antes de usar una computadora sin internet, la base local debe tener una carga inicial de los datos históricos. No se debe restaurar una copia completa de Aiven encima de una base local que ya tenga operaciones nuevas.
 
 ### Tareas automáticas recomendadas (Programador de Tareas de Windows)
@@ -254,7 +257,7 @@ PORT=8080
 NODE_ENV=development
 ```
 
-Para el trabajo normal de oficina, crea también `.env.local` siguiendo el ejemplo seguro de [`docs/local.env.example`](./docs/local.env.example); `DATABASE_URL` debe apuntar a PostgreSQL local, no a Aiven.
+Para el trabajo normal de oficina, crea `.env.local` en la raíz del repositorio; configura `DATABASE_URL` para PostgreSQL local, `SYNC_REMOTE_API_URL` con la URL HTTPS del API de Render terminada en `/api` y `SYNC_TOKEN` con el mismo secreto configurado en Render. No pongas la conexión de Aiven en ese archivo.
 
 **Archivo `.env.web`:**
 
@@ -432,7 +435,7 @@ No ejecutes comandos destructivos sobre Aiven sin confirmar la base destino, dis
 
 ### 6.6 Llaves foráneas e índices
 
-La migración aprobada de la Orden 12 está en [`docs/sql/orden-12-llaves-foraneas-e-indices.sql`](./docs/sql/orden-12-llaves-foraneas-e-indices.sql). Antes de ejecutarla sobre una base existente, toma y valida un respaldo, detén escrituras y revisa las referencias huérfanas con `pnpm run verificar`. No ejecutes `db:push` en Aiven como sustituto de este SQL.
+La migración de llaves foráneas e índices está en [`scripts/sql/llaves-foraneas-e-indices.sql`](./scripts/sql/llaves-foraneas-e-indices.sql). Antes de ejecutarla sobre una base existente, toma y valida un respaldo, detén escrituras y revisa las referencias huérfanas con `pnpm run verificar`. No ejecutes `db:push` en Aiven como sustituto de este SQL.
 
 El SQL agrega 17 llaves foráneas y 18 índices. Conserva las filas huérfanas previas en `_respaldo_huerfanos`, desvincula las relaciones configuradas como `SET NULL` y elimina solo historiales de precio cuyo producto ya no existe. Ejecuta el archivo completo como una sola transacción y compara los resultados esperados antes de reanudar escrituras.
 
@@ -476,9 +479,10 @@ La instalación local usa PostgreSQL en este computador. Esto evita que las oper
 - Nunca pongas una cadena PostgreSQL ni una contraseña en `SYNC_REMOTE_API_URL`.
 
 1. Confirma que el servicio PostgreSQL local esté iniciado en Windows.
-2. Copia `docs\local.env.example` como `.env.local` y cambia:
-   - `CAMBIE_ESTA_CONTRASENA` por la contraseña del usuario local `postgres`.
-   - `TU-SERVICIO.onrender.com` por el dominio real de Render.
+2. Crea `.env.local` en la raíz del repositorio y configura:
+   - `DATABASE_URL` con la conexión local de PostgreSQL y la contraseña del usuario `postgres`.
+   - `SYNC_REMOTE_API_URL` con el dominio real de Render y `/api` al final.
+   - `SYNC_TOKEN` con el mismo secreto configurado en Render.
    No compartas `.env.local` ni lo subas a Git.
 3. Crea automáticamente la base local desde PowerShell:
   ```powershell
@@ -587,7 +591,7 @@ Render ejecuta el API y Aiven conserva la base PostgreSQL principal. El computad
 
 ### 8.2 Desplegar en Render
 
-Antes de fusionar o desplegar cambios, consulta la guía de [qué configurar y aplicar, y en qué orden](./docs/cambios-de-la-rama.md). Allí se mantiene el procedimiento operativo completo, incluidos los requisitos previos de base de datos y el primer arranque de sincronización.
+Antes de fusionar o desplegar cambios, completa los pasos de configuración de esta sección y el [procedimiento de primer arranque de sincronización](#primer-arranque-aiven-a-pc), incluidos los requisitos previos de la base de datos.
 
 1. Crea cuenta en **[render.com](https://render.com)** (puedes entrar directo con tu cuenta de GitHub).
 2. Clic en **"New +"** → **"Web Service"** → conecta tu repositorio de GitHub.
@@ -656,14 +660,13 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
 
    Si el comando falla o el objeto no coincide con el respaldo esperado, detente. `--list` valida que el archivo se pueda abrir; antes de usarlo, confirma también que es el dump reciente de Aiven y que su tamaño coincide con el objeto de R2.
 
-4. **SOLO EN EL PORTÁTIL: configura la sincronización.** Copia el ejemplo a `.env.local` en la raíz del repositorio y edítalo localmente:
+4. **SOLO EN EL PORTÁTIL: configura la sincronización.** Crea `.env.local` en la raíz del repositorio y edítalo localmente:
 
    ```powershell
-   Copy-Item docs\local.env.example .env.local
    code .env.local
    ```
 
-   En `.env.local`, configura `DATABASE_URL` para `investillo_sync_local` en `localhost:5433`; configura `SYNC_REMOTE_API_URL` con la URL HTTPS real del API de Render terminada en `/api`; y copia en `SYNC_TOKEN` el mismo token ya configurado en Render. No generes otro token ni lo escribas en `docs/local.env.example`, en ningún archivo versionado o en el chat. Este secreto solo debe estar en la configuración privada de Render y en el `.env.local` ignorado del portátil. No pongas la conexión de Aiven ni claves o variables de R2 en el portátil.
+   En `.env.local`, configura `DATABASE_URL` para `investillo_sync_local` en `localhost:5433`; configura `SYNC_REMOTE_API_URL` con la URL HTTPS real del API de Render terminada en `/api`; y copia en `SYNC_TOKEN` el mismo token ya configurado en Render. No generes otro token ni lo escribas en ningún archivo versionado o en el chat. Este secreto solo debe estar en la configuración privada de Render y en el `.env.local` ignorado del portátil. No pongas la conexión de Aiven ni claves o variables de R2 en el portátil.
 
    Confirma que el archivo queda fuera de Git:
 
@@ -972,7 +975,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
 #### Llaves foráneas e índices
 
 - **Nunca ejecutes `db:push` contra Aiven.** Espera a que la sincronización lleve al menos una semana estable; esta orden no forma parte del primer arranque ni se ejecuta durante la inicialización.
-- Antes de aplicarla, toma un respaldo verificado y detén todas las escrituras. Ejecuta manualmente [el SQL de la Orden 12](./docs/sql/orden-12-llaves-foraneas-e-indices.sql) tanto en Aiven como en la copia local. Si primero vas a copiar una base sobre la otra, aplícalo a la fuente antes de copiarla y verifica luego ambas.
+- Antes de aplicarla, toma un respaldo verificado y detén todas las escrituras. Ejecuta manualmente [la migración de llaves foráneas e índices](./scripts/sql/llaves-foraneas-e-indices.sql) tanto en Aiven como en la copia local. Si primero vas a copiar una base sobre la otra, aplícala a la fuente antes de copiarla y verifica luego ambas.
 - El SQL conserva en `_respaldo_huerfanos` las filas huérfanas de historial de precios y mano de obra. Desvincula los historiales sin compra y la mano de obra sin venta; elimina los historiales cuyo producto ya no existe. Ese borrado cambia el conteo y la huella de `historial_precios`, por eso debe hacerse fuera del primer arranque de sincronización.
 - Si el SQL falla por cualquier llave, toda la transacción se revierte y no cambia nada. Copia el mensaje completo y no lo reintentes sin revisarlo.
 - Para comprobar cada base, confirma 17 llaves foráneas y 18 índices de esta orden, y revisa cuántas filas se respaldaron:
@@ -1137,7 +1140,7 @@ RESTART IDENTITY CASCADE;
 4. Confirma que se ejecutó sin errores (mensaje verde de éxito).
 5. Abre el sistema — todas las listas deberían aparecer vacías, listas para empezar con información real.
 
-Con las llaves foráneas de la Orden 12, `CASCADE` también vaciaría `descuentos_inventario` y `obra_electronica` junto a productos y trabajadores; por eso aparecen explícitamente en la lista.
+Con las llaves foráneas, `CASCADE` también vaciaría `descuentos_inventario` y `obra_electronica` junto a productos y trabajadores; por eso aparecen explícitamente en la lista.
 
 **¿Qué significa cada palabra del comando?**
 
@@ -1202,7 +1205,7 @@ Para que sepas qué esperar y qué no:
 - No hay pruebas automáticas de interfaz; los flujos visuales y offline deben comprobarse manualmente en un navegador.
 - El candado de reintentos por `X-Operation-Id` está en memoria y presupone una sola instancia del API. La base protege contra mutaciones duplicadas entre instancias, pero una repetición simultánea podría recibir un conflicto en vez de la respuesta anterior.
 - La protección del respaldo contra restaurar sobre el origen compara host, puerto y nombre de base; no detecta que un alias de pooler y una conexión directa puedan llegar a la misma base.
-- La base PostgreSQL local permite operar sin internet. La sincronización cubre las rutas descritas en [`docs/referencias-sincronizacion.md`](./docs/referencias-sincronizacion.md); revisa los logs y el estado de la cola antes de asumir que una operación llegó a Aiven.
+- La base PostgreSQL local permite operar sin internet. Revisa los logs y el estado de la cola antes de asumir que una operación llegó a Aiven.
 - La cola offline del navegador y la cola de sincronización de PostgreSQL son capas distintas. La primera conserva solicitudes que el navegador no pudo enviar; la segunda conserva cambios locales para subirlos cuando vuelva la conexión. No borres los datos del navegador ni las filas pendientes de la base sin revisar antes su estado.
 - El diálogo global informa sobre operaciones encoladas o que no pudieron guardarse. Una operación encolada ya está pendiente de sincronización, no significa que ya haya llegado a Aiven.
 - Render ejecuta el API; Aiven es la base principal. Supabase es solamente una réplica auxiliar de respaldo y puede no tener el último estado si un respaldo falla.
@@ -1268,12 +1271,13 @@ API de Render ── transacción ── Aiven
 - `operationId` identifica una petición lógica. El API conserva las respuestas exitosas para responder igual si llega un reintento; una respuesta de error no se guarda para reproducirla.
 - Los eventos `api_idempotente` conservan la respuesta de una escritura y no se cuentan como cambios locales pendientes. Las capturas de escrituras remotas llevan origen `remoto`, para que la PC pueda descargarlas sin volver a subirlas.
 - `referencias_sincronizacion` relaciona IDs locales y remotos. Para filas anidadas, las referencias de endpoint y respuesta permiten traducir relaciones sin adivinar IDs.
+- Las reglas de método, endpoint y traducción de IDs se mantienen en `scripts/src/lib/referencias-payload.ts` y se comprueban en `scripts/src/lib/referencias-payload.test.ts`; no mantengas un inventario manual duplicado.
 - `sync:init` es una operación inicial única: compara cantidad de filas e ID máximo en 21 tablas, y guarda el punto de partida solo si ambas bases están alineadas. No es un hash del contenido ni debe forzarse para ocultar diferencias.
 - `sync:local` sube eventos locales pendientes o con error. `sync:pull` descarga eventos de Render; `sync:all` ejecuta la subida antes de la descarga. La descarga confirma el cursor para que el servidor pueda retener y, tras el plazo establecido, limpiar eventos ya procesados.
 - `sync:status` muestra el punto de partida, el cursor y los eventos por origen/estado. La confirmación del cursor está diseñada para una sola PC sincronizadora; no inicialices una segunda oficina con el mismo estado sin un diseño y una prueba aparte.
-- Los eventos sincronizados se conservan hasta 60 días y luego el limpiador puede retirarlos. El API no crea automáticamente las tablas de sincronización del servidor al arrancar: deben estar instaladas mediante la migración aprobada. `base_sincronizacion` es metadata del cliente de escritorio y se crea solo en la base local durante la preparación inicial. Para el orden de despliegue y el primer arranque, sigue la [guía operativa](./docs/cambios-de-la-rama.md#qué-aplicar-al-desplegar-y-en-qué-orden); nunca uses `db:push` en Aiven para resolver una tabla faltante.
+- Los eventos sincronizados se conservan hasta 60 días y luego el limpiador puede retirarlos. El API no crea automáticamente las tablas de sincronización del servidor al arrancar: deben estar instaladas mediante la migración aprobada. `base_sincronizacion` es metadata del cliente de escritorio y se crea solo en la base local durante la preparación inicial. Sigue el [procedimiento de primer arranque](#primer-arranque-aiven-a-pc); nunca uses `db:push` en Aiven para resolver una tabla faltante.
 
-El inventario de endpoints, entidades, referencias y respuestas está en [`docs/referencias-sincronizacion.md`](./docs/referencias-sincronizacion.md). No edites directamente una base mientras el outbox tenga eventos sin procesar: podrías crear divergencias difíciles de resolver.
+No edites directamente una base mientras el outbox tenga eventos sin procesar: podrías crear divergencias difíciles de resolver.
 
 <a id="seccion-14"></a>
 ## 14. ✅ Garantías y resolución de conflictos
@@ -1303,7 +1307,7 @@ La comprobación diaria revisa referencias huérfanas, diferencias entre `total_
 
 `.github/workflows/ci.yml` corre en cada push y pull request. Usa PostgreSQL 18 aislado, Node.js 24 y pnpm 11.22.0; valida el esquema de prueba, el typecheck, el build, las pruebas del API y las pruebas de scripts. Un job separado crea bases aisladas de sincronización y ejecuta `test:sync`. Un resultado verde no valida una migración aplicada a producción.
 
-El workflow de verificación diaria se ejecuta desde `main`; no se ejecuta por el solo hecho de trabajar en una rama. La guía de despliegue explica cómo interpretar su alerta mientras se prepara la sincronización inicial.
+El workflow de verificación diaria se ejecuta desde `main`; no se ejecuta por el solo hecho de trabajar en una rama. Si alerta mientras se prepara la sincronización inicial, revisa el log y el estado de la cola con `pnpm run sync:status` antes de reanudar la sincronización.
 
 ### Respaldos automáticos
 
@@ -1321,7 +1325,7 @@ Después de cada ejecución, abre el log y confirma por separado los estados **L
 
 1. Haz y valida un respaldo antes de tocar una base persistente.
 2. Revisa las referencias huérfanas con `pnpm run verificar`.
-3. Usa SQL versionado y revisado. La Orden 12 documenta las 17 llaves foráneas y 18 índices en [`docs/sql/orden-12-llaves-foraneas-e-indices.sql`](./docs/sql/orden-12-llaves-foraneas-e-indices.sql).
+3. Usa SQL versionado y revisado. La migración aplica 17 llaves foráneas y 18 índices mediante [`scripts/sql/llaves-foraneas-e-indices.sql`](./scripts/sql/llaves-foraneas-e-indices.sql).
 4. Ejecuta el SQL completo en una transacción y comprueba los resultados. Ante un error, guarda el texto completo y detente; no reintentes sin revisar.
 5. Valida el esquema y la aplicación en una base aislada antes de planificar el despliegue. No uses `db:push` directamente en Aiven.
 
