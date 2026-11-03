@@ -42,8 +42,8 @@ type BatchResult = {
 
 const databaseClient = new Client({ connectionString: databaseUrl });
 const suffix = randomUUID().replaceAll("-", "");
-const functionName = `orden17_pool_sleep_${suffix}`;
-const triggerName = `orden17_pool_trigger_${suffix}`;
+const functionName = `pool_sleep_${suffix}`;
+const triggerName = `pool_trigger_${suffix}`;
 const operationIds = new Set<string>();
 const values = new Set<string>();
 const pauseSeconds = 2;

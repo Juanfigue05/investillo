@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "hello": "tsx ./src/hello.ts",
     "backup": "tsx ./src/backup.ts",
     "backup:ci": "tsx ./src/backup.ts",
     "backup:local": "tsx ./src/backup-local.ts",
@@ -17,7 +16,7 @@
     "test:sync-init": "tsx --test src/lib/iniciar-sincronizacion.test.ts",
     "test:sync-local": "tsx --test src/lib/sincronizar-local.test.ts",
     "test:sync-remote": "tsx --test src/lib/sincronizar-remoto.test.ts",
-    "test:sync-schema": "tsx --test src/lib/orden12-esquema.test.ts",
+    "test:sync-schema": "tsx --test src/lib/llaves-foraneas-e-indices.test.ts",
     "test:sync-cleanup": "tsx --test src/lib/limpiar-operaciones-viejas.test.ts",
     "test:sync-e2e": "pnpm --filter @workspace/api-server run build && tsx --test src/lib/sincronizacion.e2e.test.ts",
     "test:sync": "pnpm run test:sync-init && pnpm run test:sync-local && pnpm run test:sync-remote && pnpm run test:sync-schema && pnpm run test:sync-cleanup && pnpm run test:sync-e2e",

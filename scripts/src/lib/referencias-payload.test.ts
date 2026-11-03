@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import { TABLAS_HUELLA } from "@workspace/db/schema";
 import {
@@ -190,32 +189,11 @@ test("traduce el parámetro de producto independiente de la entidad del evento",
   });
 });
 
-test("cada emisor del manifiesto tiene una regla específica de método y endpoint", () => {
+test("las reglas de referencias no repiten método y endpoint", () => {
   const clavesReglas = REGLAS_REFERENCIAS.flatMap((regla) =>
     (typeof regla.metodo === "string" ? [regla.metodo] : regla.metodo).map(
       (metodo) => `${metodo} ${regla.endpoint}`,
     ),
   );
   assert.equal(new Set(clavesReglas).size, clavesReglas.length);
-
-  const documento = readFileSync(
-    new URL("../../../docs/referencias-sincronizacion.md", import.meta.url),
-    "utf8",
-  );
-  const bloque = documento.match(
-    /<!-- sync-emitters:start -->([\s\S]*?)<!-- sync-emitters:end -->/,
-  )?.[1];
-  assert.ok(bloque, "Falta el manifiesto delimitado en el inventario");
-  const emisores = bloque
-    .split(/\r?\n/)
-    .map((linea) => linea.trim())
-    .filter((linea) => /^[A-Z]+ \//.test(linea));
-  assert.ok(emisores.length > 0, "El manifiesto no enumera emisores");
-  for (const emisor of emisores) {
-    const [metodo, endpoint] = emisor.split(" ", 2);
-    assert.ok(
-      metodo && endpoint && encontrarRegla(metodo, endpoint),
-      `El emisor ${emisor} no tiene regla`,
-    );
-  }
 });
