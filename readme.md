@@ -692,7 +692,11 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
 
 7. **Pausa las escrituras y verifica la copia.** Desde que se toma el respaldo hasta que `sync:init` termina correctamente, no crees, edites ni borres datos en Render/Aiven ni en el portátil. Pausa importaciones, tareas programadas y cualquier aplicación que escriba. Compara los conteos de las tablas principales con Aiven y confirma que las tablas de sincronización del servidor existen. Es normal que el respaldo no incluya `base_sincronizacion`: es metadata local y se crea en el bloque siguiente. Si falta otra tabla o hay diferencias inesperadas, detente; no ejecutes `db:push` contra Aiven como parte de este procedimiento.
 
-8. **Prepara la metadata local y aparta los eventos del respaldo.** Estos bloques son únicamente para la base local `investillo_sync_local` o `investillo_ensayo` en `localhost:5433`; nunca los ejecutes contra Aiven. Cada bloque comprueba el nombre de la base, la dirección loopback, el puerto y que la transacción permita escrituras. Conéctate por TCP a `localhost:5433`, no por socket local.
+8. **Prepara la metadata local y aparta los eventos del respaldo.** Estos bloques son únicamente para la base local `investillo_sync_local` o `investillo_ensayo` en `localhost:5433`; nunca los ejecutes contra Aiven. Cada bloque comprueba el nombre de la base, la dirección loopback, el puerto y que la transacción permita escrituras. Conéctate por TCP a `localhost:5433`, no por socket local. Guarda cada bloque por separado en un archivo `.sql` codificado en UTF-8 y ejecútalo desde PowerShell con el comando siguiente, sustituyendo la ruta por la del archivo correspondiente. No uses `-c` ni pegues el SQL directamente en la consola:
+
+   ```powershell
+   & 'C:\Program Files\PostgreSQL\18\bin\psql.exe' -X -v ON_ERROR_STOP=1 -a -e -f 'C:\ruta\al\bloque.sql' 'postgresql://postgres@localhost:5433/investillo_sync_local'
+   ```
 
    **Bloque 1: crea `base_sincronizacion` si aún no existe.** Sus columnas coinciden con `lib/db/src/schema/base_sincronizacion.ts`: `tabla text` como clave primaria, `total bigint`, `maximo_id bigint` y `creado_en timestamp` con valor predeterminado `now()`. Si ya existe, el bloque se detiene para que se revise su definición en vez de reemplazarla.
 
@@ -708,7 +712,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
        RAISE EXCEPTION 'Destino incorrecto: se requiere una base local en localhost:5433 con escritura habilitada';
      END IF;
      IF to_regclass('public.base_sincronizacion') IS NOT NULL THEN
-       RAISE EXCEPTION 'public.base_sincronizacion ya existe; detente e inspecciona su definición';
+       RAISE EXCEPTION 'public.base_sincronizacion ya existe; detente e inspecciona su definicion';
      END IF;
    END $$;
 
@@ -737,7 +741,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
        RAISE EXCEPTION 'Destino incorrecto: se requiere una base local en localhost:5433 con escritura habilitada';
      END IF;
      IF to_regclass('public.eventos_sincronizacion_archivo_pre_sync') IS NOT NULL THEN
-       RAISE EXCEPTION 'El archivo pre_sync ya existe; detente e inspecciónalo antes de continuar';
+       RAISE EXCEPTION 'El archivo pre_sync ya existe; detente e inspeccionalo antes de continuar';
      END IF;
    END $$;
 
@@ -753,7 +757,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
        SELECT 1 FROM public.eventos_sincronizacion
        WHERE estado IN ('error', 'conflicto')
      ) THEN
-       RAISE EXCEPTION 'Hay eventos error o conflicto; detente y revísalos manualmente';
+       RAISE EXCEPTION 'Hay eventos error o conflicto; detente y revisalos manualmente';
      END IF;
 
      SELECT count(*) INTO pendientes
@@ -814,7 +818,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
      WHERE evento.origen = 'local' AND evento.estado = 'sincronizado'
        AND archivo.estado = 'pendiente';
      IF pendientes_restantes <> 0 OR archivados <> marcados THEN
-       RAISE EXCEPTION 'Verificación posterior falló: eventos locales sin resolver %, archivados %, marcados %',
+       RAISE EXCEPTION 'Verificacion posterior fallo: eventos locales sin resolver %, archivados %, marcados %',
          pendientes_restantes, archivados, marcados;
      END IF;
    END $$;
@@ -858,7 +862,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
        RAISE EXCEPTION 'Destino incorrecto: se requiere una base local en localhost:5433 con escritura habilitada';
      END IF;
      IF to_regclass('public.eventos_sincronizacion_archivo_pre_sync') IS NULL THEN
-       RAISE EXCEPTION 'No existe el archivo pre_sync; no se reiniciará la metadata';
+       RAISE EXCEPTION 'No existe el archivo pre_sync; no se reiniciara la metadata';
      END IF;
 
      SELECT count(*) INTO archivados
@@ -872,14 +876,14 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
        AND archivo.estado = 'pendiente';
 
      IF archivados = 0 OR archivados <> marcados THEN
-       RAISE EXCEPTION 'Archivo vacío o eventos archivados no coinciden con los marcados: % frente a %',
+       RAISE EXCEPTION 'Archivo vacio o eventos archivados no coinciden con los marcados: % frente a %',
          archivados, marcados;
      END IF;
      IF EXISTS (
        SELECT 1 FROM public.eventos_sincronizacion
        WHERE origen = 'local' AND estado IN ('pendiente', 'error', 'conflicto')
      ) THEN
-       RAISE EXCEPTION 'Quedan eventos locales pendiente, error o conflicto; no se reiniciará la metadata';
+       RAISE EXCEPTION 'Quedan eventos locales pendiente, error o conflicto; no se reiniciara la metadata';
      END IF;
    END $$;
 
