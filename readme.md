@@ -692,15 +692,22 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
 
    No añadas `--clean`, no restaures sobre Aiven y no elimines la base anterior. Si la restauración falla o informa errores, detente y conserva el dump y el log.
 
-7. **Pausa las escrituras y verifica la copia.** Desde que se toma el respaldo hasta que `sync:init` termina correctamente, nadie debe usar la web ni crear, editar o borrar datos en Render/Aiven o en el portátil. Pausa importaciones, tareas programadas y cualquier aplicación que escriba. Compara los conteos de las tablas principales con Aiven y confirma que las tablas de sincronización del servidor existen. Es normal que el respaldo no incluya `base_sincronizacion`: es metadata local y se crea en el bloque siguiente. Si falta otra tabla o hay diferencias inesperadas, detente; no ejecutes `db:push` contra Aiven como parte de este procedimiento.
+7. **Pausa las escrituras y verifica la copia.** Desde que se toma el respaldo hasta que `sync:init` termina correctamente, no crees, edites ni borres datos en Render/Aiven ni en el portátil. Pausa importaciones, tareas programadas y cualquier aplicación que escriba. Compara los conteos de las tablas principales con Aiven y confirma que existen las tablas de sincronización del servidor. `base_sincronizacion` no se espera en Aiven ni en el dump; se crea en el portátil en el paso siguiente. Si falta otra tabla o hay diferencias, detente; no ejecutes `db:push` contra Aiven como parte de este procedimiento.
 
-8. **Prepara la metadata local y aparta los eventos del respaldo.** Estos bloques son únicamente para la base local `investillo_sync_local` o `investillo_ensayo` en `localhost:5433`; nunca los ejecutes contra Aiven. Cada bloque comprueba el nombre de la base, la dirección loopback, el puerto y que la transacción permita escrituras. Conéctate por TCP a `localhost:5433`, no por socket local. Guarda cada bloque por separado en un archivo `.sql` codificado en UTF-8 y ejecútalo desde PowerShell con el comando siguiente, sustituyendo la ruta por la del archivo correspondiente. No uses `-c` ni pegues el SQL directamente en la consola:
+8. **Crea `base_sincronizacion` solo en la base local.** La tabla guarda el punto de partida que `sync:init` calcula para esta computadora. No se crea al iniciar el API y no forma parte del respaldo de Aiven. Abre PowerShell desde la carpeta del proyecto y conéctate a la base local nueva; `psql` pedirá la contraseña local si hace falta:
 
    ```powershell
-   & 'C:\Program Files\PostgreSQL\18\bin\psql.exe' -X -v ON_ERROR_STOP=1 -a -e -f 'C:\ruta\al\bloque.sql' 'postgresql://postgres@localhost:5433/investillo_sync_local'
+   & 'C:\Program Files\PostgreSQL\18\bin\psql.exe' --host localhost --port 5433 --username postgres --dbname investillo_sync_local
    ```
 
-   **Bloque 1: crea `base_sincronizacion` si aún no existe.** Sus columnas coinciden con `lib/db/src/schema/base_sincronizacion.ts`: `tabla text` como clave primaria, `total bigint`, `maximo_id bigint` y `creado_en timestamp` con valor predeterminado `now()`. Si ya existe, el bloque se detiene para que se revise su definición en vez de reemplazarla.
+   En el ensayo usa `investillo_ensayo` como nombre de base en lugar de `investillo_sync_local`. Dentro de `psql`, primero confirma el destino:
+
+   ```sql
+   SELECT current_database(), inet_server_addr(), inet_server_port(),
+          current_setting('transaction_read_only');
+   ```
+
+   Continúa solo si la base es la local esperada, la dirección es `127.0.0.1` o `::1`, el puerto es `5433` y `transaction_read_only` es `off`. Después pega este bloque completo. La comprobación dentro de la transacción vuelve a validar el destino y aborta si ya existe la tabla, para no ocultar una base o un esquema inesperado:
 
    ```sql
    BEGIN;
@@ -714,7 +721,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
        RAISE EXCEPTION 'Destino incorrecto: se requiere una base local en localhost:5433 con escritura habilitada';
      END IF;
      IF to_regclass('public.base_sincronizacion') IS NOT NULL THEN
-       RAISE EXCEPTION 'public.base_sincronizacion ya existe; detente e inspecciona su definicion';
+       RAISE EXCEPTION 'public.base_sincronizacion ya existe; detente e inspecciona su definición';
      END IF;
    END $$;
 
@@ -727,9 +734,9 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
    COMMIT;
    ```
 
-   **Bloque 2: archiva todas las filas `local/pendiente` presentes en la copia, sin filtro de fecha.** Primero muestra el desglose por origen y estado. Si hay cualquier evento `error` o `conflicto`, o no hay pendientes locales que archivar, se detiene para revisión manual. La tabla de archivo conserva todas las columnas originales y suma `archivado_en`. En el esquema actual no existe una columna `id`: `operation_id` es la clave primaria; se usa esa clave para comprobar la correspondencia.
+   Este paso nunca se ejecuta contra Aiven. Si la comprobación falla o `CREATE TABLE` devuelve un error, no pruebes otro destino ni uses `db:push`; detente y revisa la conexión. Comprueba que se creó con `SELECT to_regclass('public.base_sincronizacion');`.
 
-   La primera ejecución debe terminar en `ROLLBACK` y sirve solo para revisar los conteos. Si todo coincide, tras tu aprobación explícita se repite el mismo bloque cambiando únicamente `ROLLBACK` por `COMMIT`. El esquema versionado define `operation_id` como la clave primaria y no define una columna `id`; si una inspección de la copia encuentra una estructura distinta, detente y no ejecutes este SQL hasta aclararla.
+9. **Archiva y aparta los pendientes históricos solo en el portátil.** Antes de ejecutar cualquier SQL, vuelve a comprobar la conexión con `current_database()`, `inet_server_addr()` y `inet_server_port()`. El destino tiene que ser `investillo_sync_local` en `localhost:5433` (o `investillo_ensayo` para el ensayo). Ejecuta este bloque únicamente conectado a la base local restaurada. La prueba termina en `ROLLBACK`, por lo que no conserva cambios:
 
    ```sql
    BEGIN;
@@ -743,30 +750,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
        RAISE EXCEPTION 'Destino incorrecto: se requiere una base local en localhost:5433 con escritura habilitada';
      END IF;
      IF to_regclass('public.eventos_sincronizacion_archivo_pre_sync') IS NOT NULL THEN
-       RAISE EXCEPTION 'El archivo pre_sync ya existe; detente e inspeccionalo antes de continuar';
-     END IF;
-   END $$;
-
-   SELECT origen, estado, count(*) AS eventos
-   FROM public.eventos_sincronizacion
-   GROUP BY origen, estado
-   ORDER BY origen, estado;
-
-   DO $$
-   DECLARE pendientes bigint;
-   BEGIN
-     IF EXISTS (
-       SELECT 1 FROM public.eventos_sincronizacion
-       WHERE estado IN ('error', 'conflicto')
-     ) THEN
-       RAISE EXCEPTION 'Hay eventos error o conflicto; detente y revisalos manualmente';
-     END IF;
-
-     SELECT count(*) INTO pendientes
-     FROM public.eventos_sincronizacion
-     WHERE origen = 'local' AND estado = 'pendiente';
-     IF pendientes = 0 THEN
-       RAISE EXCEPTION 'No hay pendientes locales que archivar; detente y confirma el estado de la copia';
+       RAISE EXCEPTION 'El archivo pre_sync ya existe; detente e inspecciona el ensayo antes de continuar';
      END IF;
    END $$;
 
@@ -849,12 +833,11 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
 
    Revisa que `archivados` y `marcados_sincronizados` coincidan y que `eventos_locales_sin_resolver` sea cero. Si aparece un error, un conflicto o un conteo inesperado, detente; no repitas con `COMMIT`.
 
-9. **Reinicia metadata únicamente en la base local.** Antes de borrar filas, el bloque comprueba que el archivo existe y contiene filas, que todas se corresponden con eventos locales ya marcados como sincronizados y que no quedan eventos locales `pendiente`, `error` o `conflicto`. Si alguna condición falla, se detiene sin borrar metadata. `cursos_sincronizacion` contiene el cursor anterior; `base_sincronizacion` contiene el punto de partida antiguo; `referencias_sincronizacion` conserva mapeos de IDs que no se deben reutilizar al empezar desde una copia nueva. No borres `eventos_sincronizacion`, la tabla de archivo, `operaciones_sincronizadas` ni ninguna tabla de negocio.
+10. **Reinicia metadata únicamente en la base local.** Después de archivar y marcar los eventos objetivo, vacía el cursor y las equivalencias heredadas del dump local. `cursos_sincronizacion` contiene el cursor anterior; `base_sincronizacion` contiene el punto de partida antiguo; `referencias_sincronizacion` conserva mapeos de IDs que no se deben reutilizar al empezar desde una copia nueva. No borres `eventos_sincronizacion`, la tabla de archivo, `operaciones_sincronizadas` ni ninguna tabla de negocio.
 
    ```sql
    BEGIN;
    DO $$
-   DECLARE archivados bigint; marcados bigint;
    BEGIN
      IF current_database() NOT IN ('investillo_sync_local', 'investillo_ensayo')
         OR inet_server_addr() IS NULL
@@ -862,30 +845,6 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
         OR inet_server_port() <> 5433
         OR current_setting('transaction_read_only') <> 'off' THEN
        RAISE EXCEPTION 'Destino incorrecto: se requiere una base local en localhost:5433 con escritura habilitada';
-     END IF;
-     IF to_regclass('public.eventos_sincronizacion_archivo_pre_sync') IS NULL THEN
-       RAISE EXCEPTION 'No existe el archivo pre_sync; no se reiniciara la metadata';
-     END IF;
-
-     SELECT count(*) INTO archivados
-     FROM public.eventos_sincronizacion_archivo_pre_sync;
-     SELECT count(*) INTO marcados
-     FROM public.eventos_sincronizacion AS evento
-     JOIN public.eventos_sincronizacion_archivo_pre_sync AS archivo
-       ON archivo.operation_id = evento.operation_id
-     WHERE evento.origen = 'local'
-       AND evento.estado = 'sincronizado'
-       AND archivo.estado = 'pendiente';
-
-     IF archivados = 0 OR archivados <> marcados THEN
-       RAISE EXCEPTION 'Archivo vacio o eventos archivados no coinciden con los marcados: % frente a %',
-         archivados, marcados;
-     END IF;
-     IF EXISTS (
-       SELECT 1 FROM public.eventos_sincronizacion
-       WHERE origen = 'local' AND estado IN ('pendiente', 'error', 'conflicto')
-     ) THEN
-       RAISE EXCEPTION 'Quedan eventos locales pendiente, error o conflicto; no se reiniciara la metadata';
      END IF;
    END $$;
 
@@ -901,7 +860,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
 
    **Este SQL nunca se ejecuta contra Aiven.** Confirma que las tres cantidades finales sean cero antes de continuar.
 
-10. **SOLO EN EL PORTÁTIL: inicializa y revisa el estado.** Mantén pausado el uso de la web y todas las escrituras hasta que `sync:init` termine correctamente. Desde la raíz del repositorio del portátil, ejecuta, en este orden:
+11. **Inicializa y revisa el estado.** Mantén pausadas las escrituras. Desde la raíz del repositorio, ejecuta:
 
    ```powershell
    pnpm run sync:init
@@ -910,13 +869,13 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
 
    `sync:init` consulta Render mediante las peticiones `GET /sync/huella` y `GET /sync/ahora`; esas rutas solo leen datos y no escriben en Aiven. Localmente compara la cantidad de filas e ID máximo de las 21 tablas de negocio; no es un hash del contenido. Si no hay cursor remoto, guarda el cursor en `cursos_sincronizacion`, borra las filas anteriores de `base_sincronizacion` y guarda la huella (una fila por tabla), todo dentro de una transacción local. Si ya existe un cursor con una huella completa, lo conserva y no reemplaza el punto de partida. **Si `sync:init` informa diferencias de huella, detente y no fuerces ni cambies el cursor.** En `sync:status`, confirma un punto de partida completo y cursor remoto; **si muestra eventos locales pendientes, errores o conflictos, detente y no borres ni fuerces nada.** No reanudes el uso de la web hasta que `sync:init` y `sync:status` terminen sin esos problemas.
 
-11. **Prueba los dos sentidos con datos identificables.** Crear y borrar las pruebas en Render cambia datos de producción en Aiven. Hazlo únicamente con autorización, sin clientes reales relacionados y coordinando una pausa de escrituras normales:
+12. **Prueba los dos sentidos con datos identificables.** Crear y borrar las pruebas en Render cambia datos de producción en Aiven. Hazlo únicamente con autorización, sin clientes reales relacionados y coordinando una pausa de escrituras normales:
    - En la web, crea un cliente con nombre único, por ejemplo `PRUEBA SYNC WEB 2026-11-02`. En el portátil ejecuta `pnpm run sync:pull` y confirma que aparece una sola vez.
    - En la aplicación local, crea otro cliente único, por ejemplo `PRUEBA SYNC PORTATIL 2026-11-02`. Ejecuta `pnpm run sync:local` y confirma que aparece una sola vez en la web.
    - Ejecuta `pnpm run sync:all` de nuevo y comprueba que no se duplique nada.
    - Borra los dos clientes desde la aplicación y sincroniza los borrados. Confirma que ya no aparecen en ninguna base.
 
-12. **Valida y reabre el uso normal.** Ejecuta `pnpm run verificar:local`. Reanuda las escrituras normales solo si la inicialización, la verificación, las pruebas en ambos sentidos y los borrados terminaron correctamente. Si algo falla, conserva el respaldo, el archivo de eventos y los mensajes completos; detén la sincronización y no fuerces cursores.
+13. **Valida y reabre el uso normal.** Ejecuta `pnpm run verificar:local`. Reanuda las escrituras normales solo si la inicialización, la verificación, las pruebas en ambos sentidos y los borrados terminaron correctamente. Si algo falla, conserva el respaldo, el archivo de eventos y los mensajes completos; detén la sincronización y no fuerces cursores.
 
 #### Llaves foráneas e índices
 
@@ -1220,7 +1179,7 @@ API de Render ── transacción ── Aiven
 - `sync:init` es una operación inicial única: compara cantidad de filas e ID máximo en 21 tablas, y guarda el punto de partida solo si ambas bases están alineadas. No es un hash del contenido ni debe forzarse para ocultar diferencias.
 - `sync:local` sube eventos locales pendientes o con error. `sync:pull` descarga eventos de Render; `sync:all` ejecuta la subida antes de la descarga. La descarga confirma el cursor para que el servidor pueda retener y, tras el plazo establecido, limpiar eventos ya procesados.
 - `sync:status` muestra el punto de partida, el cursor y los eventos por origen/estado. La confirmación del cursor está diseñada para una sola PC sincronizadora; no inicialices una segunda oficina con el mismo estado sin un diseño y una prueba aparte.
-- Los eventos sincronizados se conservan hasta 60 días y luego el limpiador puede retirarlos. El API no crea automáticamente las tablas núcleo de sincronización al arrancar: deben estar instaladas mediante la migración aprobada. Para el orden de despliegue y el primer arranque, sigue la [guía operativa](./docs/cambios-de-la-rama.md#qué-aplicar-al-desplegar-y-en-qué-orden); nunca uses `db:push` en Aiven para resolver una tabla faltante.
+- Los eventos sincronizados se conservan hasta 60 días y luego el limpiador puede retirarlos. El API no crea automáticamente las tablas de sincronización del servidor al arrancar: deben estar instaladas mediante la migración aprobada. `base_sincronizacion` es metadata del cliente de escritorio y se crea solo en la base local durante la preparación inicial. Para el orden de despliegue y el primer arranque, sigue la [guía operativa](./docs/cambios-de-la-rama.md#qué-aplicar-al-desplegar-y-en-qué-orden); nunca uses `db:push` en Aiven para resolver una tabla faltante.
 
 El inventario de endpoints, entidades, referencias y respuestas está en [`docs/referencias-sincronizacion.md`](./docs/referencias-sincronizacion.md). No edites directamente una base mientras el outbox tenga eventos sin procesar: podrías crear divergencias difíciles de resolver.
 
