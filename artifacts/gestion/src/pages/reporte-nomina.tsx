@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import {
   esOperacionEncoladaOffline,
@@ -49,6 +49,9 @@ export default function ReporteNomina() {
   const [trabajadoresSeleccionados, setTrabajadoresSeleccionados] = useState<string[]>([]);
   const [printMenu, setPrintMenu] = useState(false);
   const [printOrientation, setPrintOrientation] = useState<"portrait" | "landscape">("portrait");
+  const [printPageEnds, setPrintPageEnds] = useState<number[] | null>(null);
+  const [tensionadasPageBreak, setTensionadasPageBreak] = useState(false);
+  const printMeasureRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setCargando(true);
@@ -210,19 +213,26 @@ export default function ReporteNomina() {
   };
 
   const trabajadores = vista?.trabajadores || [];
-  const incluirTensionadasEnPrimeraPagina = printOrientation === "landscape" && imprimirTensionadas;
-  const paginasDeTrabajadores = incluirTensionadasEnPrimeraPagina
-    ? [
-        trabajadores.slice(0, 2),
-        ...Array.from(
-          { length: Math.ceil(Math.max(0, trabajadores.length - 2) / 4) },
-          (_, indice) => trabajadores.slice(2 + indice * 4, 2 + (indice + 1) * 4),
-        ),
-      ].filter((pagina) => pagina.length > 0)
-    : Array.from(
-        { length: Math.ceil(trabajadores.length / 4) },
-        (_, indice) => trabajadores.slice(indice * 4, indice * 4 + 4),
-      );
+  const paginasDeTrabajadores: any[][] = [];
+  if (printPageEnds) {
+    let inicioPagina = 0;
+    for (const finPagina of printPageEnds) {
+      paginasDeTrabajadores.push(trabajadores.slice(inicioPagina, finPagina));
+      inicioPagina = finPagina;
+    }
+    if (inicioPagina < trabajadores.length) {
+      if (paginasDeTrabajadores.length) {
+        paginasDeTrabajadores[paginasDeTrabajadores.length - 1].push(...trabajadores.slice(inicioPagina));
+      } else {
+        paginasDeTrabajadores.push(trabajadores.slice(inicioPagina));
+      }
+    }
+  } else {
+    paginasDeTrabajadores.push(...Array.from(
+      { length: Math.ceil(trabajadores.length / 4) },
+      (_, indice) => trabajadores.slice(indice * 4, indice * 4 + 4),
+    ));
+  }
   const handlePrintWithOrientation = (orientation: "portrait" | "landscape") => {
     const previousStyle = document.getElementById("__nomina_print_page_size");
     previousStyle?.remove();
@@ -235,7 +245,105 @@ export default function ReporteNomina() {
 
     setPrintOrientation(orientation);
     setPrintMenu(false);
-    requestAnimationFrame(() => window.print());
+    requestAnimationFrame(() => {
+      const report = document.querySelector<HTMLElement>(".nomina-report-print");
+      const measure = printMeasureRef.current;
+      if (!report || !measure) {
+        style.remove();
+        alert("No se pudo preparar la nómina para imprimir. Intenta nuevamente cuando termine de cargar.");
+        return;
+      }
+
+      const widthMm = orientation === "portrait" ? 215.9 : 279.4;
+      const heightMm = orientation === "portrait" ? 279.4 : 215.9;
+      const pageWidthPx = ((widthMm - 8) * 96) / 25.4;
+      const pageHeightPx = ((heightMm - 8) * 96) / 25.4;
+      const rowGapPx = (2 * 96) / 25.4;
+      measure.style.width = `${pageWidthPx}px`;
+      measure.replaceChildren();
+
+      const tensionadas = imprimirTensionadas
+        ? report.querySelector<HTMLElement>(".nomina-tensionadas:not(.print-omit)")
+        : null;
+      if (tensionadas) measure.append(tensionadas.cloneNode(true));
+
+      const measureWorkers = document.createElement("div");
+      measureWorkers.className = "nomina-measure-workers";
+      measure.append(measureWorkers);
+      const trabajadoresVisibles = Array.from(
+        report.querySelectorAll<HTMLElement>(".nomina-trabajador:not(.print-omit)"),
+      );
+      const alturasTrabajadores = trabajadoresVisibles.map((trabajador) => {
+        const copia = trabajador.cloneNode(true) as HTMLElement;
+        measureWorkers.append(copia);
+        return copia.getBoundingClientRect().height;
+      });
+      const altoTensionadas = tensionadas
+        ? measure.firstElementChild?.getBoundingClientRect().height ?? 0
+        : 0;
+
+      const paginasSeleccionadas: number[][] = [];
+      let indiceTrabajador = 0;
+      let primeraPagina = true;
+      let separarTensionadas = false;
+
+      while (indiceTrabajador < trabajadoresVisibles.length) {
+        let altoUsado = primeraPagina && tensionadas
+          ? altoTensionadas + rowGapPx
+          : 0;
+        const trabajadoresPagina: number[] = [];
+
+        while (indiceTrabajador < trabajadoresVisibles.length && trabajadoresPagina.length < 4) {
+          const cantidadFila = Math.min(2, 4 - trabajadoresPagina.length);
+          const alturasFila = alturasTrabajadores.slice(indiceTrabajador, indiceTrabajador + cantidadFila);
+          const altoFila = Math.max(...alturasFila);
+          const espacioFila = trabajadoresPagina.length ? rowGapPx : 0;
+          if (altoUsado + espacioFila + altoFila > pageHeightPx && trabajadoresPagina.length) break;
+          if (altoUsado + espacioFila + altoFila > pageHeightPx && primeraPagina && tensionadas) {
+            separarTensionadas = true;
+            break;
+          }
+
+          for (let indiceFila = 0; indiceFila < alturasFila.length; indiceFila++) {
+            trabajadoresPagina.push(indiceTrabajador + indiceFila);
+          }
+          altoUsado += espacioFila + altoFila;
+          indiceTrabajador += alturasFila.length;
+        }
+
+        if (trabajadoresPagina.length) {
+          paginasSeleccionadas.push(trabajadoresPagina);
+          primeraPagina = false;
+        } else if (primeraPagina && tensionadas) {
+          primeraPagina = false;
+        } else {
+          paginasSeleccionadas.push([indiceTrabajador]);
+          indiceTrabajador++;
+          primeraPagina = false;
+        }
+      }
+
+      const indicesTrabajadores = new Map<string, number>();
+      trabajadoresVisibles.forEach((trabajador) => {
+        indicesTrabajadores.set(
+          trabajador.dataset.trabajadorId || "",
+          trabajadores.findIndex((t: any) => String(t.trabajadorId) === trabajador.dataset.trabajadorId),
+        );
+      });
+      let finPagina = 0;
+      const limitesPaginas = paginasSeleccionadas.map((pagina) => {
+        const ultimoId = trabajadoresVisibles[pagina[pagina.length - 1]]?.dataset.trabajadorId || "";
+        finPagina = (indicesTrabajadores.get(ultimoId) ?? finPagina) + 1;
+        return finPagina;
+      });
+
+      setPrintPageEnds(limitesPaginas);
+      setTensionadasPageBreak(separarTensionadas && paginasSeleccionadas.length > 0);
+      requestAnimationFrame(() => {
+        measure.replaceChildren();
+        window.print();
+      });
+    });
   };
 
   return (
@@ -296,7 +404,7 @@ export default function ReporteNomina() {
           <p className="text-center py-10 text-muted-foreground">Cargando...</p>
         ) : (
           <div className={`flex flex-wrap gap-4 items-start justify-center print:gap-2 nomina-report-print${printOrientation === "landscape" ? " nomina-report-print--landscape" : ""}`}>
-            <div className={`border-2 border-cyan-500 rounded-lg overflow-hidden text-xs nomina-tensionadas ${imprimirTensionadas ? "" : "print-omit"}`} style={{ minWidth: 180 }}>
+            <div className={`border-2 border-cyan-500 rounded-lg overflow-hidden text-xs nomina-tensionadas${tensionadasPageBreak ? " nomina-tensionadas--page-break" : ""} ${imprimirTensionadas ? "" : "print-omit"}`} style={{ minWidth: 180 }}>
               <div className="bg-cyan-400 text-black font-bold text-center py-1">
                 TENSIONADAS MES {NOMBRES_MES[parseInt(mes.split("-")[1])].toUpperCase()} {mes.split("-")[0]}
               </div>
@@ -353,7 +461,7 @@ export default function ReporteNomina() {
               {pagina.map((t: any) => {
               const anchos = anchosColumnasNomina(t.aplicaDescuento30, t.aplicaSeguro);
               return (
-              <div key={t.trabajadorId} className={`nomina-trabajador ${trabajadoresSeleccionados.includes(String(t.trabajadorId)) ? "" : "print-omit"}`}>
+              <div key={t.trabajadorId} data-trabajador-id={String(t.trabajadorId)} className={`nomina-trabajador ${trabajadoresSeleccionados.includes(String(t.trabajadorId)) ? "" : "print-omit"}`}>
                 {/* Tabla amarilla del trabajador */}
                 <div className="border-2 border-amber-500 rounded-lg overflow-hidden text-xs" style={{ minWidth: 280 }}>
                   <div className="bg-amber-400 text-black font-bold text-center py-1">
@@ -428,6 +536,7 @@ export default function ReporteNomina() {
             </div>
           </div>
         )}
+        <div ref={printMeasureRef} className="nomina-print-measure" aria-hidden="true" />
       </div>
     </Layout>
   );
