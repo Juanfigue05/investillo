@@ -690,46 +690,102 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
 
    No añadas `--clean`, no restaures sobre Aiven y no elimines la base anterior. Si la restauración falla o informa errores, detente y conserva el dump y el log.
 
-7. **Pausa las escrituras y verifica la copia.** Desde que se toma el respaldo hasta que `sync:init` termina correctamente, no crees, edites ni borres datos en Render/Aiven ni en el portátil. Pausa importaciones, tareas programadas y cualquier aplicación que escriba. Compara los conteos de las tablas principales con Aiven y confirma que las tablas de sincronización que usa esta versión existen. Si hay diferencias o falta una tabla, detente; no ejecutes `db:push` contra Aiven como parte de este procedimiento.
+7. **Pausa las escrituras y verifica la copia.** Desde que se toma el respaldo hasta que `sync:init` termina correctamente, no crees, edites ni borres datos en Render/Aiven ni en el portátil. Pausa importaciones, tareas programadas y cualquier aplicación que escriba. Compara los conteos de las tablas principales con Aiven y confirma que las tablas de sincronización del servidor existen. Es normal que el respaldo no incluya `base_sincronizacion`: es metadata local y se crea en el bloque siguiente. Si falta otra tabla o hay diferencias inesperadas, detente; no ejecutes `db:push` contra Aiven como parte de este procedimiento.
 
-8. **Archiva y aparta los pendientes históricos solo en el portátil.** Antes de ejecutar cualquier SQL, vuelve a comprobar la conexión con `current_database()`, `inet_server_addr()` y `inet_server_port()`. El destino tiene que ser `investillo_sync_local` en `localhost:5433`. Ejecuta este bloque únicamente conectado a la base local restaurada. La prueba termina en `ROLLBACK`, por lo que no conserva cambios:
+8. **Prepara la metadata local y aparta los eventos del respaldo.** Estos bloques son únicamente para la base local `investillo_sync_local` o `investillo_ensayo` en `localhost:5433`; nunca los ejecutes contra Aiven. Cada bloque comprueba el nombre de la base, la dirección loopback, el puerto y que la transacción permita escrituras. Conéctate por TCP a `localhost:5433`, no por socket local.
+
+   **Bloque 1: crea `base_sincronizacion` si aún no existe.** Sus columnas coinciden con `lib/db/src/schema/base_sincronizacion.ts`: `tabla text` como clave primaria, `total bigint`, `maximo_id bigint` y `creado_en timestamp` con valor predeterminado `now()`. Si ya existe, el bloque se detiene para que se revise su definición en vez de reemplazarla.
 
    ```sql
    BEGIN;
+   DO $$
+   BEGIN
+     IF current_database() NOT IN ('investillo_sync_local', 'investillo_ensayo')
+        OR inet_server_addr() IS NULL
+        OR inet_server_addr() NOT IN ('127.0.0.1'::inet, '::1'::inet)
+        OR inet_server_port() <> 5433
+        OR current_setting('transaction_read_only') <> 'off' THEN
+       RAISE EXCEPTION 'Destino incorrecto: se requiere una base local en localhost:5433 con escritura habilitada';
+     END IF;
+     IF to_regclass('public.base_sincronizacion') IS NOT NULL THEN
+       RAISE EXCEPTION 'public.base_sincronizacion ya existe; detente e inspecciona su definición';
+     END IF;
+   END $$;
+
+   CREATE TABLE public.base_sincronizacion (
+     tabla text PRIMARY KEY,
+     total bigint NOT NULL,
+     maximo_id bigint NOT NULL,
+     creado_en timestamp NOT NULL DEFAULT now()
+   );
+   COMMIT;
+   ```
+
+   **Bloque 2: archiva todas las filas `local/pendiente` presentes en la copia, sin filtro de fecha.** Primero muestra el desglose por origen y estado. Si hay cualquier evento `error` o `conflicto`, o no hay pendientes locales que archivar, se detiene para revisión manual. La tabla de archivo conserva todas las columnas originales y suma `archivado_en`. En el esquema actual no existe una columna `id`: `operation_id` es la clave primaria; se usa esa clave para comprobar la correspondencia.
+
+   La primera ejecución debe terminar en `ROLLBACK` y sirve solo para revisar los conteos. Si todo coincide, tras tu aprobación explícita se repite el mismo bloque cambiando únicamente `ROLLBACK` por `COMMIT`. El esquema versionado define `operation_id` como la clave primaria y no define una columna `id`; si una inspección de la copia encuentra una estructura distinta, detente y no ejecutes este SQL hasta aclararla.
+
+   ```sql
+   BEGIN;
+   DO $$
+   BEGIN
+     IF current_database() NOT IN ('investillo_sync_local', 'investillo_ensayo')
+        OR inet_server_addr() IS NULL
+        OR inet_server_addr() NOT IN ('127.0.0.1'::inet, '::1'::inet)
+        OR inet_server_port() <> 5433
+        OR current_setting('transaction_read_only') <> 'off' THEN
+       RAISE EXCEPTION 'Destino incorrecto: se requiere una base local en localhost:5433 con escritura habilitada';
+     END IF;
+     IF to_regclass('public.eventos_sincronizacion_archivo_pre_sync') IS NOT NULL THEN
+       RAISE EXCEPTION 'El archivo pre_sync ya existe; detente e inspecciónalo antes de continuar';
+     END IF;
+   END $$;
+
+   SELECT origen, estado, count(*) AS eventos
+   FROM public.eventos_sincronizacion
+   GROUP BY origen, estado
+   ORDER BY origen, estado;
+
+   DO $$
+   DECLARE pendientes bigint;
+   BEGIN
+     IF EXISTS (
+       SELECT 1 FROM public.eventos_sincronizacion
+       WHERE estado IN ('error', 'conflicto')
+     ) THEN
+       RAISE EXCEPTION 'Hay eventos error o conflicto; detente y revísalos manualmente';
+     END IF;
+
+     SELECT count(*) INTO pendientes
+     FROM public.eventos_sincronizacion
+     WHERE origen = 'local' AND estado = 'pendiente';
+     IF pendientes = 0 THEN
+       RAISE EXCEPTION 'No hay pendientes locales que archivar; detente y confirma el estado de la copia';
+     END IF;
+   END $$;
+
    CREATE TABLE public.eventos_sincronizacion_archivo_pre_sync
      (LIKE public.eventos_sincronizacion INCLUDING ALL);
    ALTER TABLE public.eventos_sincronizacion_archivo_pre_sync
      ADD COLUMN archivado_en timestamp NOT NULL DEFAULT now();
 
-   INSERT INTO public.eventos_sincronizacion_archivo_pre_sync (
-     operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
-     origen, estado, intentos, ultimo_error, respuesta_remota,
-     referencias_endpoint, referencias_respuesta, creado_en, procesado_en,
-     archivado_en
-   )
-   SELECT
-     operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
-     origen, estado, intentos, ultimo_error, respuesta_remota,
-     referencias_endpoint, referencias_respuesta, creado_en, procesado_en,
-     now()
-   FROM public.eventos_sincronizacion
-   WHERE origen = 'local'
-     AND estado = 'pendiente'
-     AND creado_en < TIMESTAMP '2026-11-01 00:00:00';
+   INSERT INTO public.eventos_sincronizacion_archivo_pre_sync
+   SELECT evento.*, now()
+   FROM public.eventos_sincronizacion AS evento
+   WHERE evento.origen = 'local'
+     AND evento.estado = 'pendiente';
 
    DO $$
    DECLARE pendientes bigint; archivados bigint;
    BEGIN
      SELECT count(*) INTO pendientes
      FROM public.eventos_sincronizacion
-     WHERE origen = 'local' AND estado = 'pendiente'
-       AND creado_en < TIMESTAMP '2026-11-01 00:00:00';
+     WHERE origen = 'local' AND estado = 'pendiente';
      SELECT count(*) INTO archivados
-     FROM public.eventos_sincronizacion_archivo_pre_sync
-     WHERE origen = 'local' AND estado = 'pendiente'
-       AND creado_en < TIMESTAMP '2026-11-01 00:00:00';
-     IF pendientes = 0 OR pendientes <> archivados THEN
-       RAISE EXCEPTION 'Conteos de eventos objetivo y archivo no coinciden: % frente a %', pendientes, archivados;
+     FROM public.eventos_sincronizacion_archivo_pre_sync;
+     IF pendientes <> archivados THEN
+       RAISE EXCEPTION 'Conteos de eventos objetivo y archivo no coinciden: % frente a %',
+         pendientes, archivados;
      END IF;
    END $$;
 
@@ -737,7 +793,6 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
    SET estado = 'sincronizado', procesado_en = now(), ultimo_error = NULL
    WHERE evento.origen = 'local'
      AND evento.estado = 'pendiente'
-     AND evento.creado_en < TIMESTAMP '2026-11-01 00:00:00'
      AND EXISTS (
        SELECT 1
        FROM public.eventos_sincronizacion_archivo_pre_sync AS archivo
@@ -749,8 +804,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
    BEGIN
      SELECT count(*) INTO pendientes_restantes
      FROM public.eventos_sincronizacion
-     WHERE origen = 'local' AND estado = 'pendiente'
-       AND creado_en < TIMESTAMP '2026-11-01 00:00:00';
+     WHERE origen = 'local' AND estado IN ('pendiente', 'error', 'conflicto');
      SELECT count(*) INTO archivados
      FROM public.eventos_sincronizacion_archivo_pre_sync;
      SELECT count(*) INTO marcados
@@ -758,9 +812,9 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
      JOIN public.eventos_sincronizacion_archivo_pre_sync AS archivo
        ON archivo.operation_id = evento.operation_id
      WHERE evento.origen = 'local' AND evento.estado = 'sincronizado'
-       AND evento.creado_en < TIMESTAMP '2026-11-01 00:00:00';
+       AND archivo.estado = 'pendiente';
      IF pendientes_restantes <> 0 OR archivados <> marcados THEN
-       RAISE EXCEPTION 'Verificación posterior al cambio falló: pendientes %, archivados %, marcados %',
+       RAISE EXCEPTION 'Verificación posterior falló: eventos locales sin resolver %, archivados %, marcados %',
          pendientes_restantes, archivados, marcados;
      END IF;
    END $$;
@@ -769,36 +823,77 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
      (SELECT count(*) FROM public.eventos_sincronizacion_archivo_pre_sync) AS archivados,
      (SELECT count(*)
       FROM public.eventos_sincronizacion
-      WHERE origen = 'local' AND estado = 'pendiente'
-        AND creado_en < TIMESTAMP '2026-11-01 00:00:00') AS pendientes_restantes,
+      WHERE origen = 'local' AND estado IN ('pendiente', 'error', 'conflicto'))
+        AS eventos_locales_sin_resolver,
      (SELECT count(*)
       FROM public.eventos_sincronizacion AS evento
       JOIN public.eventos_sincronizacion_archivo_pre_sync AS archivo
         ON archivo.operation_id = evento.operation_id
-      WHERE evento.origen = 'local' AND evento.estado = 'sincronizado'
-        AND evento.creado_en < TIMESTAMP '2026-11-01 00:00:00') AS marcados_sincronizados;
+      WHERE evento.origen = 'local'
+        AND evento.estado = 'sincronizado'
+        AND archivo.estado = 'pendiente') AS marcados_sincronizados;
 
    SELECT estado, count(*)
    FROM public.eventos_sincronizacion
-   WHERE origen = 'local' AND creado_en < TIMESTAMP '2026-11-01 00:00:00'
+   WHERE origen = 'local'
    GROUP BY estado
    ORDER BY estado;
    ROLLBACK;
    ```
 
-   Revisa los conteos de la prueba; tienen que coincidir exactamente y no debe haber eventos objetivo sin archivar. Si no coinciden o el bloque falla, detente. Solo después de aprobación explícita se vuelve a ejecutar el bloque idéntico y se cambia la última línea por `COMMIT`. No amplíes la fecha ni incluyas `error` o `conflicto` sin una revisión separada.
+   Revisa que `archivados` y `marcados_sincronizados` coincidan y que `eventos_locales_sin_resolver` sea cero. Si aparece un error, un conflicto o un conteo inesperado, detente; no repitas con `COMMIT`.
 
-9. **Reinicia metadata únicamente en la base local.** Después de archivar y marcar los eventos objetivo, vacía el cursor y las equivalencias heredadas del dump local. `cursos_sincronizacion` contiene el cursor anterior; `base_sincronizacion` contiene el punto de partida antiguo; `referencias_sincronizacion` conserva mapeos de IDs que no se deben reutilizar al empezar desde una copia nueva. No borres `eventos_sincronizacion`, la tabla de archivo, `operaciones_sincronizadas` ni ninguna tabla de negocio.
+9. **Reinicia metadata únicamente en la base local.** Antes de borrar filas, el bloque comprueba que el archivo existe y contiene filas, que todas se corresponden con eventos locales ya marcados como sincronizados y que no quedan eventos locales `pendiente`, `error` o `conflicto`. Si alguna condición falla, se detiene sin borrar metadata. `cursos_sincronizacion` contiene el cursor anterior; `base_sincronizacion` contiene el punto de partida antiguo; `referencias_sincronizacion` conserva mapeos de IDs que no se deben reutilizar al empezar desde una copia nueva. No borres `eventos_sincronizacion`, la tabla de archivo, `operaciones_sincronizadas` ni ninguna tabla de negocio.
 
    ```sql
    BEGIN;
+   DO $$
+   DECLARE archivados bigint; marcados bigint;
+   BEGIN
+     IF current_database() NOT IN ('investillo_sync_local', 'investillo_ensayo')
+        OR inet_server_addr() IS NULL
+        OR inet_server_addr() NOT IN ('127.0.0.1'::inet, '::1'::inet)
+        OR inet_server_port() <> 5433
+        OR current_setting('transaction_read_only') <> 'off' THEN
+       RAISE EXCEPTION 'Destino incorrecto: se requiere una base local en localhost:5433 con escritura habilitada';
+     END IF;
+     IF to_regclass('public.eventos_sincronizacion_archivo_pre_sync') IS NULL THEN
+       RAISE EXCEPTION 'No existe el archivo pre_sync; no se reiniciará la metadata';
+     END IF;
+
+     SELECT count(*) INTO archivados
+     FROM public.eventos_sincronizacion_archivo_pre_sync;
+     SELECT count(*) INTO marcados
+     FROM public.eventos_sincronizacion AS evento
+     JOIN public.eventos_sincronizacion_archivo_pre_sync AS archivo
+       ON archivo.operation_id = evento.operation_id
+     WHERE evento.origen = 'local'
+       AND evento.estado = 'sincronizado'
+       AND archivo.estado = 'pendiente';
+
+     IF archivados = 0 OR archivados <> marcados THEN
+       RAISE EXCEPTION 'Archivo vacío o eventos archivados no coinciden con los marcados: % frente a %',
+         archivados, marcados;
+     END IF;
+     IF EXISTS (
+       SELECT 1 FROM public.eventos_sincronizacion
+       WHERE origen = 'local' AND estado IN ('pendiente', 'error', 'conflicto')
+     ) THEN
+       RAISE EXCEPTION 'Quedan eventos locales pendiente, error o conflicto; no se reiniciará la metadata';
+     END IF;
+   END $$;
+
    DELETE FROM public.cursos_sincronizacion;
    DELETE FROM public.referencias_sincronizacion;
    DELETE FROM public.base_sincronizacion;
+   SELECT
+     (SELECT count(*) FROM public.cursos_sincronizacion) AS cursos_restantes,
+     (SELECT count(*) FROM public.referencias_sincronizacion) AS referencias_restantes,
+     (SELECT count(*) FROM public.base_sincronizacion) AS huellas_restantes;
    COMMIT;
    ```
 
-   **Este SQL nunca se ejecuta contra Aiven.** Antes de confirmar, vuelve a comprobar que la conexión sigue siendo la base local correcta. Si la tabla de archivo no contiene el mismo número de filas que se apartaron, no continúes.
+   **Este SQL nunca se ejecuta contra Aiven.** Confirma que las tres cantidades finales sean cero antes de continuar.
 
 10. **Inicializa y revisa el estado.** Mantén pausadas las escrituras. Desde la raíz del repositorio, ejecuta:
 
@@ -807,7 +902,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
    pnpm run sync:status
    ```
 
-   `sync:init` compara cantidad de filas e ID máximo en las 21 tablas; no es un hash del contenido. Si las huellas difieren, detente y no fuerces el cursor. En `sync:status`, confirma un punto de partida completo, cursor remoto y que no queden eventos locales `pendiente` o `error`. Investiga también cualquier `conflicto`; no lo resuelvas borrando la cola. El historial de eventos puede seguir teniendo filas; el archivo se conserva y los pendientes históricos marcados como sincronizados no se vuelven a subir.
+   `sync:init` consulta Render mediante las peticiones `GET /sync/huella` y `GET /sync/ahora`; esas rutas solo leen datos y no escriben en Aiven. Localmente compara la cantidad de filas e ID máximo de las 21 tablas de negocio; no es un hash del contenido. Si no hay cursor remoto, guarda el cursor en `cursos_sincronizacion`, borra las filas anteriores de `base_sincronizacion` y guarda la huella (una fila por tabla), todo dentro de una transacción local. Si ya existe un cursor con una huella completa, lo conserva y no reemplaza el punto de partida. Si las huellas difieren, detente y no fuerces el cursor. En `sync:status`, confirma un punto de partida completo, cursor remoto y que no queden eventos locales `pendiente` o `error`. Investiga también cualquier `conflicto`; no lo resuelvas borrando la cola. El historial de eventos puede seguir teniendo filas; el archivo se conserva y los pendientes históricos marcados como sincronizados no se vuelven a subir.
 
 11. **Prueba los dos sentidos con datos identificables.** Crear y borrar las pruebas en Render cambia datos de producción en Aiven. Hazlo únicamente con autorización, sin clientes reales relacionados y coordinando una pausa de escrituras normales:
    - En la web, crea un cliente con nombre único, por ejemplo `PRUEBA SYNC WEB 2026-11-02`. En el portátil ejecuta `pnpm run sync:pull` y confirma que aparece una sola vez.
