@@ -656,20 +656,22 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
 
    Si el comando falla o el objeto no coincide con el respaldo esperado, detente. `--list` valida que el archivo se pueda abrir; antes de usarlo, confirma también que es el dump reciente de Aiven y que su tamaño coincide con el objeto de R2.
 
-4. **Configura `.env.local`.** Crea ese archivo en la raíz del proyecto y completa solo con valores propios del equipo. No copies la conexión de Aiven:
+4. **SOLO EN EL PORTÁTIL: configura la sincronización.** Copia el ejemplo a `.env.local` en la raíz del repositorio y edítalo localmente:
 
-   ```dotenv
-   DATABASE_URL=postgresql://postgres:CONTRASENA_LOCAL@localhost:5433/investillo_sync_local
-   PORT=8080
-   NODE_ENV=production
-   SYNC_ENTORNO=portatil
-   SYNC_FECHA_CORTE=2026-11-01
-   SYNC_REMOTE_API_URL=https://TU-SERVICIO.onrender.com/api
-   SYNC_TOKEN=EL_MISMO_SECRETO_PRIVADO_CONFIGURADO_EN_RENDER
+   ```powershell
+   Copy-Item docs\local.env.example .env.local
+   code .env.local
    ```
 
-   `DATABASE_URL` debe apuntar a `localhost` y a PostgreSQL local. `SYNC_REMOTE_API_URL` sí apunta a Render y termina en `/api`; `SYNC_TOKEN` debe coincidir con el secreto de Render. `SYNC_CAPTURE_REMOTE=true` se configura en Render, no en el portátil. No compartas `.env.local` ni lo subas a Git.
+   En `.env.local`, configura `DATABASE_URL` para `investillo_sync_local` en `localhost:5433`; configura `SYNC_REMOTE_API_URL` con la URL HTTPS real del API de Render terminada en `/api`; y copia en `SYNC_TOKEN` el mismo token ya configurado en Render. No generes otro token ni lo escribas en `docs/local.env.example`, en ningún archivo versionado o en el chat. Este secreto solo debe estar en la configuración privada de Render y en el `.env.local` ignorado del portátil. No pongas la conexión de Aiven ni claves o variables de R2 en el portátil.
 
+   Confirma que el archivo queda fuera de Git:
+
+   ```powershell
+   git check-ignore -v .env.local
+   ```
+
+   Si el comando no muestra una regla que lo ignore, detente y no agregues el archivo al repositorio. `SYNC_CAPTURE_REMOTE=true` es una variable de Render, no del portátil.
 5. **Crea una base local nueva y comprueba el destino antes de restaurar.** Inicia PostgreSQL y crea una base vacía, sin borrar ni reutilizar la base anterior:
 
    ```powershell
@@ -757,35 +759,23 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
    ALTER TABLE public.eventos_sincronizacion_archivo_pre_sync
      ADD COLUMN archivado_en timestamp NOT NULL DEFAULT now();
 
-   INSERT INTO public.eventos_sincronizacion_archivo_pre_sync (
-     operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
-     origen, estado, intentos, ultimo_error, respuesta_remota,
-     referencias_endpoint, referencias_respuesta, creado_en, procesado_en,
-     archivado_en
-   )
-   SELECT
-     operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
-     origen, estado, intentos, ultimo_error, respuesta_remota,
-     referencias_endpoint, referencias_respuesta, creado_en, procesado_en,
-     now()
-   FROM public.eventos_sincronizacion
-   WHERE origen = 'local'
-     AND estado = 'pendiente'
-     AND creado_en < TIMESTAMP '2026-11-01 00:00:00';
+   INSERT INTO public.eventos_sincronizacion_archivo_pre_sync
+   SELECT evento.*, now()
+   FROM public.eventos_sincronizacion AS evento
+   WHERE evento.origen = 'local'
+     AND evento.estado = 'pendiente';
 
    DO $$
    DECLARE pendientes bigint; archivados bigint;
    BEGIN
      SELECT count(*) INTO pendientes
      FROM public.eventos_sincronizacion
-     WHERE origen = 'local' AND estado = 'pendiente'
-       AND creado_en < TIMESTAMP '2026-11-01 00:00:00';
+     WHERE origen = 'local' AND estado = 'pendiente';
      SELECT count(*) INTO archivados
-     FROM public.eventos_sincronizacion_archivo_pre_sync
-     WHERE origen = 'local' AND estado = 'pendiente'
-       AND creado_en < TIMESTAMP '2026-11-01 00:00:00';
-     IF pendientes = 0 OR pendientes <> archivados THEN
-       RAISE EXCEPTION 'Conteos de eventos objetivo y archivo no coinciden: % frente a %', pendientes, archivados;
+     FROM public.eventos_sincronizacion_archivo_pre_sync;
+     IF pendientes <> archivados THEN
+       RAISE EXCEPTION 'Conteos de eventos objetivo y archivo no coinciden: % frente a %',
+         pendientes, archivados;
      END IF;
    END $$;
 
@@ -793,7 +783,6 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
    SET estado = 'sincronizado', procesado_en = now(), ultimo_error = NULL
    WHERE evento.origen = 'local'
      AND evento.estado = 'pendiente'
-     AND evento.creado_en < TIMESTAMP '2026-11-01 00:00:00'
      AND EXISTS (
        SELECT 1
        FROM public.eventos_sincronizacion_archivo_pre_sync AS archivo
@@ -805,8 +794,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
    BEGIN
      SELECT count(*) INTO pendientes_restantes
      FROM public.eventos_sincronizacion
-     WHERE origen = 'local' AND estado = 'pendiente'
-       AND creado_en < TIMESTAMP '2026-11-01 00:00:00';
+     WHERE origen = 'local' AND estado IN ('pendiente', 'error', 'conflicto');
      SELECT count(*) INTO archivados
      FROM public.eventos_sincronizacion_archivo_pre_sync;
      SELECT count(*) INTO marcados
@@ -814,9 +802,9 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
      JOIN public.eventos_sincronizacion_archivo_pre_sync AS archivo
        ON archivo.operation_id = evento.operation_id
      WHERE evento.origen = 'local' AND evento.estado = 'sincronizado'
-       AND evento.creado_en < TIMESTAMP '2026-11-01 00:00:00';
+       AND archivo.estado = 'pendiente';
      IF pendientes_restantes <> 0 OR archivados <> marcados THEN
-       RAISE EXCEPTION 'Verificación posterior al cambio falló: pendientes %, archivados %, marcados %',
+       RAISE EXCEPTION 'Verificacion posterior fallo: eventos locales sin resolver %, archivados %, marcados %',
          pendientes_restantes, archivados, marcados;
      END IF;
    END $$;
@@ -825,24 +813,25 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
      (SELECT count(*) FROM public.eventos_sincronizacion_archivo_pre_sync) AS archivados,
      (SELECT count(*)
       FROM public.eventos_sincronizacion
-      WHERE origen = 'local' AND estado = 'pendiente'
-        AND creado_en < TIMESTAMP '2026-11-01 00:00:00') AS pendientes_restantes,
+      WHERE origen = 'local' AND estado IN ('pendiente', 'error', 'conflicto'))
+        AS eventos_locales_sin_resolver,
      (SELECT count(*)
       FROM public.eventos_sincronizacion AS evento
       JOIN public.eventos_sincronizacion_archivo_pre_sync AS archivo
         ON archivo.operation_id = evento.operation_id
-      WHERE evento.origen = 'local' AND evento.estado = 'sincronizado'
-        AND evento.creado_en < TIMESTAMP '2026-11-01 00:00:00') AS marcados_sincronizados;
+      WHERE evento.origen = 'local'
+        AND evento.estado = 'sincronizado'
+        AND archivo.estado = 'pendiente') AS marcados_sincronizados;
 
    SELECT estado, count(*)
    FROM public.eventos_sincronizacion
-   WHERE origen = 'local' AND creado_en < TIMESTAMP '2026-11-01 00:00:00'
+   WHERE origen = 'local'
    GROUP BY estado
    ORDER BY estado;
    ROLLBACK;
    ```
 
-   Revisa los conteos de la prueba; tienen que coincidir exactamente y no debe haber eventos objetivo sin archivar. Si no coinciden o el bloque falla, detente. Solo después de aprobación explícita se vuelve a ejecutar el bloque idéntico y se cambia la última línea por `COMMIT`. No amplíes la fecha ni incluyas `error` o `conflicto` sin una revisión separada.
+   Revisa que `archivados` y `marcados_sincronizados` coincidan y que `eventos_locales_sin_resolver` sea cero. Si aparece un error, un conflicto o un conteo inesperado, detente; no repitas con `COMMIT`.
 
 10. **Reinicia metadata únicamente en la base local.** Después de archivar y marcar los eventos objetivo, vacía el cursor y las equivalencias heredadas del dump local. `cursos_sincronizacion` contiene el cursor anterior; `base_sincronizacion` contiene el punto de partida antiguo; `referencias_sincronizacion` conserva mapeos de IDs que no se deben reutilizar al empezar desde una copia nueva. No borres `eventos_sincronizacion`, la tabla de archivo, `operaciones_sincronizadas` ni ninguna tabla de negocio.
 
@@ -862,10 +851,14 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
    DELETE FROM public.cursos_sincronizacion;
    DELETE FROM public.referencias_sincronizacion;
    DELETE FROM public.base_sincronizacion;
+   SELECT
+     (SELECT count(*) FROM public.cursos_sincronizacion) AS cursos_restantes,
+     (SELECT count(*) FROM public.referencias_sincronizacion) AS referencias_restantes,
+     (SELECT count(*) FROM public.base_sincronizacion) AS huellas_restantes;
    COMMIT;
    ```
 
-   **Este SQL nunca se ejecuta contra Aiven.** Antes de confirmar, vuelve a comprobar que la conexión sigue siendo la base local correcta. Si la tabla de archivo no contiene el mismo número de filas que se apartaron, no continúes.
+   **Este SQL nunca se ejecuta contra Aiven.** Confirma que las tres cantidades finales sean cero antes de continuar.
 
 11. **Inicializa y revisa el estado.** Mantén pausadas las escrituras. Desde la raíz del repositorio, ejecuta:
 
@@ -874,7 +867,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
    pnpm run sync:status
    ```
 
-   `sync:init` compara cantidad de filas e ID máximo en las 21 tablas; no es un hash del contenido. Si las huellas difieren, detente y no fuerces el cursor. En `sync:status`, confirma un punto de partida completo, cursor remoto y que no queden eventos locales `pendiente` o `error`. Investiga también cualquier `conflicto`; no lo resuelvas borrando la cola. El historial de eventos puede seguir teniendo filas; el archivo se conserva y los pendientes históricos marcados como sincronizados no se vuelven a subir.
+   `sync:init` consulta Render mediante las peticiones `GET /sync/huella` y `GET /sync/ahora`; esas rutas solo leen datos y no escriben en Aiven. Localmente compara la cantidad de filas e ID máximo de las 21 tablas de negocio; no es un hash del contenido. Si no hay cursor remoto, guarda el cursor en `cursos_sincronizacion`, borra las filas anteriores de `base_sincronizacion` y guarda la huella (una fila por tabla), todo dentro de una transacción local. Si ya existe un cursor con una huella completa, lo conserva y no reemplaza el punto de partida. **Si `sync:init` informa diferencias de huella, detente y no fuerces ni cambies el cursor.** En `sync:status`, confirma un punto de partida completo y cursor remoto; **si muestra eventos locales pendientes, errores o conflictos, detente y no borres ni fuerces nada.** No reanudes el uso de la web hasta que `sync:init` y `sync:status` terminen sin esos problemas.
 
 12. **Prueba los dos sentidos con datos identificables.** Crear y borrar las pruebas en Render cambia datos de producción en Aiven. Hazlo únicamente con autorización, sin clientes reales relacionados y coordinando una pausa de escrituras normales:
    - En la web, crea un cliente con nombre único, por ejemplo `PRUEBA SYNC WEB 2026-11-02`. En el portátil ejecuta `pnpm run sync:pull` y confirma que aparece una sola vez.
