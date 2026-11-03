@@ -656,20 +656,22 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
 
    Si el comando falla o el objeto no coincide con el respaldo esperado, detente. `--list` valida que el archivo se pueda abrir; antes de usarlo, confirma también que es el dump reciente de Aiven y que su tamaño coincide con el objeto de R2.
 
-4. **Configura `.env.local`.** Crea ese archivo en la raíz del proyecto y completa solo con valores propios del equipo. No copies la conexión de Aiven:
+4. **SOLO EN EL PORTÁTIL: configura la sincronización.** Copia el ejemplo a `.env.local` en la raíz del repositorio y edítalo localmente:
 
-   ```dotenv
-   DATABASE_URL=postgresql://postgres:CONTRASENA_LOCAL@localhost:5433/investillo_sync_local
-   PORT=8080
-   NODE_ENV=production
-   SYNC_ENTORNO=portatil
-   SYNC_FECHA_CORTE=2026-11-01
-   SYNC_REMOTE_API_URL=https://TU-SERVICIO.onrender.com/api
-   SYNC_TOKEN=EL_MISMO_SECRETO_PRIVADO_CONFIGURADO_EN_RENDER
+   ```powershell
+   Copy-Item docs\local.env.example .env.local
+   code .env.local
    ```
 
-   `DATABASE_URL` debe apuntar a `localhost` y a PostgreSQL local. `SYNC_REMOTE_API_URL` sí apunta a Render y termina en `/api`; `SYNC_TOKEN` debe coincidir con el secreto de Render. `SYNC_CAPTURE_REMOTE=true` se configura en Render, no en el portátil. No compartas `.env.local` ni lo subas a Git.
+   En `.env.local`, configura `DATABASE_URL` para `investillo_sync_local` en `localhost:5433`; configura `SYNC_REMOTE_API_URL` con la URL HTTPS real del API de Render terminada en `/api`; y copia en `SYNC_TOKEN` el mismo token ya configurado en Render. No generes otro token ni lo escribas en `docs/local.env.example`, en ningún archivo versionado o en el chat. Este secreto solo debe estar en la configuración privada de Render y en el `.env.local` ignorado del portátil. No pongas la conexión de Aiven ni claves o variables de R2 en el portátil.
 
+   Confirma que el archivo queda fuera de Git:
+
+   ```powershell
+   git check-ignore -v .env.local
+   ```
+
+   Si el comando no muestra una regla que lo ignore, detente y no agregues el archivo al repositorio. `SYNC_CAPTURE_REMOTE=true` es una variable de Render, no del portátil.
 5. **Crea una base local nueva y comprueba el destino antes de restaurar.** Inicia PostgreSQL y crea una base vacía, sin borrar ni reutilizar la base anterior:
 
    ```powershell
@@ -690,7 +692,7 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
 
    No añadas `--clean`, no restaures sobre Aiven y no elimines la base anterior. Si la restauración falla o informa errores, detente y conserva el dump y el log.
 
-7. **Pausa las escrituras y verifica la copia.** Desde que se toma el respaldo hasta que `sync:init` termina correctamente, no crees, edites ni borres datos en Render/Aiven ni en el portátil. Pausa importaciones, tareas programadas y cualquier aplicación que escriba. Compara los conteos de las tablas principales con Aiven y confirma que las tablas de sincronización del servidor existen. Es normal que el respaldo no incluya `base_sincronizacion`: es metadata local y se crea en el bloque siguiente. Si falta otra tabla o hay diferencias inesperadas, detente; no ejecutes `db:push` contra Aiven como parte de este procedimiento.
+7. **Pausa las escrituras y verifica la copia.** Desde que se toma el respaldo hasta que `sync:init` termina correctamente, nadie debe usar la web ni crear, editar o borrar datos en Render/Aiven o en el portátil. Pausa importaciones, tareas programadas y cualquier aplicación que escriba. Compara los conteos de las tablas principales con Aiven y confirma que las tablas de sincronización del servidor existen. Es normal que el respaldo no incluya `base_sincronizacion`: es metadata local y se crea en el bloque siguiente. Si falta otra tabla o hay diferencias inesperadas, detente; no ejecutes `db:push` contra Aiven como parte de este procedimiento.
 
 8. **Prepara la metadata local y aparta los eventos del respaldo.** Estos bloques son únicamente para la base local `investillo_sync_local` o `investillo_ensayo` en `localhost:5433`; nunca los ejecutes contra Aiven. Cada bloque comprueba el nombre de la base, la dirección loopback, el puerto y que la transacción permita escrituras. Conéctate por TCP a `localhost:5433`, no por socket local. Guarda cada bloque por separado en un archivo `.sql` codificado en UTF-8 y ejecútalo desde PowerShell con el comando siguiente, sustituyendo la ruta por la del archivo correspondiente. No uses `-c` ni pegues el SQL directamente en la consola:
 
@@ -899,14 +901,14 @@ Este procedimiento prepara una instalación limpia del portátil usando Aiven co
 
    **Este SQL nunca se ejecuta contra Aiven.** Confirma que las tres cantidades finales sean cero antes de continuar.
 
-10. **Inicializa y revisa el estado.** Mantén pausadas las escrituras. Desde la raíz del repositorio, ejecuta:
+10. **SOLO EN EL PORTÁTIL: inicializa y revisa el estado.** Mantén pausado el uso de la web y todas las escrituras hasta que `sync:init` termine correctamente. Desde la raíz del repositorio del portátil, ejecuta, en este orden:
 
    ```powershell
    pnpm run sync:init
    pnpm run sync:status
    ```
 
-   `sync:init` consulta Render mediante las peticiones `GET /sync/huella` y `GET /sync/ahora`; esas rutas solo leen datos y no escriben en Aiven. Localmente compara la cantidad de filas e ID máximo de las 21 tablas de negocio; no es un hash del contenido. Si no hay cursor remoto, guarda el cursor en `cursos_sincronizacion`, borra las filas anteriores de `base_sincronizacion` y guarda la huella (una fila por tabla), todo dentro de una transacción local. Si ya existe un cursor con una huella completa, lo conserva y no reemplaza el punto de partida. Si las huellas difieren, detente y no fuerces el cursor. En `sync:status`, confirma un punto de partida completo, cursor remoto y que no queden eventos locales `pendiente` o `error`. Investiga también cualquier `conflicto`; no lo resuelvas borrando la cola. El historial de eventos puede seguir teniendo filas; el archivo se conserva y los pendientes históricos marcados como sincronizados no se vuelven a subir.
+   `sync:init` consulta Render mediante las peticiones `GET /sync/huella` y `GET /sync/ahora`; esas rutas solo leen datos y no escriben en Aiven. Localmente compara la cantidad de filas e ID máximo de las 21 tablas de negocio; no es un hash del contenido. Si no hay cursor remoto, guarda el cursor en `cursos_sincronizacion`, borra las filas anteriores de `base_sincronizacion` y guarda la huella (una fila por tabla), todo dentro de una transacción local. Si ya existe un cursor con una huella completa, lo conserva y no reemplaza el punto de partida. **Si `sync:init` informa diferencias de huella, detente y no fuerces ni cambies el cursor.** En `sync:status`, confirma un punto de partida completo y cursor remoto; **si muestra eventos locales pendientes, errores o conflictos, detente y no borres ni fuerces nada.** No reanudes el uso de la web hasta que `sync:init` y `sync:status` terminen sin esos problemas.
 
 11. **Prueba los dos sentidos con datos identificables.** Crear y borrar las pruebas en Render cambia datos de producción en Aiven. Hazlo únicamente con autorización, sin clientes reales relacionados y coordinando una pausa de escrituras normales:
    - En la web, crea un cliente con nombre único, por ejemplo `PRUEBA SYNC WEB 2026-11-02`. En el portátil ejecuta `pnpm run sync:pull` y confirma que aparece una sola vez.
