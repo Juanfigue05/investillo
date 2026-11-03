@@ -37,7 +37,7 @@ Este resumen reúne los cambios funcionales y operativos de la rama. No incluye 
 
 - La importación de clientes e inventario valida lotes, conserva conflictos para revisión y registra operaciones aptas para sincronización sin enviar archivos binarios.
 - Se añadieron comprobaciones de referencias, cálculos de nómina y consistencia de créditos e inventario; los reportes de verificación señalan hallazgos, no los corrigen automáticamente.
-- La revisión marca como problema un evento local pendiente por más de 72 horas. La consulta usa el umbral como parámetro SQL.
+- El verificador exige `SYNC_ENTORNO` (`servidor` o `portatil`), informa el desglose de eventos por origen/estado y aplica `SYNC_FECHA_CORTE` (por defecto `2026-11-01`) a la alerta de pendientes locales mayores de 72 horas. También muestra la fecha del pendiente más antiguo desde el corte y cuántos pendientes históricos ignora.
 - Las pruebas de borrado por producto de historial de precios verifican rollback y que los historiales de otros productos permanezcan intactos.
 - Una prueba de scripts comprueba que los comandos `pnpm run` documentados en el README existan en los `package.json` correspondientes.
 
@@ -53,6 +53,7 @@ Este resumen reúne los cambios funcionales y operativos de la rama. No incluye 
 
 - Se corrigió el README para reflejar Aiven como base principal, Supabase como réplica auxiliar y R2 como almacenamiento de dumps; se actualizaron requisitos y procedimientos de PowerShell.
 - Se documentaron el flujo de sincronización, sus garantías y conflictos, las llaves foráneas, CI, respaldos, recuperación y el inventario de variables de entorno.
+- El procedimiento de primer arranque restaura una copia nueva de Aiven en una base local, archiva y aparta los pendientes históricos solo en el portátil, y reinicia únicamente allí el cursor, la huella y las equivalencias de IDs. Aiven queda intacta.
 - El índice y los enlaces internos del README se hicieron explícitos. Una prueba valida que los comandos `pnpm run` documentados existan.
 - Este archivo agrupa por tema los cambios respecto a `main`; no contiene cadenas de conexión reales ni datos de negocio.
 

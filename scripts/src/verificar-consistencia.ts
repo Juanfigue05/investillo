@@ -4,6 +4,21 @@ const { Pool } = pg;
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("Falta DATABASE_URL en el .env");
 
+const ENTORNO = process.env.SYNC_ENTORNO;
+if (ENTORNO !== "servidor" && ENTORNO !== "portatil") {
+  throw new Error("SYNC_ENTORNO debe ser 'servidor' o 'portatil'");
+}
+
+const FECHA_CORTE = process.env.SYNC_FECHA_CORTE ?? "2026-11-01";
+if (
+  !/^\d{4}-\d{2}-\d{2}$/.test(FECHA_CORTE) ||
+  Number.isNaN(Date.parse(`${FECHA_CORTE}T00:00:00.000Z`)) ||
+  new Date(`${FECHA_CORTE}T00:00:00.000Z`).toISOString().slice(0, 10) !==
+    FECHA_CORTE
+) {
+  throw new Error("SYNC_FECHA_CORTE debe tener formato válido YYYY-MM-DD");
+}
+
 const HORAS_MAXIMAS_EVENTO_PENDIENTE = 72;
 const pool = new Pool({ connectionString: DATABASE_URL });
 
@@ -14,6 +29,9 @@ interface Problema {
 
 async function verificarConsistencia() {
   const problemas: Problema[] = [];
+  console.log(
+    `Entorno revisado: ${ENTORNO}; fecha de corte: ${FECHA_CORTE} (hora de la base de datos).`,
+  );
 
   // Referencias sin padre: detecta huérfanos antes de añadir claves foráneas.
   const referenciasHuerfanas = await pool.query(`
@@ -87,11 +105,24 @@ async function verificarConsistencia() {
       "Aviso: las tablas de sincronización no están instaladas; se omite esa sección de la revisión.",
     );
   } else {
+    const desgloseEventos = await pool.query<{
+      origen: string;
+      estado: string;
+      cantidad: string;
+    }>(`
+      SELECT origen, estado, COUNT(*)::text AS cantidad
+      FROM eventos_sincronizacion
+      GROUP BY origen, estado
+      ORDER BY origen, estado
+    `);
     const problemasSync = await pool.query<{
       errores: string;
       conflictos: string;
       pendientes_antiguos: string;
-    }>(`
+      pendientes_historicos: string;
+      pendiente_mas_antiguo: string | null;
+    }>(
+      `
       SELECT COUNT(*) FILTER (
                WHERE origen = 'local' AND estado = 'error'
              )::text AS errores,
@@ -100,15 +131,42 @@ async function verificarConsistencia() {
              )::text AS conflictos,
              COUNT(*) FILTER (
                WHERE origen = 'local' AND estado = 'pendiente'
-                 AND creado_en < now() - ($1::integer * interval '1 hour')
-             )::text AS pendientes_antiguos
+                 AND creado_en >= $1::date::timestamp
+                 AND creado_en < now() - ($2::integer * interval '1 hour')
+             )::text AS pendientes_antiguos,
+             COUNT(*) FILTER (
+               WHERE origen = 'local' AND estado = 'pendiente'
+                 AND creado_en < $1::date::timestamp
+             )::text AS pendientes_historicos,
+             to_char(
+               MIN(creado_en) FILTER (
+                 WHERE origen = 'local' AND estado = 'pendiente'
+                   AND creado_en >= $1::date::timestamp
+               ),
+               'YYYY-MM-DD HH24:MI:SS'
+             ) AS pendiente_mas_antiguo
       FROM eventos_sincronizacion
-    `, [HORAS_MAXIMAS_EVENTO_PENDIENTE]);
+    `,
+      [FECHA_CORTE, HORAS_MAXIMAS_EVENTO_PENDIENTE],
+    );
     const estado = problemasSync.rows[0]!;
+    console.log("Eventos por origen y estado:");
+    for (const evento of desgloseEventos.rows) {
+      console.log(`  ${evento.origen}/${evento.estado}: ${evento.cantidad}`);
+    }
+    console.log(
+      `Eventos local/pendiente anteriores al corte (históricos ignorados): ${estado.pendientes_historicos}`,
+    );
+    console.log(
+      `Evento local/pendiente más antiguo desde el corte: ${estado.pendiente_mas_antiguo ?? "ninguno"}`,
+    );
     for (const [categoria, cantidad] of [
       ["Eventos de sincronización con error", Number(estado.errores)],
       ["Conflictos de sincronización", Number(estado.conflictos)],
-      [`Eventos pendientes por más de ${HORAS_MAXIMAS_EVENTO_PENDIENTE} horas`, Number(estado.pendientes_antiguos)],
+      [
+        `Eventos pendientes desde ${FECHA_CORTE} por más de ${HORAS_MAXIMAS_EVENTO_PENDIENTE} horas`,
+        Number(estado.pendientes_antiguos),
+      ],
     ] as const) {
       if (cantidad > 0) {
         problemas.push({ categoria, detalle: `${cantidad} evento(s)` });

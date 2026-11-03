@@ -2,7 +2,7 @@ name: Verificar Consistencia
 
 on:
   schedule:
-    - cron: "0 13 * * *"   # todos los días a las 8:00 a.m. hora Colombia (13:00 UTC)
+    - cron: "0 13 * * *" # todos los días a las 8:00 a.m. hora Colombia (13:00 UTC)
   workflow_dispatch: {}
 
 permissions:
@@ -30,4 +30,6 @@ jobs:
       - name: Correr la revisión de consistencia
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SYNC_ENTORNO: servidor
+          SYNC_FECHA_CORTE: ${{ vars.SYNC_FECHA_CORTE || '2026-11-01' }}
         run: pnpm run verificar

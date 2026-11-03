@@ -624,7 +624,7 @@ Debe responder con un estado correcto. Si no responde, no programes todavía `sy
 
 - Configura `CLAVE_ACCESO_REMOTO` en Render para proteger la aplicación. Tras iniciar sesión, el navegador recibe una cookie `investillo_sesion` aleatoria, `HttpOnly`, `SameSite=Lax` y con expiración de 30 días; el servidor guarda solo el hash en `sesiones_acceso`. Cerrar sesión revoca la sesión de ese navegador/perfil. La tabla se crea automáticamente al iniciar sesión y la limpieza periódica de operaciones elimina sesiones vencidas.
 - Configura `SYNC_TOKEN` con el mismo secreto aleatorio en Render y `.env.local`. Genéralo con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` y no lo compartas ni lo subas a Git. Se necesita para subir y descargar cambios; los scripts lo envían mediante `X-Sync-Token` y, sin él, la API rechaza las solicitudes de sincronización.
-- Para preparar la primera sincronización Aiven→PC, sigue completo el procedimiento **[Primer arranque de la sincronización (Aiven a PC)](#primer-arranque-aiven-a-pc)**. No basta con copiar los datos: también hay que migrar el esquema y reiniciar el estado antiguo de sincronización en ambas bases.
+- Para preparar la primera sincronización Aiven→PC, sigue completo el procedimiento **[Primer arranque de la sincronización (Aiven a PC)](#primer-arranque-aiven-a-pc)**. En este procedimiento Aiven permanece intacta: se archivan los pendientes históricos y se reinicia la metadata únicamente en la copia local.
 - `sync:init` compara en las dos bases la cantidad de filas y el ID máximo de cada tabla de negocio. Solo guarda el cursor y las 21 huellas iniciales si coinciden. No hay una opción para saltarse esa comprobación; si ya hay cursor sin punto de partida completo, el comando se detiene sin borrar ni modificar datos.
 - `sync:status` informa si el punto de partida está ausente, incompleto o completo; muestra el cursor remoto, los eventos por origen y estado, y advierte si hay eventos anteriores a la fecha guardada en la huella base.
 - La descarga confirma a Render el último cursor aplicado (`/api/sync/ack`). El limpiador conserva los eventos remotos mientras no tengan acuse; una vez confirmados, quedan sujetos a la retención normal de 60 días. Esta confirmación está diseñada para una sola PC sincronizadora.
@@ -634,77 +634,188 @@ Debe responder con un estado correcto. Si no responde, no programes todavía `sy
 <a id="primer-arranque-aiven-a-pc"></a>
 #### Primer arranque de la sincronización (Aiven a PC)
 
-Este procedimiento se usa una sola vez para preparar la sincronización bidireccional entre la base de Aiven y la copia de trabajo de la PC; Render ejecuta el API que conecta ambas. No lo ejecutes con cambios pendientes ni con las bases desalineadas. El reinicio borra solo metadata de sincronización, no tablas de negocio.
+Este procedimiento prepara una instalación limpia del portátil usando Aiven como fuente de verdad. Render ejecuta el API. **Aiven no se modifica en este procedimiento**: la copia de eventos antiguos, el cambio de estado y el reinicio de metadata se hacen únicamente en la base restaurada del portátil. No continúes si hay información local que no esté en Aiven, si el respaldo no se puede leer o si hay escrituras activas.
 
-1. **Comprueba los requisitos.**
-   - Render ya debe tener desplegada la versión nueva de la aplicación, con `SYNC_CAPTURE_REMOTE=true` y `SYNC_TOKEN` configurado. Usa el mismo `SYNC_TOKEN` en Render y en `.env.local`; configura `SYNC_REMOTE_API_URL` con la URL del API de Render.
-   - La PC debe tener PostgreSQL 18 instalado, el código actualizado y sus variables locales correctas.
-   - Confirma que la base local de trabajo es la que vas a usar y que hay espacio suficiente para restaurar el respaldo.
+1. **Protege la instalación anterior.** Confirma que no haya información de prueba o cambios del portátil que no estén en Aiven. Guarda `.env.local` y cualquier archivo que quieras conservar fuera de la carpeta que reinstalarás. No borres la base anterior hasta validar la nueva.
 
-2. **Haz un respaldo de Aiven antes de cambiar nada.** Guarda el dump en una ubicación protegida fuera del repositorio y comprueba que el archivo se pueda leer. No compartas ni registres credenciales en comandos, capturas o logs.
+2. **Prepara el equipo.** Instala Git, Node.js 24, pnpm 11.22.0 y PostgreSQL 18. Clona el repositorio en una carpeta nueva e instala dependencias:
 
-3. **Detén todas las escrituras.** Desde que se toma el respaldo hasta que `sync:init` termine correctamente, no se deben crear, editar ni borrar datos en Aiven/Render ni en la PC. Pausa también importaciones, tareas programadas y cualquier otra aplicación que escriba en esas bases.
-
-4. **Copia Aiven a la PC.** En el equipo local, si la base ya contiene tablas, elimina primero solo su esquema y restáuralo sin `--clean`. Ejemplo para la base local; sustituye la ruta por la ubicación protegida del dump:
-
-   ```sql
-   DROP SCHEMA public CASCADE;
+   ```powershell
+   git clone https://github.com/Juanfigue05/investillo.git
+   Set-Location investillo
+   corepack enable
+   corepack prepare pnpm@11.22.0 --activate
+   pnpm install --frozen-lockfile
    ```
+
+3. **Confirma el respaldo de R2.** En la consola de R2, anota el nombre y tamaño del dump esperado y confirma que se puede descargar. No ejecutes `pnpm run backup`: ese proceso puede aplicar una política de retención y borrar copias antiguas. Descarga el archivo a una carpeta protegida fuera del repositorio y comprueba que el listado del archivo se puede leer:
+
+   ```powershell
+   & 'C:\Program Files\PostgreSQL\18\bin\pg_restore.exe' --list 'C:\ruta\protegida\aiven.dump'
+   ```
+
+   Si el comando falla o el objeto no coincide con el respaldo esperado, detente. `--list` valida que el archivo se pueda abrir; antes de usarlo, confirma también que es el dump reciente de Aiven y que su tamaño coincide con el objeto de R2.
+
+4. **Configura `.env.local`.** Crea ese archivo en la raíz del proyecto y completa solo con valores propios del equipo. No copies la conexión de Aiven:
+
+   ```dotenv
+   DATABASE_URL=postgresql://postgres:CONTRASENA_LOCAL@localhost:5433/investillo_sync_local
+   PORT=8080
+   NODE_ENV=production
+   SYNC_ENTORNO=portatil
+   SYNC_FECHA_CORTE=2026-11-01
+   SYNC_REMOTE_API_URL=https://TU-SERVICIO.onrender.com/api
+   SYNC_TOKEN=EL_MISMO_SECRETO_PRIVADO_CONFIGURADO_EN_RENDER
+   ```
+
+   `DATABASE_URL` debe apuntar a `localhost` y a PostgreSQL local. `SYNC_REMOTE_API_URL` sí apunta a Render y termina en `/api`; `SYNC_TOKEN` debe coincidir con el secreto de Render. `SYNC_CAPTURE_REMOTE=true` se configura en Render, no en el portátil. No compartas `.env.local` ni lo subas a Git.
+
+5. **Crea una base local nueva y comprueba el destino antes de restaurar.** Inicia PostgreSQL y crea una base vacía, sin borrar ni reutilizar la base anterior:
+
+   ```powershell
+   & 'C:\Program Files\PostgreSQL\18\bin\createdb.exe' --host localhost --port 5433 --username postgres investillo_sync_local
+   ```
+
+   Comprueba el nombre, dirección y puerto. La dirección del servidor debe ser una IP local y el puerto debe ser `5433`; si el nombre, la dirección o el puerto no son los esperados, detente. Este comando puede pedir la contraseña local:
+
+   ```powershell
+   & 'C:\Program Files\PostgreSQL\18\bin\psql.exe' 'postgresql://postgres@localhost:5433/investillo_sync_local' -c "SELECT current_database(), inet_server_addr(), inet_server_port(), current_setting('transaction_read_only');"
+   ```
+
+6. **Restaura el dump solo en la base nueva local.** Reemplaza la ruta por la ubicación protegida real:
 
    ```powershell
    & 'C:\Program Files\PostgreSQL\18\bin\pg_restore.exe' --host localhost --port 5433 --username postgres --dbname investillo_sync_local --no-owner 'C:\ruta\protegida\aiven.dump'
    ```
 
-   No ejecutes `pg_restore --clean`: el esquema se acaba de eliminar y el dump crea los objetos. Verifica que el destino sea la base local correcta. No restaures el dump encima de Aiven.
+   No añadas `--clean`, no restaures sobre Aiven y no elimines la base anterior. Si la restauración falla o informa errores, detente y conserva el dump y el log.
 
-5. **Aplica la migración en Aiven y en la PC.** En cada base, ejecuta primero este SQL. La consulta de duplicados debe devolver cero filas; si devuelve alguna, detente y resuelve los duplicados con respaldo antes de crear el índice único.
+7. **Pausa las escrituras y verifica la copia.** Desde que se toma el respaldo hasta que `sync:init` termina correctamente, no crees, edites ni borres datos en Render/Aiven ni en el portátil. Pausa importaciones, tareas programadas y cualquier aplicación que escriba. Compara los conteos de las tablas principales con Aiven y confirma que las tablas de sincronización que usa esta versión existen. Si hay diferencias o falta una tabla, detente; no ejecutes `db:push` contra Aiven como parte de este procedimiento.
 
-   ```sql
-   ALTER TABLE cursos_sincronizacion
-     ADD COLUMN IF NOT EXISTS operacion_id text;
-
-   CREATE TABLE IF NOT EXISTS base_sincronizacion (
-     tabla text PRIMARY KEY,
-     total bigint NOT NULL,
-     maximo_id bigint NOT NULL,
-     creado_en timestamp NOT NULL DEFAULT now()
-   );
-
-   SELECT entidad, id_remoto, array_agg(id_local ORDER BY id_local) AS ids_local
-   FROM referencias_sincronizacion
-   GROUP BY entidad, id_remoto
-   HAVING count(*) > 1;
-
-   CREATE UNIQUE INDEX IF NOT EXISTS referencias_sincronizacion_entidad_remoto_uidx
-     ON referencias_sincronizacion (entidad, id_remoto);
-   ```
-
-6. **Reinicia la metadata antigua en las dos bases.** Puede haber eventos pendientes históricos del sistema anterior antes de este paso. Solo después de validar el respaldo, detener las escrituras y confirmar la alineación, ejecuta tanto en Aiven como en la PC estas sentencias en este orden y dentro de una transacción. No borres `operaciones_sincronizadas` ni ninguna tabla de negocio:
+8. **Archiva y aparta los pendientes históricos solo en el portátil.** Antes de ejecutar cualquier SQL, vuelve a comprobar la conexión con `current_database()`, `inet_server_addr()` y `inet_server_port()`. El destino tiene que ser `investillo_sync_local` en `localhost:5433`. Ejecuta este bloque únicamente conectado a la base local restaurada. La prueba termina en `ROLLBACK`, por lo que no conserva cambios:
 
    ```sql
    BEGIN;
-   DELETE FROM cursos_sincronizacion;
-   DELETE FROM eventos_sincronizacion;
-   DELETE FROM referencias_sincronizacion;
-   DELETE FROM base_sincronizacion;
+   CREATE TABLE public.eventos_sincronizacion_archivo_pre_sync
+     (LIKE public.eventos_sincronizacion INCLUDING ALL);
+   ALTER TABLE public.eventos_sincronizacion_archivo_pre_sync
+     ADD COLUMN archivado_en timestamp NOT NULL DEFAULT now();
+
+   INSERT INTO public.eventos_sincronizacion_archivo_pre_sync (
+     operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
+     origen, estado, intentos, ultimo_error, respuesta_remota,
+     referencias_endpoint, referencias_respuesta, creado_en, procesado_en,
+     archivado_en
+   )
+   SELECT
+     operation_id, entidad, entidad_id, tipo, metodo, endpoint, payload,
+     origen, estado, intentos, ultimo_error, respuesta_remota,
+     referencias_endpoint, referencias_respuesta, creado_en, procesado_en,
+     now()
+   FROM public.eventos_sincronizacion
+   WHERE origen = 'local'
+     AND estado = 'pendiente'
+     AND creado_en < TIMESTAMP '2026-11-01 00:00:00';
+
+   DO $$
+   DECLARE pendientes bigint; archivados bigint;
+   BEGIN
+     SELECT count(*) INTO pendientes
+     FROM public.eventos_sincronizacion
+     WHERE origen = 'local' AND estado = 'pendiente'
+       AND creado_en < TIMESTAMP '2026-11-01 00:00:00';
+     SELECT count(*) INTO archivados
+     FROM public.eventos_sincronizacion_archivo_pre_sync
+     WHERE origen = 'local' AND estado = 'pendiente'
+       AND creado_en < TIMESTAMP '2026-11-01 00:00:00';
+     IF pendientes = 0 OR pendientes <> archivados THEN
+       RAISE EXCEPTION 'Conteos de eventos objetivo y archivo no coinciden: % frente a %', pendientes, archivados;
+     END IF;
+   END $$;
+
+   UPDATE public.eventos_sincronizacion AS evento
+   SET estado = 'sincronizado', procesado_en = now(), ultimo_error = NULL
+   WHERE evento.origen = 'local'
+     AND evento.estado = 'pendiente'
+     AND evento.creado_en < TIMESTAMP '2026-11-01 00:00:00'
+     AND EXISTS (
+       SELECT 1
+       FROM public.eventos_sincronizacion_archivo_pre_sync AS archivo
+       WHERE archivo.operation_id = evento.operation_id
+     );
+
+   DO $$
+   DECLARE pendientes_restantes bigint; archivados bigint; marcados bigint;
+   BEGIN
+     SELECT count(*) INTO pendientes_restantes
+     FROM public.eventos_sincronizacion
+     WHERE origen = 'local' AND estado = 'pendiente'
+       AND creado_en < TIMESTAMP '2026-11-01 00:00:00';
+     SELECT count(*) INTO archivados
+     FROM public.eventos_sincronizacion_archivo_pre_sync;
+     SELECT count(*) INTO marcados
+     FROM public.eventos_sincronizacion AS evento
+     JOIN public.eventos_sincronizacion_archivo_pre_sync AS archivo
+       ON archivo.operation_id = evento.operation_id
+     WHERE evento.origen = 'local' AND evento.estado = 'sincronizado'
+       AND evento.creado_en < TIMESTAMP '2026-11-01 00:00:00';
+     IF pendientes_restantes <> 0 OR archivados <> marcados THEN
+       RAISE EXCEPTION 'Verificación posterior al cambio falló: pendientes %, archivados %, marcados %',
+         pendientes_restantes, archivados, marcados;
+     END IF;
+   END $$;
+
+   SELECT
+     (SELECT count(*) FROM public.eventos_sincronizacion_archivo_pre_sync) AS archivados,
+     (SELECT count(*)
+      FROM public.eventos_sincronizacion
+      WHERE origen = 'local' AND estado = 'pendiente'
+        AND creado_en < TIMESTAMP '2026-11-01 00:00:00') AS pendientes_restantes,
+     (SELECT count(*)
+      FROM public.eventos_sincronizacion AS evento
+      JOIN public.eventos_sincronizacion_archivo_pre_sync AS archivo
+        ON archivo.operation_id = evento.operation_id
+      WHERE evento.origen = 'local' AND evento.estado = 'sincronizado'
+        AND evento.creado_en < TIMESTAMP '2026-11-01 00:00:00') AS marcados_sincronizados;
+
+   SELECT estado, count(*)
+   FROM public.eventos_sincronizacion
+   WHERE origen = 'local' AND creado_en < TIMESTAMP '2026-11-01 00:00:00'
+   GROUP BY estado
+   ORDER BY estado;
+   ROLLBACK;
+   ```
+
+   Revisa los conteos de la prueba; tienen que coincidir exactamente y no debe haber eventos objetivo sin archivar. Si no coinciden o el bloque falla, detente. Solo después de aprobación explícita se vuelve a ejecutar el bloque idéntico y se cambia la última línea por `COMMIT`. No amplíes la fecha ni incluyas `error` o `conflicto` sin una revisión separada.
+
+9. **Reinicia metadata únicamente en la base local.** Después de archivar y marcar los eventos objetivo, vacía el cursor y las equivalencias heredadas del dump local. `cursos_sincronizacion` contiene el cursor anterior; `base_sincronizacion` contiene el punto de partida antiguo; `referencias_sincronizacion` conserva mapeos de IDs que no se deben reutilizar al empezar desde una copia nueva. No borres `eventos_sincronizacion`, la tabla de archivo, `operaciones_sincronizadas` ni ninguna tabla de negocio.
+
+   ```sql
+   BEGIN;
+   DELETE FROM public.cursos_sincronizacion;
+   DELETE FROM public.referencias_sincronizacion;
+   DELETE FROM public.base_sincronizacion;
    COMMIT;
    ```
 
-   Comprueba que las cuatro tablas quedaron sin filas en ambas bases. Este paso evita reaplicar eventos del sistema anterior; no lo omitas ni ejecutes `sync:local` antes de inicializar.
+   **Este SQL nunca se ejecuta contra Aiven.** Antes de confirmar, vuelve a comprobar que la conexión sigue siendo la base local correcta. Si la tabla de archivo no contiene el mismo número de filas que se apartaron, no continúes.
 
-7. **Verifica la alineación con `sync:init`.** Mantén detenidas las escrituras y, desde la PC, ejecuta:
+10. **Inicializa y revisa el estado.** Mantén pausadas las escrituras. Desde la raíz del repositorio, ejecuta:
 
    ```powershell
    pnpm run sync:init
+   pnpm run sync:status
    ```
 
-   El comando consulta la huella remota y la compara con la local para cada tabla: cantidad de filas e ID máximo. Esas medidas deben coincidir en las 21 tablas; no son un hash criptográfico del contenido. Si falta una tabla o una medida difiere, el comando falla y no guarda un cursor parcial. No fuerces el avance: vuelve a detener escrituras, identifica cuál base es la fuente correcta, alinéala y repite desde la copia y el reinicio.
+   `sync:init` compara cantidad de filas e ID máximo en las 21 tablas; no es un hash del contenido. Si las huellas difieren, detente y no fuerces el cursor. En `sync:status`, confirma un punto de partida completo, cursor remoto y que no queden eventos locales `pendiente` o `error`. Investiga también cualquier `conflicto`; no lo resuelvas borrando la cola. El historial de eventos puede seguir teniendo filas; el archivo se conserva y los pendientes históricos marcados como sincronizados no se vuelven a subir.
 
-8. **Revisa el estado antes de reabrir escrituras.** Ejecuta `pnpm run sync:status` en la PC. Debe indicar punto de partida completo (21/21 tablas), cursor remoto y cantidades de eventos por origen/estado. Después del reinicio no deben quedar eventos viejos pendientes; si hay eventos con fecha anterior a la huella o cuya antigüedad no se puede determinar, detente e investiga.
+11. **Prueba los dos sentidos con datos identificables.** Crear y borrar las pruebas en Render cambia datos de producción en Aiven. Hazlo únicamente con autorización, sin clientes reales relacionados y coordinando una pausa de escrituras normales:
+   - En la web, crea un cliente con nombre único, por ejemplo `PRUEBA SYNC WEB 2026-11-02`. En el portátil ejecuta `pnpm run sync:pull` y confirma que aparece una sola vez.
+   - En la aplicación local, crea otro cliente único, por ejemplo `PRUEBA SYNC PORTATIL 2026-11-02`. Ejecuta `pnpm run sync:local` y confirma que aparece una sola vez en la web.
+   - Ejecuta `pnpm run sync:all` de nuevo y comprueba que no se duplique nada.
+   - Borra los dos clientes desde la aplicación y sincroniza los borrados. Confirma que ya no aparecen en ninguna base.
 
-9. **Haz una prueba controlada.** Crea un registro de prueba identificable en Render, ejecuta `pnpm run sync:all` en la PC y comprueba que el registro y su equivalencia llegaron a la base local. Luego crea otro registro de prueba en la PC, vuelve a ejecutar `sync:all` y comprueba que llegó a Render. Ejecuta `sync:all` una segunda vez: no debe volver a aplicar ninguno de los cambios. Borra los registros de prueba mediante la aplicación sincronizada y verifica que ya no existan en ninguna base.
-
-10. **Reanuda las escrituras solo tras verificar ambos sentidos.** Si cualquier comprobación falla, detén la sincronización y conserva los respaldos y los mensajes de error. No borres cursores manualmente, no fuerces `sync:init`, no vuelvas a ejecutar una subida sobre una base desalineada y no reanudes las escrituras hasta confirmar cuál es la copia válida y volver a alinear las bases.
+12. **Valida y reabre el uso normal.** Ejecuta `pnpm run verificar:local`. Reanuda las escrituras normales solo si la inicialización, la verificación, las pruebas en ambos sentidos y los borrados terminaron correctamente. Si algo falla, conserva el respaldo, el archivo de eventos y los mensajes completos; detén la sincronización y no fuerces cursores.
 
 #### Llaves foráneas e índices
 
@@ -786,6 +897,8 @@ jobs:
       - run: pnpm run verificar
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SYNC_ENTORNO: servidor
+          SYNC_FECHA_CORTE: ${{ vars.SYNC_FECHA_CORTE || '2026-11-01' }}
 ```
 
 Necesita que guardes tu `DATABASE_URL` como **Secret** del repositorio: **Settings → Secrets and variables → Actions → New repository secret**.
@@ -1029,7 +1142,7 @@ El inventario de endpoints, entidades, referencias y respuestas está en [`docs/
 3. Si Render o Aiven no responden, conserva la operación pendiente y el log. La próxima ejecución puede reintentar un error transitorio; no copies datos manualmente entre bases.
 4. Si el mismo recurso se modificó remotamente después del último pull, la edición o eliminación local puede quedar en conflicto para evitar sobrescribir cambios no descargados. Ejecuta la descarga y resuelve el caso manualmente antes de volver a subir.
 
-La comprobación diaria revisa referencias huérfanas, diferencias entre `total_ganado` y sus distribuciones, eventos de sincronización en error/conflicto o pendientes por más de 72 horas, stock negativo, créditos sobre-abonados, líneas de crédito desalineadas y precios de venta inferiores al costo. El reporte señala problemas; no los corrige automáticamente. Los eventos ya sincronizados se conservan hasta 60 días y después pueden eliminarse mediante el proceso de limpieza.
+La comprobación diaria revisa referencias huérfanas, diferencias entre `total_ganado` y sus distribuciones, eventos de sincronización en error/conflicto o pendientes por más de 72 horas desde `SYNC_FECHA_CORTE`, stock negativo, créditos sobre-abonados, líneas de crédito desalineadas y precios de venta inferiores al costo. Los pendientes locales anteriores al corte se muestran como historial ignorado, no como una alarma. El reporte señala problemas; no los corrige automáticamente. Los eventos ya sincronizados se conservan hasta 60 días y después pueden eliminarse mediante el proceso de limpieza.
 
 <a id="seccion-15"></a>
 ## 15. 🧰 CI, respaldos y mantenimiento
@@ -1076,6 +1189,8 @@ No escribas valores reales en el README, en capturas, tickets ni commits. Usa lo
 | `SYNC_TOKEN` | Render y `.env.local` | Secreto compartido obligatorio para sincronizar. Usa el mismo valor en ambos lados y al menos 32 bytes. |
 | `SYNC_CAPTURE_REMOTE` | Render | Debe estar en `true` para capturar las escrituras remotas que alimentan el pull. |
 | `SYNC_REMOTE_API_URL` | `.env.local` | URL HTTPS del API de Render con `/api`; no es una URL de PostgreSQL. |
+| `SYNC_ENTORNO` | Verificador; `.env.api`, `.env.local` y GitHub Actions | Obligatoria para `pnpm run verificar`: `portatil` o `servidor`. No identifica la base automáticamente; quien ejecuta el verificador debe configurarla. |
+| `SYNC_FECHA_CORTE` | Verificador; `.env.api`, `.env.local` y GitHub Actions | Fecha `YYYY-MM-DD` a partir de la cual se alertan pendientes locales antiguos. Por defecto: `2026-11-01`. Errores y conflictos locales se siguen reportando sin filtro de fecha. |
 | `DISABLE_BACKGROUND_JOBS` | API | Si vale `true`, desactiva los trabajos periódicos del proceso. Normalmente se deja sin configurar. |
 | `LOG_LEVEL` | API | Nivel de logging opcional; por defecto es `info`. |
 | `REPL_ID` | Replit | Variable opcional que Replit inyecta; en desarrollo activa complementos visuales de Vite. No hace falta configurarla en Render ni en la laptop. |
