@@ -2,24 +2,32 @@ name: Keep Alive workflows
 
 on:
   schedule:
-    # Se ejecuta de forma automática el día 1 de cada mes a las 00:00 UTC
-    - cron: '0 0 1 * *'
-  workflow_dispatch: # Te permite activarlo manualmente desde la pestaña Actions si lo necesitas
+    - cron: '17 3 1 * *'   # día 1 de cada mes, 03:17 UTC
+  workflow_dispatch:        # para probarlo a mano
+
+permissions:
+  actions: write
 
 jobs:
   keep-alive:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write   # Necesario para simular la actividad usando la API
-      actions: read     # Le permite al runner descargar la acción externa de gautamkrishnar
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Keepalive Workflow Action
-        uses: gautamkrishnar/keepalive-workflow@v2
-        with:
-          use_api: true
-          # Usa la API de GitHub para mantenerlo activo sin crear commits falsos
-
-   
+      - name: Reactivar los workflows del repositorio
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          fallos=0
+          ids=$(gh api "/repos/$REPO/actions/workflows" --paginate \
+            --jq '.workflows[] | select(.state=="active" or .state=="disabled_inactivity") | .id')
+          for id in $ids; do
+            if gh api --method PUT "/repos/$REPO/actions/workflows/$id/enable"; then
+              echo "Workflow $id reactivado"
+            else
+              echo "No se pudo reactivar el workflow $id"
+              fallos=$((fallos+1))
+            fi
+          done
+          echo "Fallos: $fallos"
+          test "$fallos" -eq 0
