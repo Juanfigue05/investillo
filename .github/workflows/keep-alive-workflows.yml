@@ -10,7 +10,8 @@ jobs:
   keep-alive:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write   # Necesario para simular la actividad usando la API
+      actions: read     # Le permite al runner descargar la acción externa de gautamkrishnar
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,4 +19,7 @@ jobs:
       - name: Keepalive Workflow Action
         uses: gautamkrishnar/keepalive-workflow@v2
         with:
-          use_api: true # Usa la API de GitHub para mantenerlo activo sin crear commits falsos
+          use_api: true
+          # Usa la API de GitHub para mantenerlo activo sin crear commits falsos
+
+   
