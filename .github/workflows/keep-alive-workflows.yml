@@ -1,0 +1,21 @@
+name: Keep Alive workflows
+
+on:
+  schedule:
+    # Se ejecuta de forma automática el día 1 de cada mes a las 00:00 UTC
+    - cron: '0 0 1 * *'
+  workflow_dispatch: # Te permite activarlo manualmente desde la pestaña Actions si lo necesitas
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Keepalive Workflow Action
+        uses: gautamkrishnar/keepalive-workflow@v2
+        with:
+          use_api: true # Usa la API de GitHub para mantenerlo activo sin crear commits falsos
