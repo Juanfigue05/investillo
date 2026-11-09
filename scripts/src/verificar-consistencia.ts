@@ -2,7 +2,7 @@ import pg from "pg";
 const { Pool } = pg;
 
 const DATABASE_URL = process.env.DATABASE_URL;
-if (!DATABASE_URL) throw new Error("Falta DATABASE_URL en el .env");
+if (!DATABASE_URL) throw new Error("Falta la variable DATABASE_URL");
 
 const ENTORNO = process.env.SYNC_ENTORNO;
 if (ENTORNO !== "servidor" && ENTORNO !== "portatil") {
@@ -20,7 +20,11 @@ if (
 }
 
 const HORAS_MAXIMAS_EVENTO_PENDIENTE = 72;
-const pool = new Pool({ connectionString: DATABASE_URL });
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  connectionTimeoutMillis: 10_000,
+  max: 1,
+});
 
 interface Problema {
   categoria: string;
@@ -31,6 +35,12 @@ async function verificarConsistencia() {
   const problemas: Problema[] = [];
   console.log(
     `Entorno revisado: ${ENTORNO}; fecha de corte: ${FECHA_CORTE} (hora de la base de datos).`,
+  );
+  const identidadBase = await pool.query<{ base: string }>(
+    "SELECT current_database() AS base",
+  );
+  console.log(
+    `Base de datos conectada mediante DATABASE_URL: ${identidadBase.rows[0]?.base ?? "desconocida"}`,
   );
 
   // Referencias sin padre: detecta huérfanos antes de añadir claves foráneas.

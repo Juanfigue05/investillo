@@ -2,31 +2,47 @@ import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { iniciarSincronizacionAutomatica } from "@/lib/sync-engine";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { OfflineOperationDialog } from "@/components/OfflineOperationDialog";
-
-// Pages
-import Dashboard from "@/pages/dashboard";
-import Inventario from "@/pages/inventario";
-import VentasDiarias from "@/pages/ventas";
-import Creditos from "@/pages/creditos";
-import Compras from "@/pages/compras";
-import Historial from "@/pages/historial";
-import NosDebePage from "@/pages/nos-debe";
-import HistorialPrecios from "@/pages/historial-precios";
-import CierreDiario from "@/pages/cierre-diario";
-import HistorialCierres from "@/pages/historial-cierres";
-import ClientesPage from "@/pages/clientes";
-import NotFound from "@/pages/not-found";
-import ManoObra from "@/pages/mano-obra";
-import ReportePagos from "@/pages/reporte-pagos";
-import ReporteNomina from "@/pages/reporte-nomina";
-import ObraElectronica from "@/pages/obra-electronica";
-import DescuentosInventario from "@/pages/descuentos-inventario";
-
 import { queryClient } from "@/lib/queryClient";
+import { Skeleton } from "@/components/ui/skeleton";
+
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+const Inventario = lazy(() => import("@/pages/inventario"));
+const VentasDiarias = lazy(() => import("@/pages/ventas"));
+const Creditos = lazy(() => import("@/pages/creditos"));
+const Compras = lazy(() => import("@/pages/compras"));
+const Historial = lazy(() => import("@/pages/historial"));
+const NosDebePage = lazy(() => import("@/pages/nos-debe"));
+const HistorialPrecios = lazy(() => import("@/pages/historial-precios"));
+const CierreDiario = lazy(() => import("@/pages/cierre-diario"));
+const HistorialCierres = lazy(() => import("@/pages/historial-cierres"));
+const ClientesPage = lazy(() => import("@/pages/clientes"));
+const NotFound = lazy(() => import("@/pages/not-found"));
+const ManoObra = lazy(() => import("@/pages/mano-obra"));
+const ReportePagos = lazy(() => import("@/pages/reporte-pagos"));
+const ReporteNomina = lazy(() => import("@/pages/reporte-nomina"));
+const ObraElectronica = lazy(() => import("@/pages/obra-electronica"));
+const DescuentosInventario = lazy(() => import("@/pages/descuentos-inventario"));
+
+function PageLoading() {
+  return (
+    <div
+      className="min-h-screen space-y-6 p-4 md:p-8"
+      role="status"
+      aria-label="Cargando pantalla"
+    >
+      <Skeleton className="h-8 w-48" />
+      <Skeleton className="h-24 w-full" />
+      <div className="grid gap-4 md:grid-cols-2">
+        <Skeleton className="h-48 w-full" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    </div>
+  );
+}
 
 function Router() {
   return (
@@ -91,7 +107,9 @@ function App() {
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <DocumentTitle />
-            <Router />
+            <Suspense fallback={<PageLoading />}>
+              <Router />
+            </Suspense>
           </WouterRouter>
           <Toaster />
           <OfflineOperationDialog />

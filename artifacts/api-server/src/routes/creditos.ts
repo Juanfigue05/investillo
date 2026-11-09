@@ -23,6 +23,10 @@ function toNum(v: unknown): number {
   return typeof v === "string" ? parseFloat(v) : Number(v);
 }
 
+function exceedsCurrencyAmount(value: number, maximum: number): boolean {
+  return Math.round(value * 100) > Math.round(maximum * 100);
+}
+
 /** Abrevia el nombre del cliente: "OTONIEL GARCIA LOPEZ" → "OTONIEL G. L." */
 function abreviarNombre(nombre: string): string {
   const partes = nombre.trim().split(/\s+/);
@@ -39,6 +43,8 @@ type CreditoManoObraInput = {
 };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+class SaldoCreditoCambiadoError extends Error {}
 
 async function resolverClienteId(
   tx: Tx,
@@ -272,68 +278,118 @@ function mapLinea(l: typeof creditoLineasTable.$inferSelect) {
   };
 }
 
-async function mapCredito(c: typeof creditosTable.$inferSelect) {
-  const valorCredito = toNum(c.valorCredito);
-  const valorAbonado = toNum(c.valorAbonado);
-  const lineas = await db
-    .select()
-    .from(creditoLineasTable)
-    .where(eq(creditoLineasTable.creditoId, c.id))
-    .orderBy(asc(creditoLineasTable.id));
-  const abonos = await db
-    .select()
-    .from(abonosCreditosTable)
-    .where(eq(abonosCreditosTable.creditoId, c.id))
-    .orderBy(desc(abonosCreditosTable.fecha));
-  const [manoObra] = await db.select().from(manoObraTable).where(eq(manoObraTable.creditoId, c.id));
-  const distribuciones = manoObra
-    ? await db.select().from(distribucionesTable).where(eq(distribucionesTable.manoObraId, manoObra.id))
-    : [];
-  return {
-    id: c.id,
-    clienteId: c.clienteId ?? null,
-    tipo: c.tipo ?? "credito",
-    concepto: c.concepto ?? null,
-    fechaFactura: c.fechaFactura,
-    placaVehiculo: c.placaVehiculo,
-    nombreCliente: c.nombreCliente,
-    telefonoCliente: c.telefonoCliente,
-    descripcion: c.descripcion,
-    valorCredito,
-    valorAbonado,
-    valorRestante: Math.max(0, valorCredito - valorAbonado),
-    ordenImpresion: c.ordenImpresion,
-    lineas: lineas.map(mapLinea),
-    manoObra: manoObra
-      ? {
-          valor: toNum(manoObra.valorTotal),
-          trabajadores: distribuciones.map((d) => ({
-            id: d.trabajadorId,
-            nombre: d.trabajadorNombre,
-            valor: toNum(d.valor),
-          })),
+async function mapCreditos(creditos: (typeof creditosTable.$inferSelect)[]) {
+  if (creditos.length === 0) return [];
+
+  const creditoIds = creditos.map((credito) => credito.id);
+  const [lineas, abonos, manosObra] = await Promise.all([
+    db
+      .select()
+      .from(creditoLineasTable)
+      .where(inArray(creditoLineasTable.creditoId, creditoIds))
+      .orderBy(asc(creditoLineasTable.id)),
+    db
+      .select()
+      .from(abonosCreditosTable)
+      .where(inArray(abonosCreditosTable.creditoId, creditoIds))
+      .orderBy(desc(abonosCreditosTable.fecha)),
+    db
+      .select()
+      .from(manoObraTable)
+      .where(inArray(manoObraTable.creditoId, creditoIds)),
+  ]);
+  const manoObraIds = manosObra.map((manoObra) => manoObra.id);
+  const distribuciones =
+    manoObraIds.length > 0
+      ? await db
+          .select()
+          .from(distribucionesTable)
+          .where(inArray(distribucionesTable.manoObraId, manoObraIds))
+      : [];
+
+  const lineasPorCredito = new Map<number, typeof lineas>();
+  for (const linea of lineas) {
+    const grupo = lineasPorCredito.get(linea.creditoId) ?? [];
+    grupo.push(linea);
+    lineasPorCredito.set(linea.creditoId, grupo);
+  }
+
+  const abonosPorCredito = new Map<number, typeof abonos>();
+  for (const abono of abonos) {
+    const grupo = abonosPorCredito.get(abono.creditoId) ?? [];
+    grupo.push(abono);
+    abonosPorCredito.set(abono.creditoId, grupo);
+  }
+
+  const manoObraPorCredito = new Map(
+    manosObra.map((manoObra) => [manoObra.creditoId, manoObra]),
+  );
+  const distribucionesPorManoObra = new Map<number, typeof distribuciones>();
+  for (const distribucion of distribuciones) {
+    const grupo =
+      distribucionesPorManoObra.get(distribucion.manoObraId) ?? [];
+    grupo.push(distribucion);
+    distribucionesPorManoObra.set(distribucion.manoObraId, grupo);
+  }
+
+  return creditos.map((c) => {
+    const valorCredito = toNum(c.valorCredito);
+    const valorAbonado = toNum(c.valorAbonado);
+    const manoObra = manoObraPorCredito.get(c.id);
+    const distribucionesDeManoObra = manoObra
+      ? (distribucionesPorManoObra.get(manoObra.id) ?? [])
+      : [];
+    return {
+      id: c.id,
+      clienteId: c.clienteId ?? null,
+      tipo: c.tipo ?? "credito",
+      concepto: c.concepto ?? null,
+      fechaFactura: c.fechaFactura,
+      placaVehiculo: c.placaVehiculo,
+      nombreCliente: c.nombreCliente,
+      telefonoCliente: c.telefonoCliente,
+      descripcion: c.descripcion,
+      valorCredito,
+      valorAbonado,
+      valorRestante: Math.max(0, valorCredito - valorAbonado),
+      ordenImpresion: c.ordenImpresion,
+      lineas: (lineasPorCredito.get(c.id) ?? []).map(mapLinea),
+      manoObra: manoObra
+        ? {
+            valor: toNum(manoObra.valorTotal),
+            trabajadores: distribucionesDeManoObra.map((d) => ({
+              id: d.trabajadorId,
+              nombre: d.trabajadorNombre,
+              valor: toNum(d.valor),
+            })),
+          }
+        : null,
+      abonos: (abonosPorCredito.get(c.id) ?? []).map((a) => {
+        let detalle: { ref?: string; lineas?: unknown } | null = null;
+        try {
+          detalle = JSON.parse(a.lineaDetalle || "null");
+        } catch {
+          detalle = null;
         }
-      : null,
-    abonos: abonos.map((a) => {
-      let detalle: { ref?: string; lineas?: unknown } | null = null;
-      try {
-        detalle = JSON.parse(a.lineaDetalle || "null");
-      } catch {
-        detalle = null;
-      }
-      return {
-        id: a.id,
-        creditoId: a.creditoId,
-        fecha: a.fecha,
-        valorTotal: toNum(a.valorTotal),
-        notas: a.notas ?? detalle?.ref ?? null,
-        creadoEn: a.creadoEn,
-        lineas: Array.isArray(detalle) ? detalle : (detalle?.lineas ?? []),
-      };
-    }),
-    creadoEn: c.creadoEn,
-    actualizadoEn: c.actualizadoEn,
-  };
+        return {
+          id: a.id,
+          creditoId: a.creditoId,
+          fecha: a.fecha,
+          valorTotal: toNum(a.valorTotal),
+          notas: a.notas ?? detalle?.ref ?? null,
+          creadoEn: a.creadoEn,
+          lineas: Array.isArray(detalle) ? detalle : (detalle?.lineas ?? []),
+        };
+      }),
+      creadoEn: c.creadoEn,
+      actualizadoEn: c.actualizadoEn,
+    };
+  });
+}
+
+async function mapCredito(credito: typeof creditosTable.$inferSelect) {
+  const [mapped] = await mapCreditos([credito]);
+  return mapped;
 }
 
 // GET /creditos?tipo=credito|nosdebe
@@ -342,7 +398,7 @@ router.get("/", async (req, res) => {
   const creditos = tipo
     ? await db.select().from(creditosTable).where(eq(creditosTable.tipo, tipo)).orderBy(desc(creditosTable.fechaFactura))
     : await db.select().from(creditosTable).orderBy(desc(creditosTable.fechaFactura));
-  res.json(await Promise.all(creditos.map(mapCredito)));
+  res.json(await mapCreditos(creditos));
 });
 
 router.get("/:id", async (req, res) => {
@@ -492,8 +548,19 @@ router.post("/", async (req, res) => {
     res.status(400).json({ error: "El total de las líneas debe coincidir con el valor del crédito" });
     return;
   }
-  if (!Number.isFinite(abonoInicial) || abonoInicial < 0 || abonoInicial > valorCreditoNum + 0.01) {
+  if (!Number.isFinite(abonoInicial) || abonoInicial < 0 || exceedsCurrencyAmount(abonoInicial, valorCreditoNum)) {
     res.status(400).json({ error: "El abono inicial no puede superar el valor del crédito" });
+    return;
+  }
+  const abonoLineaInvalido = (lineas || []).some((linea) => {
+    const totalLinea = Number(linea.cantidad) * Number(linea.precioVenta);
+    const abonadoLinea = Number(linea.valorAbonado ?? 0);
+    return !Number.isFinite(totalLinea) || totalLinea < 0
+      || !Number.isFinite(abonadoLinea) || abonadoLinea < 0
+      || exceedsCurrencyAmount(abonadoLinea, totalLinea);
+  });
+  if (abonoLineaInvalido) {
+    res.status(400).json({ error: "El abono de una línea no puede superar el valor de esa línea" });
     return;
   }
   if (abonoInicial > 0 && (!abonoInicialFecha || !/^\d{4}-\d{2}-\d{2}$/.test(abonoInicialFecha))) {
@@ -504,7 +571,7 @@ router.post("/", async (req, res) => {
     res.status(400).json({ error: "La fecha de Ventas Diarias no es válida" });
     return;
   }
-  if (Math.abs(sumaInicial - abonoInicial) > 0.01) {
+  if (Math.round(sumaInicial * 100) !== Math.round(abonoInicial * 100)) {
     res.status(400).json({ error: "La suma de los productos del abono inicial debe coincidir con su valor" });
     return;
   }
@@ -711,7 +778,6 @@ router.put("/:id", async (req, res) => {
 
   if (tipo !== undefined) updateData.tipo = tipo;
   if (concepto !== undefined) updateData.concepto = concepto;
-  if (valorAbonado !== undefined) updateData.valorAbonado = String(parseFloat(String(valorAbonado)));
   if (descripcion !== undefined) updateData.descripcion = descripcion;
   if (nombreCliente !== undefined) updateData.nombreCliente = nombreCliente;
   if (placaVehiculo !== undefined) updateData.placaVehiculo = placaVehiculo;
@@ -722,13 +788,41 @@ router.put("/:id", async (req, res) => {
   let credito;
   try {
     credito = await db.transaction(async (tx) => {
+    const [creditoActual] = await tx
+      .select()
+      .from(creditosTable)
+      .where(eq(creditosTable.id, id))
+      .for("update");
+    if (!creditoActual) throw new Error("Credito no encontrado");
+    const valorAbonadoActual = toNum(creditoActual.valorAbonado);
+    const valorAbonadoEditado = valorAbonado === undefined
+      ? valorAbonadoActual
+      : Number(valorAbonado);
+    if (!Number.isFinite(valorAbonadoEditado) || valorAbonadoEditado < 0
+      || exceedsCurrencyAmount(valorAbonadoEditado, valorCredito ?? toNum(creditoActual.valorCredito))) {
+      throw new Error("Los abonos no pueden superar el valor del crédito");
+    }
+    if (valorAbonado !== undefined
+      && Math.round(valorAbonadoEditado * 100) !== Math.round(valorAbonadoActual * 100)) {
+      throw new Error("Los abonos existentes se editan desde el historial de pagos");
+    }
+    const valorCreditoEditado = valorCredito === undefined
+      ? toNum(creditoActual.valorCredito)
+      : Number(valorCredito);
+    if (!Number.isFinite(valorCreditoEditado) || valorCreditoEditado < 0
+      || exceedsCurrencyAmount(valorAbonadoActual, valorCreditoEditado)) {
+      throw new Error("El total del crédito no puede ser menor que los abonos registrados");
+    }
+    if (valorCredito !== undefined && !Array.isArray(lineas)) {
+      throw new Error("Envía las líneas del crédito para cambiar su total");
+    }
     let referenciasLineasNuevas: Array<{ campo: string; entidad: string; valorLocal: string }> = [];
     let ventasGeneradas: Array<{ id: number }> = [];
     let manoObraId: number | null = null;
-    const clienteId = existing.clienteId ?? await resolverClienteId(
+    const clienteId = creditoActual.clienteId ?? await resolverClienteId(
       tx,
-      nombreCliente ?? existing.nombreCliente,
-      telefonoCliente !== undefined ? telefonoCliente : existing.telefonoCliente,
+      nombreCliente ?? creditoActual.nombreCliente,
+      telefonoCliente !== undefined ? telefonoCliente : creditoActual.telefonoCliente,
     );
     const [updated] = await tx
       .update(creditosTable)
@@ -738,9 +832,22 @@ router.put("/:id", async (req, res) => {
 
     if (Array.isArray(lineas)) {
         const totalLineas = lineas.reduce((total, linea) => total + Number(linea.cantidad) * Number(linea.precioVenta), 0);
-        const valorCreditoEditado = valorCredito !== undefined ? Number(valorCredito) : toNum(existing.valorCredito);
         if (!Number.isFinite(valorCreditoEditado) || Math.abs(totalLineas - valorCreditoEditado) > 0.01) {
           throw new Error("El total de las líneas debe coincidir con el valor del crédito");
+        }
+        let totalAbonadoLineas = 0;
+        for (const linea of lineas) {
+          const totalLinea = Number(linea.cantidad) * Number(linea.precioVenta);
+          const abonadoLinea = Number(linea.valorAbonado ?? 0);
+          if (!Number.isFinite(totalLinea) || totalLinea < 0
+            || !Number.isFinite(abonadoLinea) || abonadoLinea < 0
+            || exceedsCurrencyAmount(abonadoLinea, totalLinea)) {
+            throw new Error("El abono de una línea no puede superar el valor de esa línea");
+          }
+          totalAbonadoLineas += abonadoLinea;
+        }
+        if (Math.round(totalAbonadoLineas * 100) !== Math.round(valorAbonadoActual * 100)) {
+          throw new Error("La suma de los abonos de las líneas debe coincidir con los pagos registrados");
         }
       const oldLineas = await tx
         .select()
@@ -881,6 +988,10 @@ router.post("/:id/abono", async (req, res) => {
     res.status(400).json({ error: "Selecciona al menos un producto y un valor válido" });
     return;
   }
+  if (new Set(lineas.map((linea) => linea.lineaId)).size !== lineas.length) {
+    res.status(400).json({ error: "No repitas una línea en el mismo abono" });
+    return;
+  }
 
   const [credito] = await db.select().from(creditosTable).where(eq(creditosTable.id, creditoId));
   if (!credito) {
@@ -904,7 +1015,7 @@ router.post("/:id/abono", async (req, res) => {
     if (!linea) continue;
     const requestedValue = parseFloat(String(requested.valor));
     const remaining = Math.max(0, toNum(linea.cantidad) * toNum(linea.precioVenta) - toNum(linea.valorAbonado));
-    if (!Number.isFinite(requestedValue) || requestedValue <= 0 || requestedValue > remaining + 0.01) {
+    if (!Number.isFinite(requestedValue) || requestedValue <= 0 || exceedsCurrencyAmount(requestedValue, remaining)) {
       res.status(400).json({ error: "El abono supera el saldo de una de las líneas seleccionadas" });
       return;
     }
@@ -914,7 +1025,9 @@ router.post("/:id/abono", async (req, res) => {
   const creditLineOrder = new Map(creditLines.map((linea, index) => [linea.id, index]));
   applied.sort((left, right) => (creditLineOrder.get(left.linea.id) ?? 0) - (creditLineOrder.get(right.linea.id) ?? 0));
 
-  if (applied.length === 0 || appliedTotal > toNum(credito.valorCredito) - toNum(credito.valorAbonado) + 0.01 || Math.abs(appliedTotal - abonoTotal) > 0.01) {
+  const saldoCredito = toNum(credito.valorCredito) - toNum(credito.valorAbonado);
+  if (applied.length === 0 || exceedsCurrencyAmount(appliedTotal, saldoCredito)
+    || Math.round(appliedTotal * 100) !== Math.round(abonoTotal * 100)) {
     res.status(400).json({ error: "El abono supera el saldo de los productos seleccionados" });
     return;
   }
@@ -925,7 +1038,41 @@ router.post("/:id/abono", async (req, res) => {
     res.status(400).json({ error: "La fecha del abono es obligatoria y no es válida" });
     return;
   }
-  const updated = await db.transaction(async (tx) => {
+  let updated;
+  try {
+    updated = await db.transaction(async (tx) => {
+    const [creditoActual] = await tx
+      .select()
+      .from(creditosTable)
+      .where(eq(creditosTable.id, creditoId))
+      .for("update");
+    if (!creditoActual) throw new SaldoCreditoCambiadoError("Crédito no encontrado");
+    const saldoActual = toNum(creditoActual.valorCredito) - toNum(creditoActual.valorAbonado);
+    if (exceedsCurrencyAmount(appliedTotal, saldoActual)) {
+      throw new SaldoCreditoCambiadoError("El saldo cambió; actualiza el crédito e intenta de nuevo");
+    }
+
+    const lineasActuales = await tx
+      .select()
+      .from(creditoLineasTable)
+      .where(and(eq(creditoLineasTable.creditoId, creditoId), inArray(creditoLineasTable.id, lineIds)))
+      .orderBy(asc(creditoLineasTable.id))
+      .for("update");
+    const lineasPorId = new Map(lineasActuales.map((linea) => [linea.id, linea]));
+    const appliedActual = applied.map(({ linea, valor }) => {
+      const lineaActual = lineasPorId.get(linea.id);
+      if (!lineaActual) {
+        throw new SaldoCreditoCambiadoError("Una línea cambió; actualiza el crédito e intenta de nuevo");
+      }
+      const saldoLinea = toNum(lineaActual.cantidad) * toNum(lineaActual.precioVenta)
+        - toNum(lineaActual.valorAbonado);
+      if (exceedsCurrencyAmount(valor, saldoLinea)) {
+        throw new SaldoCreditoCambiadoError("El saldo de una línea cambió; actualiza el crédito e intenta de nuevo");
+      }
+      return { linea: lineaActual, valor };
+    });
+    applied.splice(0, applied.length, ...appliedActual);
+
     const ventasGeneradas: Array<{ id: number }> = [];
     // Aplicar el abono a las líneas del crédito
     for (const { linea, valor: av } of applied) {
@@ -936,7 +1083,7 @@ router.post("/:id/abono", async (req, res) => {
     }
 
     // Actualizar valorAbonado del crédito
-    const newAbonado = toNum(credito.valorAbonado) + appliedTotal;
+    const newAbonado = toNum(creditoActual.valorAbonado) + appliedTotal;
     const [updatedCredito] = await tx
       .update(creditosTable)
       .set({ valorAbonado: String(newAbonado), actualizadoEn: new Date() })
@@ -1006,7 +1153,14 @@ router.post("/:id/abono", async (req, res) => {
       nuevoAbonoId: newAbono.id,
       ventasGeneradas,
     };
-  });
+    });
+  } catch (err) {
+    if (err instanceof SaldoCreditoCambiadoError) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
   res.json({
     ...(await mapCredito(updated.credito)),
     _syncNuevoAbonoId: updated.nuevoAbonoId,
@@ -1108,6 +1262,10 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
     res.status(400).json({ error: "Selecciona al menos un producto y un valor válido" });
     return;
   }
+  if (new Set(lineas.map((linea) => linea.lineaId)).size !== lineas.length) {
+    res.status(400).json({ error: "No repitas una línea en el mismo abono" });
+    return;
+  }
 
   const [abono] = await db
     .select()
@@ -1140,7 +1298,7 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
       if (!linea) continue;
       const requestedValue = parseFloat(String(requested.valor));
       const remaining = Math.max(0, toNum(linea.cantidad) * toNum(linea.precioVenta) - toNum(linea.valorAbonado));
-      if (!Number.isFinite(requestedValue) || requestedValue <= 0 || requestedValue > remaining + 0.01) {
+      if (!Number.isFinite(requestedValue) || requestedValue <= 0 || exceedsCurrencyAmount(requestedValue, remaining)) {
         throw new Error("El abono supera el saldo de una de las líneas seleccionadas");
       }
       appliedTotal += requestedValue;
@@ -1148,7 +1306,10 @@ router.put("/:id/abono/:abonoId", async (req, res) => {
     }
     const creditLineOrder = new Map(creditLines.map((linea, index) => [linea.id, index]));
     applied.sort((left, right) => (creditLineOrder.get(left.linea.id) ?? 0) - (creditLineOrder.get(right.linea.id) ?? 0));
-    if (applied.length === 0 || appliedTotal > toNum(credito.valorCredito) - (toNum(credito.valorAbonado) - toNum(abono.valorTotal)) + 0.01 || Math.abs(appliedTotal - abonoTotal) > 0.01) {
+    const saldoDisponible = toNum(credito.valorCredito)
+      - (toNum(credito.valorAbonado) - toNum(abono.valorTotal));
+    if (applied.length === 0 || exceedsCurrencyAmount(appliedTotal, saldoDisponible)
+      || Math.round(appliedTotal * 100) !== Math.round(abonoTotal * 100)) {
       throw new Error("El abono supera el saldo disponible");
     }
 
