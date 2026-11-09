@@ -43,6 +43,8 @@ export const ENTIDAD_TABLA = {
 export const TABLAS_SIN_ENTIDAD = {
   distribuciones_mano_obra:
     "filas anidadas de mano_obra; ningún endpoint ni cuerpo de evento usa su id; se crean y se borran junto con su mano de obra o su venta",
+  movimientos_inventario:
+    "registro de auditoría inmutable; se replica por su endpoint y el ID no se referencia desde otras operaciones",
 } as const satisfies Partial<Record<TablaHuella, string>>;
 
 export const ENTIDADES_SIN_TABLA = {
@@ -196,7 +198,18 @@ export const REGLAS_REFERENCIAS: readonly ReglaReferencias[] = [
   },
   { metodo: "POST", endpoint: "/inventario", campos: [] },
   { metodo: "PUT", endpoint: "/inventario/:id", campos: [] },
-  { metodo: "PUT", endpoint: "/inventario/:id/stock", campos: [] },
+  {
+    metodo: "POST",
+    endpoint: "/inventario/:id/ajustes",
+    campos: [],
+    segmentos: [{ parametro: "id", entidad: "producto" }],
+  },
+  {
+    metodo: "PUT",
+    endpoint: "/inventario/:id/stock",
+    campos: [],
+    segmentos: [{ parametro: "id", entidad: "producto" }],
+  },
   { metodo: "PUT", endpoint: "/inventario/:id/reactivar", campos: [] },
   { metodo: "DELETE", endpoint: "/inventario/:id", campos: [] },
   { metodo: "POST", endpoint: "/trabajadores", campos: [] },

@@ -441,17 +441,24 @@ El SQL agrega 17 llaves foráneas y 18 índices. Conserva las filas huérfanas p
 
 Si el SQL falla por cualquier llave o restricción, toda la transacción se revierte y no cambia nada. Copia el mensaje de error completo y detente; no vuelvas a ejecutarlo sin revisar la causa. No agregues `CASCADE` indiscriminadamente: compras, ventas e historiales pueden ser datos que deben conservarse.
 
-### 6.7 Inventario: exportar, corregir y volver a subir con vista previa
+### 6.7 Inventario: exportar e importar con vista previa
 
-Para corregir muchos productos a la vez (por ejemplo, cuadrar el stock de Local/Bodega de todo el inventario), Inventario tiene un flujo pensado para volúmenes grandes (probado con casi 3.000 productos a la vez):
+1. **"Exportar Inventario"** descarga los productos y sus campos.
+2. **"Importar y Revisar Cambios"** compara el archivo con la base sin guardar nada y muestra los cambios antes de aplicarlos.
+3. La importación completa puede guardar datos de producto y crear productos nuevos. Para un producto existente, no aplica un cambio de Stock Local o Stock Bodega: deja esas celdas vacías para aplicar los demás cambios y usa **"Ajustar / descontar"** para registrar el conteo físico.
 
-1. **"Exportar Inventario"** descarga un Excel con **todos** los productos y **todos** los campos (nombre, marca, tipo, referencia, precios, IVA, Stock Local, Stock Bodega, stock mínimo).
-2. Corriges lo que necesites en el Excel — **una celda vacía significa "no tocar ese campo"**, así que solo hace falta escribir lo que realmente quieres cambiar.
-3. **"Importar y Revisar Cambios"** sube el archivo completo (sin límite de filas) y compara contra la base de datos — pero **no cambia nada todavía**.
-4. Se abre una vista previa mostrando, producto por producto, exactamente qué campo cambiaría y de qué valor a cuál (ej. "Stock Local: 10 → 45"), además de cuáles productos son nuevos.
-5. Solo al darle **"Aplicar cambios"** se actualiza la base de datos, de una sola vez.
+El botón **"Importar Excel"** mantiene la importación básica. Las cantidades de productos existentes se presentan para que el usuario elija sumar o reemplazar; esa decisión queda registrada como conteo físico. Las cantidades negativas o con más de tres decimales se rechazan.
 
-El botón **"Importar Excel"** (el original, más simple) sigue disponible aparte, para cuando solo necesitas subir/corregir cantidades rápido sin revisar cambio por cambio.
+### 6.8 Ajustar existencias y evitar saldos negativos
+
+En Inventario, **"Ajustar / descontar"** tiene dos acciones:
+
+- **Ajuste físico:** indica Local o Bodega, cantidad y motivo. Para conteo, selecciona **"Sobraron (sumar)"** o **"Faltaron (restar)"**. Daño, devolución a fábrica y pérdida/robo siempre restan; entrada extra siempre suma. El sistema muestra el stock antes/después, exige motivo y no permite dejar una ubicación en negativo.
+- **Descontar:** registra una salida por daño, pérdida, consumo u otro motivo, descontando primero de Local y luego de Bodega si es necesario.
+
+Los ajustes, descuentos, traslados, llegadas/reversiones de compras y correcciones por importación quedan en **"Movimientos sin venta"**; los registros son de solo lectura desde la aplicación. Las ventas y los créditos también bloquean el producto durante el descuento para evitar que dos operaciones simultáneas consuman las mismas unidades. Si una compra ya fue consumida, no se puede borrar ni corregir reduciendo el stock por debajo de cero; primero revisa las ventas y realiza el conteo físico correcto.
+
+El esquema nuevo se instala con [`scripts/sql/movimientos-inventario.sql`](./scripts/sql/movimientos-inventario.sql). Antes de usar la versión nueva, toma y valida respaldos y aplica el archivo tanto a la base local como a la base remota, mediante el procedimiento aprobado para cada entorno. No uses `db:push` contra Aiven. Las restricciones se agregan `NOT VALID`: conservan filas negativas históricas para que puedas revisarlas, pero exigen que las filas nuevas o actualizadas no queden negativas. Corrige cualquier saldo histórico desde **"Ajustar / descontar"** antes de editar otros datos de ese producto.
 
 ---
 

@@ -16,6 +16,12 @@ import {
 import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
 import { esLineaManoObra } from "../lib/conceptos-mano-obra";
+import {
+  bloquearProducto,
+  guardarExistencias,
+  leerExistencias,
+  validarExistenciasNoNegativas,
+} from "../lib/inventario-stock";
 
 const router: IRouter = Router();
 
@@ -80,48 +86,54 @@ async function resolverClienteId(
  */
 async function ajustarStock(tx: Tx, productoId: number, delta: number) {
   if (delta === 0) return;
-  const [producto] = await tx.select().from(productosTable).where(eq(productosTable.id, productoId));
+  const producto = await bloquearProducto(tx, productoId);
   if (!producto) throw new Error("Producto no encontrado");
-  const stockRegistrado = toNum(producto.stockActual);
-  const stockLocal = toNum(producto.stockLocal) || (toNum(producto.stockBodega) === 0 ? stockRegistrado : 0);
-  const stockBodega = toNum(producto.stockBodega);
-  if (delta > 0 && stockLocal + stockBodega + 0.0001 < delta) {
+  const existencias = leerExistencias(producto);
+  validarExistenciasNoNegativas(existencias);
+  if (delta > 0 && existencias.local + existencias.bodega + 0.0001 < delta) {
     throw new Error(`No hay existencias suficientes para ${producto.nombre}`);
   }
-  await tx
-    .update(productosTable)
-    .set({
-      stockLocal: delta > 0 ? String(stockLocal - Math.min(stockLocal, delta)) : String(stockLocal),
-      stockBodega: delta > 0 ? String(stockBodega - Math.max(0, delta - stockLocal)) : String(stockBodega),
-      stockActual: delta > 0 ? String(toNum(producto.stockActual) - delta) : String(toNum(producto.stockActual) - delta),
-      actualizadoEn: new Date(),
-    })
-    .where(eq(productosTable.id, productoId));
+  let local = existencias.local;
+  let bodega = existencias.bodega;
+  if (delta > 0) {
+    const cantidadLocal = Math.min(local, delta);
+    local -= cantidadLocal;
+    bodega -= delta - cantidadLocal;
+  } else {
+    local += -delta;
+  }
+  await guardarExistencias(tx, productoId, local, bodega);
 }
 
 async function descontarStockCredito(tx: Tx, productoId: number, cantidad: number) {
-  const [producto] = await tx.select().from(productosTable).where(eq(productosTable.id, productoId));
+  const producto = await bloquearProducto(tx, productoId);
   if (!producto) throw new Error("Producto no encontrado");
-  const local = toNum(producto.stockLocal) || (toNum(producto.stockBodega) === 0 ? toNum(producto.stockActual) : 0);
-  const bodega = toNum(producto.stockBodega);
-  if (local + bodega + 0.0001 < cantidad) throw new Error(`No hay existencias suficientes para ${producto.nombre}`);
-  const cantidadLocal = Math.min(local, cantidad);
+  const existencias = leerExistencias(producto);
+  validarExistenciasNoNegativas(existencias);
+  if (existencias.local + existencias.bodega + 0.0001 < cantidad) throw new Error(`No hay existencias suficientes para ${producto.nombre}`);
+  const cantidadLocal = Math.min(existencias.local, cantidad);
   const cantidadBodega = cantidad - cantidadLocal;
-  await tx.update(productosTable).set({
-    stockLocal: String(local - cantidadLocal), stockBodega: String(bodega - cantidadBodega),
-    stockActual: String(toNum(producto.stockActual) - cantidad), actualizadoEn: new Date(),
-  }).where(eq(productosTable.id, productoId));
+  await guardarExistencias(
+    tx,
+    productoId,
+    existencias.local - cantidadLocal,
+    existencias.bodega - cantidadBodega,
+  );
   return { cantidadLocal, cantidadBodega };
 }
 
 async function restaurarStockCredito(tx: Tx, productoId: number, cantidadLocal: number, cantidadBodega: number) {
   if (cantidadLocal === 0 && cantidadBodega === 0) return;
-  await tx.update(productosTable).set({
-    stockLocal: sql`${productosTable.stockLocal} + ${cantidadLocal}`,
-    stockBodega: sql`${productosTable.stockBodega} + ${cantidadBodega}`,
-    stockActual: sql`${productosTable.stockActual} + ${cantidadLocal + cantidadBodega}`,
-    actualizadoEn: new Date(),
-  }).where(eq(productosTable.id, productoId));
+  const producto = await bloquearProducto(tx, productoId);
+  if (!producto) throw new Error("Producto no encontrado");
+  const existencias = leerExistencias(producto);
+  validarExistenciasNoNegativas(existencias);
+  await guardarExistencias(
+    tx,
+    productoId,
+    existencias.local + cantidadLocal,
+    existencias.bodega + cantidadBodega,
+  );
 }
 
 async function ajustarTotalGanado(tx: Tx, trabajadorId: number, delta: number) {
@@ -396,8 +408,15 @@ async function mapCredito(credito: typeof creditosTable.$inferSelect) {
 router.get("/", async (req, res) => {
   const tipo = req.query.tipo as string | undefined;
   const creditos = tipo
-    ? await db.select().from(creditosTable).where(eq(creditosTable.tipo, tipo)).orderBy(desc(creditosTable.fechaFactura))
-    : await db.select().from(creditosTable).orderBy(desc(creditosTable.fechaFactura));
+    ? await db
+        .select()
+        .from(creditosTable)
+        .where(eq(creditosTable.tipo, tipo))
+        .orderBy(desc(creditosTable.fechaFactura), asc(creditosTable.id))
+    : await db
+        .select()
+        .from(creditosTable)
+        .orderBy(desc(creditosTable.fechaFactura), asc(creditosTable.id));
   res.json(await mapCreditos(creditos));
 });
 

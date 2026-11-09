@@ -13,6 +13,7 @@ import {
   eventosSincronizacionTable,
   historialPreciosTable,
   manoObraTable,
+  movimientosInventarioTable,
   operacionesSincronizadasTable,
   productosTable,
   trabajadoresTable,
@@ -32,6 +33,16 @@ type ReferenciaRespuestaTest = {
   entidad: string;
   valorLocal: string;
 };
+
+async function eliminarProductos(productoIds: number[]) {
+  if (productoIds.length === 0) return;
+  await db.delete(movimientosInventarioTable).where(
+    inArray(movimientosInventarioTable.productoId, productoIds),
+  );
+  await db.delete(productosTable).where(
+    inArray(productosTable.id, productoIds),
+  );
+}
 
 afterEach(async () => {
   if (operationIds.size === 0) return;
@@ -190,9 +201,11 @@ describe("referencias de respuesta en filas secundarias", () => {
           .where(inArray(productosTable.codigo, items.map(({ codigo }) => codigo))),
       ).toHaveLength(items.length);
     } finally {
-      await db
-        .delete(productosTable)
+      const productos = await db
+        .select({ id: productosTable.id })
+        .from(productosTable)
         .where(inArray(productosTable.codigo, items.map(({ codigo }) => codigo)));
+      await eliminarProductos(productos.map(({ id }) => id));
     }
   });
 
@@ -380,9 +393,11 @@ describe("referencias de respuesta en filas secundarias", () => {
         }
       }
     } finally {
-      await db
-        .delete(productosTable)
+      const productos = await db
+        .select({ id: productosTable.id })
+        .from(productosTable)
         .where(inArray(productosTable.codigo, codigos));
+      await eliminarProductos(productos.map(({ id }) => id));
     }
   });
 
@@ -651,7 +666,7 @@ describe("referencias de respuesta en filas secundarias", () => {
         );
         await db.delete(comprasTable).where(inArray(comprasTable.id, compraIds));
       }
-      await db.delete(productosTable).where(eq(productosTable.id, productoId));
+      await eliminarProductos([productoId]);
     }
   });
 
@@ -693,9 +708,7 @@ describe("referencias de respuesta en filas secundarias", () => {
           inArray(descuentosInventarioTable.id, descuentoIds),
         );
       }
-      await db.delete(productosTable).where(
-        inArray(productosTable.id, productoIds),
-      );
+      await eliminarProductos(productoIds);
     }
   });
 

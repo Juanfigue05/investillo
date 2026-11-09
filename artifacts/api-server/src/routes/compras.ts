@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { comprasTable, eventosSincronizacionTable, historialPreciosTable, productosTable } from "@workspace/db/schema";
-import { eq, sql, and, gte, inArray } from "drizzle-orm";
+import { comprasTable, eventosSincronizacionTable, historialPreciosTable, movimientosInventarioTable, productosTable } from "@workspace/db/schema";
+import { eq, and, gte, inArray } from "drizzle-orm";
 import { operacionesSincronizadasTable } from "@workspace/db/schema";
 import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
 import { parseNumeroColombia } from "@workspace/api-zod";
@@ -12,6 +12,12 @@ import {
   llegadaLoteComprasRequest,
 } from "@workspace/api-zod/write-requests";
 import { validarBody } from "../lib/validar-body";
+import {
+  bloquearProducto,
+  guardarExistencias,
+  leerExistencias,
+  validarExistenciasNoNegativas,
+} from "../lib/inventario-stock";
 
 const router: IRouter = Router();
 type CompraTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -77,6 +83,96 @@ function calcPrecioConIva(precioSinIva: number): number {
   return Math.ceil(conIva / 1000) * 1000;
 }
 
+async function registrarMovimientoCompra(
+  tx: CompraTransaction,
+  operationId: string,
+  producto: typeof productosTable.$inferSelect,
+  localAntes: number,
+  bodegaAntes: number,
+  localDespues: number,
+  bodegaDespues: number,
+  motivo: string,
+) {
+  let local = localAntes;
+  let bodega = bodegaAntes;
+  for (const [ubicacion, nuevoValor] of [
+    ["local", localDespues],
+    ["bodega", bodegaDespues],
+  ] as const) {
+    const anterior = ubicacion === "local" ? local : bodega;
+    const diferencia = nuevoValor - anterior;
+    if (diferencia === 0) continue;
+    const localNuevo = ubicacion === "local" ? nuevoValor : local;
+    const bodegaNuevo = ubicacion === "bodega" ? nuevoValor : bodega;
+    await tx.insert(movimientosInventarioTable).values({
+      operationId,
+      productoId: producto.id,
+      productoNombre: producto.nombre,
+      productoCodigo: producto.codigo,
+      tipo: "ajuste",
+      motivo,
+      ubicacion,
+      direccion: diferencia > 0 ? "sumar" : "restar",
+      cantidad: String(Math.abs(diferencia)),
+      stockLocalAntes: String(local),
+      stockLocalDespues: String(localNuevo),
+      stockBodegaAntes: String(bodega),
+      stockBodegaDespues: String(bodegaNuevo),
+      stockActualAntes: String(local + bodega),
+      stockActualDespues: String(localNuevo + bodegaNuevo),
+    });
+    local = localNuevo;
+    bodega = bodegaNuevo;
+  }
+}
+
+async function ajustarStockPorCompra(
+  tx: CompraTransaction,
+  operationId: string,
+  productoId: number,
+  delta: number,
+  motivo: string,
+) {
+  if (delta === 0) return;
+  const producto = await bloquearProducto(tx, productoId);
+  if (!producto) {
+    throw new CompraRouteError(
+      `Producto ${productoId} no encontrado para ajustar la compra.`,
+      404,
+    );
+  }
+  const antes = leerExistencias(producto);
+  validarExistenciasNoNegativas(antes);
+  if (antes.local + antes.bodega + delta < -0.0001) {
+    throw new CompraRouteError(
+      "No se puede revertir la compra: ya no hay existencias suficientes. Revisa las ventas y realiza un conteo físico.",
+      409,
+    );
+  }
+
+  let local = antes.local;
+  let bodega = antes.bodega;
+  if (delta > 0) {
+    local += delta;
+  } else {
+    const cantidadRestar = -delta;
+    const restarLocal = Math.min(local, cantidadRestar);
+    local -= restarLocal;
+    bodega -= cantidadRestar - restarLocal;
+  }
+  await guardarExistencias(tx, productoId, local, bodega);
+  await registrarMovimientoCompra(
+    tx,
+    operationId,
+    producto,
+    antes.local,
+    antes.bodega,
+    local,
+    bodega,
+    motivo,
+  );
+}
+
 router.get("/", async (req, res) => {
   const compras = await db
     .select({
@@ -138,6 +234,7 @@ interface LlegadaInput {
 
 async function procesarLlegadaCompra(
   tx: CompraTransaction,
+  operationId: string,
   existing: typeof comprasTable.$inferSelect,
   datos: LlegadaInput,
 ) {
@@ -164,20 +261,40 @@ async function procesarLlegadaCompra(
         400,
       );
     }
-    const [producto] = await tx
-      .select()
-      .from(productosTable)
-      .where(eq(productosTable.id, existing.productoId));
+    const producto = await bloquearProducto(tx, existing.productoId);
     if (!producto) {
       throw new CompraRouteError(
         `Producto ${existing.productoId} no encontrado para registrar la llegada.`,
         404,
       );
     }
+    const localSolicitado =
+      cantidadLocal === undefined || cantidadLocal === null
+        ? null
+        : parseNumeroColombia(cantidadLocal);
+    const bodegaSolicitada =
+      cantidadBodega === undefined || cantidadBodega === null
+        ? null
+        : parseNumeroColombia(cantidadBodega);
+    const cantidadLocalFinal =
+      localSolicitado ?? Math.max(0, cantidadNum - (bodegaSolicitada ?? 0));
+    const cantidadBodegaFinal =
+      bodegaSolicitada ?? Math.max(0, cantidadNum - cantidadLocalFinal);
+    if (
+      cantidadLocalFinal < 0 ||
+      cantidadBodegaFinal < 0 ||
+      Math.abs(cantidadLocalFinal + cantidadBodegaFinal - cantidadNum) > 0.0001
+    ) {
+      throw new CompraRouteError(
+        "La cantidad de Local y Bodega debe coincidir con la cantidad recibida.",
+        400,
+      );
+    }
+    const existencias = leerExistencias(producto);
+    validarExistenciasNoNegativas(existencias);
+    const localDespues = existencias.local + cantidadLocalFinal;
+    const bodegaDespues = existencias.bodega + cantidadBodegaFinal;
     const updateProd: Record<string, unknown> = {
-      stockActual: sql`${productosTable.stockActual} + ${cantidadNum}`,
-      stockLocal: sql`${productosTable.stockLocal} + ${parseNumeroColombia(cantidadLocal || 0)}`,
-      stockBodega: sql`${productosTable.stockBodega} + ${parseNumeroColombia(cantidadBodega || 0)}`,
       actualizadoEn: new Date(),
     };
 
@@ -204,6 +321,22 @@ async function procesarLlegadaCompra(
       precioVentaSinIvaRegistrado = toNum(producto.precioVentaSinIva);
     }
 
+    await guardarExistencias(
+      tx,
+      existing.productoId,
+      localDespues,
+      bodegaDespues,
+    );
+    await registrarMovimientoCompra(
+      tx,
+      operationId,
+      producto,
+      existencias.local,
+      existencias.bodega,
+      localDespues,
+      bodegaDespues,
+      "compra_llegada",
+    );
     await tx
       .update(productosTable)
       .set(updateProd)
@@ -273,7 +406,7 @@ router.put("/:id", async (req, res) => {
       }
 
       const { compra, preciosModificados, historialPrecioId } =
-        await procesarLlegadaCompra(tx, existing, req.body);
+        await procesarLlegadaCompra(tx, operationId, existing, req.body);
       if (!req.header("x-sync-apply")) {
         await tx.insert(eventosSincronizacionTable).values({
           operationId,
@@ -410,7 +543,7 @@ router.post("/lote-llegada", async (req, res) => {
           throw new CompraRouteError(`Compra ${item.id} no encontrada.`, 404);
         }
         const { compra, preciosModificados, historialPrecioId } =
-          await procesarLlegadaCompra(tx, compraExistente, {
+          await procesarLlegadaCompra(tx, operationId, compraExistente, {
             estado: "llegado",
             cantidadRecibida: item.cantidadRecibida,
             cantidadLocal: item.cantidadLocal,
@@ -480,25 +613,36 @@ router.post("/lote-llegada", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
-  const id = parseInt(req.params.id);
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) { res.status(400).json({ error: "ID de compra no válido" }); return; }
 
   try {
-    await db.transaction(async (tx) => {
-      const [existing] = await tx.select().from(comprasTable).where(eq(comprasTable.id, id));
+    const eliminado = await db.transaction(async (tx) => {
+      const [reservada] = await tx.insert(operacionesSincronizadasTable)
+        .values({ operationId, tipo: "compra", recursoId: id })
+        .onConflictDoNothing()
+        .returning();
+      if (!reservada) return false;
+      const [existing] = await tx.select().from(comprasTable)
+        .where(eq(comprasTable.id, id)).for("update");
+      if (!existing) throw new CompraRouteError("Compra no encontrada.", 404);
       if (existing && existing.estado === "llegado" && existing.cantidadRecibida) {
-        await tx.update(productosTable)
-          .set({ stockActual: sql`GREATEST(0, ${productosTable.stockActual} - ${toNum(existing.cantidadRecibida)})`, actualizadoEn: new Date() })
-          .where(eq(productosTable.id, existing.productoId));
+        await ajustarStockPorCompra(
+          tx,
+          operationId,
+          existing.productoId,
+          -toNum(existing.cantidadRecibida),
+          "reversion_compra",
+        );
       }
       await tx.delete(comprasTable).where(eq(comprasTable.id, id));
       if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "compra", entidadId: String(id), tipo: "eliminar", metodo: "DELETE", endpoint: `/compras/${id}`, payload: {}, origen: "local" });
-      await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "compra", recursoId: id }).onConflictDoNothing();
+      return true;
     });
+    if (!eliminado) { res.json({ ok: true, yaProcesado: true, recursoId: id }); return; }
     res.json({ mensaje: "Compra eliminada y stock revertido" });
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    res.status(errorStatus(err)).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -543,22 +687,14 @@ router.patch("/:id/corregir", async (req, res) => {
       const cantidadVieja = toNum(existing.cantidadRecibida);
       const delta = cantidadNueva - cantidadVieja;
 
-      const [producto] = await tx
-        .select()
-        .from(productosTable)
-        .where(eq(productosTable.id, existing.productoId))
-        .for("update");
-      if (!producto) {
-        throw new CompraRouteError(
-          `Producto ${existing.productoId} no encontrado para corregir la compra.`,
-          404,
-        );
-      }
-
       if (delta !== 0) {
-        await tx.update(productosTable)
-          .set({ stockActual: sql`GREATEST(0, ${productosTable.stockActual} + ${delta})`, actualizadoEn: new Date() })
-          .where(eq(productosTable.id, existing.productoId));
+        await ajustarStockPorCompra(
+          tx,
+          operationId,
+          existing.productoId,
+          delta,
+          "correccion_compra",
+        );
       }
 
       const [actualizada] = await tx.update(comprasTable)

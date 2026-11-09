@@ -2,7 +2,12 @@ import { Router, type IRouter } from "express";
 import multer from "multer";
 import ExcelJS from "exceljs";
 import { db, pool } from "@workspace/db";
-import { eventosSincronizacionTable, operacionesSincronizadasTable } from "@workspace/db/schema";
+import {
+  eventosSincronizacionTable,
+  movimientosInventarioTable,
+  operacionesSincronizadasTable,
+  productosTable,
+} from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import {
   parseInventarioBasico,
@@ -10,6 +15,12 @@ import {
   type FilaCompleta,
   type ParsedRow,
 } from "../lib/excel-import-parsers";
+import {
+  bloquearProducto,
+  guardarExistencias,
+  leerExistencias,
+  validarExistenciasNoNegativas,
+} from "../lib/inventario-stock";
 
 const router: IRouter = Router();
 const upload = multer({
@@ -79,6 +90,15 @@ async function upsertRows(
   productos: ProductoImportado[];
 }> {
   if (!items.length) return { conflictosCantidad: [], productos: [] };
+  if (
+    items.some(
+      (item) =>
+        item.cantidad !== null &&
+        (!Number.isFinite(item.cantidad) || item.cantidad < 0),
+    )
+  ) {
+    throw new Error("Las cantidades importadas no pueden ser negativas ni inválidas.");
+  }
 
   const client = await pool.connect();
   try {
@@ -102,8 +122,8 @@ async function upsertRows(
       if (item.cantidad === null) {
         // No venía cantidad en la plantilla → no se toca el stock (o queda en 0 si es producto nuevo)
         cantidadFinal.push(String(stockExistente ?? 0));
-      } else if (stockExistente === undefined || stockExistente === 0) {
-        // Producto nuevo, o ya existía pero estaba en 0 → se asigna directo, sin preguntar
+      } else if (stockExistente === undefined) {
+        // El stock inicial solo se asigna automáticamente a productos nuevos.
         cantidadFinal.push(String(item.cantidad));
       } else {
         // Ya tenía stock distinto de 0 → queda pendiente de que el usuario decida sumar o reemplazar
@@ -130,10 +150,10 @@ async function upsertRows(
       INSERT INTO productos
         (nombre, codigo, marca, tipo, referencia, adicional,
          precio_compra, precio_venta_sin_iva, precio_venta_con_iva,
-         tiene_iva, stock_actual, stock_minimo)
+         tiene_iva, stock_actual, stock_local, stock_bodega, stock_minimo)
       SELECT u.nombre, u.codigo, u.marca, NULL, u.referencia, NULL,
              u.pc::numeric, u.pvs::numeric, u.pvc::numeric,
-             false, u.cantidad_final::numeric, '0'
+             false, u.cantidad_final::numeric, u.cantidad_final::numeric, '0', '0'
       FROM UNNEST($1::text[],$2::text[],$3::text[],$4::text[],$5::text[],$6::text[],$7::text[],$8::text[])
            AS u(nombre,codigo,marca,referencia,pc,pvs,pvc,cantidad_final)
       ON CONFLICT (codigo) DO UPDATE SET
@@ -143,7 +163,7 @@ async function upsertRows(
         precio_compra       = EXCLUDED.precio_compra,
         precio_venta_sin_iva= EXCLUDED.precio_venta_sin_iva,
         precio_venta_con_iva= EXCLUDED.precio_venta_con_iva,
-        stock_actual        = EXCLUDED.stock_actual,
+        stock_actual        = productos.stock_actual,
         actualizado_en      = now()
     `,
       [n, c, m, r, pc, pvs, pvc, cantidadFinal],
@@ -416,51 +436,132 @@ router.post("/resolver", async (req, res) => {
 // ─── POST /resolver-cantidades — aplica "sumar" o "reemplazar" a los conflictos de stock ──
 router.post("/resolver-cantidades", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
   try {
     const { modo, items } = req.body as {
       modo: "sumar" | "reemplazar";
       items: { codigo: string; cantidadArchivo: number }[];
     };
+    if (modo !== "sumar" && modo !== "reemplazar") {
+      res.status(400).json({ error: "Modo de resolución no válido" });
+      return;
+    }
     if (!Array.isArray(items) || !items.length) {
       res.status(400).json({ error: "items requerido" });
       return;
     }
-
-    const client = await pool.connect();
-    try {
-      for (const item of items) {
-        if (modo === "sumar") {
-          await client.query(
-            `UPDATE productos SET stock_actual = stock_actual + $1::numeric, actualizado_en = now() WHERE codigo = $2`,
-            [item.cantidadArchivo, item.codigo],
-          );
-        } else {
-          await client.query(
-            `UPDATE productos SET stock_actual = $1::numeric, actualizado_en = now() WHERE codigo = $2`,
-            [item.cantidadArchivo, item.codigo],
-          );
-        }
-      }
-      const encontrados = await client.query<{ codigo: string; id: number }>(
-        `SELECT codigo, id FROM productos WHERE codigo = ANY($1::text[])`,
-        [items.map((item) => item.codigo)],
-      );
-      const productos = productosEnOrden(
-        items.map((item) => item.codigo),
-        encontrados.rows,
-      );
-      if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "inventario_import", entidadId: operationId, tipo: "resolver_cantidades", metodo: "POST", endpoint: "/inventario-import/resolver-cantidades", payload: req.body, referenciasRespuesta: referenciasRespuestaProductos(productos), origen: "local" });
-      await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "inventario_import", recursoId: null }).onConflictDoNothing();
-      res.json({
-        ok: true,
-        procesados: items.length,
-        ...(productos.length > 0 ? { _syncProductos: productos } : {}),
-      });
-    } finally {
-      client.release();
+    if (
+      items.some(
+        (item) =>
+          typeof item.codigo !== "string" ||
+          !item.codigo.trim() ||
+          !Number.isFinite(Number(item.cantidadArchivo)) ||
+          Number(item.cantidadArchivo) < 0 ||
+          Math.abs(Number(item.cantidadArchivo) * 1000 - Math.round(Number(item.cantidadArchivo) * 1000)) > 0.0001,
+      )
+    ) {
+      res.status(400).json({ error: "Los códigos y cantidades deben ser válidos; las cantidades no pueden ser negativas ni superar tres decimales." });
+      return;
     }
+    if (new Set(items.map((item) => item.codigo)).size !== items.length) {
+      res.status(400).json({ error: "No repitas códigos en la misma operación." });
+      return;
+    }
+
+    const resultado = await db.transaction(async (tx) => {
+      const [reservada] = await tx.insert(operacionesSincronizadasTable)
+        .values({ operationId, tipo: "inventario_import", recursoId: null })
+        .onConflictDoNothing()
+        .returning();
+      if (!reservada) return null;
+
+      const productos: ProductoImportado[] = [];
+      for (const item of [...items].sort((a, b) => a.codigo.localeCompare(b.codigo))) {
+        const [candidato] = await tx.select({ id: productosTable.id })
+          .from(productosTable)
+          .where(eq(productosTable.codigo, item.codigo));
+        if (!candidato) throw new Error(`No se encontró el producto ${item.codigo}.`);
+        const producto = await bloquearProducto(tx, candidato.id);
+        if (!producto) throw new Error(`No se encontró el producto ${item.codigo}.`);
+        const antes = leerExistencias(producto);
+        validarExistenciasNoNegativas(antes);
+        const cantidad = Number(item.cantidadArchivo);
+        const totalAntes = antes.local + antes.bodega;
+        const delta = modo === "sumar" ? cantidad : cantidad - totalAntes;
+        let local = antes.local;
+        let bodega = antes.bodega;
+        if (delta >= 0) {
+          local += delta;
+        } else {
+          const restar = -delta;
+          if (totalAntes + delta < -0.0001) {
+            throw new Error(`La cantidad de reemplazo para ${producto.nombre} no puede ser negativa.`);
+          }
+          const desdeLocal = Math.min(local, restar);
+          local -= desdeLocal;
+          bodega -= restar - desdeLocal;
+        }
+        await guardarExistencias(tx, producto.id, local, bodega);
+
+        let localAhora = antes.local;
+        let bodegaAhora = antes.bodega;
+        for (const [ubicacion, nuevoValor] of [
+          ["local", local],
+          ["bodega", bodega],
+        ] as const) {
+          const anterior = ubicacion === "local" ? localAhora : bodegaAhora;
+          const diferencia = nuevoValor - anterior;
+          if (diferencia === 0) continue;
+          const localNuevo = ubicacion === "local" ? nuevoValor : localAhora;
+          const bodegaNuevo = ubicacion === "bodega" ? nuevoValor : bodegaAhora;
+          await tx.insert(movimientosInventarioTable).values({
+            operationId,
+            productoId: producto.id,
+            productoNombre: producto.nombre,
+            productoCodigo: producto.codigo,
+            tipo: "ajuste",
+            motivo: "conteo",
+            ubicacion,
+            direccion: diferencia > 0 ? "sumar" : "restar",
+            cantidad: String(Math.abs(diferencia)),
+            stockLocalAntes: String(localAhora),
+            stockLocalDespues: String(localNuevo),
+            stockBodegaAntes: String(bodegaAhora),
+            stockBodegaDespues: String(bodegaNuevo),
+            stockActualAntes: String(localAhora + bodegaAhora),
+            stockActualDespues: String(localNuevo + bodegaNuevo),
+            observacion: `Conteo desde importación Excel (${modo})`,
+          });
+          localAhora = localNuevo;
+          bodegaAhora = bodegaNuevo;
+        }
+        productos.push({ codigo: producto.codigo, id: producto.id });
+      }
+
+      const ordenados = productosEnOrden(items.map((item) => item.codigo), productos);
+      if (!req.header("x-sync-apply")) {
+        await tx.insert(eventosSincronizacionTable).values({
+          operationId,
+          entidad: "inventario_import",
+          entidadId: operationId,
+          tipo: "resolver_cantidades",
+          metodo: "POST",
+          endpoint: "/inventario-import/resolver-cantidades",
+          payload: req.body,
+          referenciasRespuesta: referenciasRespuestaProductos(ordenados),
+          origen: "local",
+        });
+      }
+      return ordenados;
+    });
+    if (!resultado) {
+      res.json({ ok: true, yaProcesado: true });
+      return;
+    }
+    res.json({
+      ok: true,
+      procesados: items.length,
+      ...(resultado.length > 0 ? { _syncProductos: resultado } : {}),
+    });
   } catch (err: any) {
     res
       .status(500)
@@ -648,13 +749,54 @@ router.post("/aplicar-completo", async (req, res) => {
   try {
     const { filas } = req.body as { filas: FilaCompleta[] };
     if (!Array.isArray(filas) || !filas.length) { res.status(400).json({ error: "filas requerido" }); return; }
+    if (
+      filas.some((fila) =>
+        [fila.stockLocal, fila.stockBodega, fila.stockMinimo].some(
+          (cantidad) =>
+            cantidad !== null &&
+            (!Number.isFinite(cantidad) ||
+              cantidad < 0 ||
+              Math.abs(cantidad * 1000 - Math.round(cantidad * 1000)) > 0.0001),
+        ),
+      )
+    ) {
+      res.status(400).json({ error: "Las existencias importadas deben ser válidas, no negativas y tener máximo tres decimales." });
+      return;
+    }
 
     const codigos = filas.map((f) => f.codigo);
-    const existentes = await pool.query(`SELECT codigo FROM productos WHERE codigo = ANY($1::text[])`, [codigos]);
-    const codigosExistentes = new Set(existentes.rows.map((r) => r.codigo));
+    const existentes = await pool.query(
+      `SELECT codigo, stock_actual, stock_local, stock_bodega FROM productos WHERE codigo = ANY($1::text[])`,
+      [codigos],
+    );
+    const existentesPorCodigo = new Map(existentes.rows.map((row) => [row.codigo, row]));
+    const codigosExistentes = new Set(existentesPorCodigo.keys());
 
     const nuevas = filas.filter((f) => !codigosExistentes.has(f.codigo));
     const existentesFilas = filas.filter((f) => codigosExistentes.has(f.codigo));
+    const stockSinCambios = existentesFilas.every((fila) => {
+      const actual = existentesPorCodigo.get(fila.codigo);
+      if (!actual) return true;
+      const stockActual = Number(actual.stock_actual);
+      const stockLocal = Number(actual.stock_local);
+      const stockBodega = Number(actual.stock_bodega);
+      const localEfectivo =
+        stockLocal === 0 && stockBodega === 0 && stockActual !== 0
+          ? stockActual
+          : stockLocal;
+      return (
+        (fila.stockLocal === null ||
+          Math.abs(fila.stockLocal - localEfectivo) <= 0.001) &&
+        (fila.stockBodega === null ||
+          Math.abs(fila.stockBodega - stockBodega) <= 0.001)
+      );
+    });
+    if (!stockSinCambios) {
+      res.status(409).json({
+        error: "La importación no modifica existencias de productos existentes. Usa “Ajustar / descontar” para registrar el conteo físico con auditoría.",
+      });
+      return;
+    }
 
     const client = await pool.connect();
     try {
@@ -669,8 +811,6 @@ router.post("/aplicar-completo", async (req, res) => {
         const precioCompra = existentesFilas.map((f) => f.precioCompra);
         const precioVentaSinIva = existentesFilas.map((f) => f.precioVentaSinIva);
         const tieneIva = existentesFilas.map((f) => (f.tieneIva === null ? null : f.tieneIva));
-        const stockLocal = existentesFilas.map((f) => f.stockLocal);
-        const stockBodega = existentesFilas.map((f) => f.stockBodega);
         const stockMinimo = existentesFilas.map((f) => f.stockMinimo);
 
         await client.query(
@@ -685,18 +825,15 @@ router.post("/aplicar-completo", async (req, res) => {
             precio_venta_sin_iva = COALESCE(u.precio_venta_sin_iva, p.precio_venta_sin_iva),
             precio_venta_con_iva = CEIL(COALESCE(u.precio_venta_sin_iva, p.precio_venta_sin_iva) * 1.19 / 1000) * 1000,
             tiene_iva            = COALESCE(u.tiene_iva, p.tiene_iva),
-            stock_local          = COALESCE(u.stock_local, p.stock_local),
-            stock_bodega         = COALESCE(u.stock_bodega, p.stock_bodega),
-            stock_actual         = COALESCE(u.stock_local, p.stock_local) + COALESCE(u.stock_bodega, p.stock_bodega),
             stock_minimo         = COALESCE(u.stock_minimo, p.stock_minimo),
             actualizado_en       = now()
           FROM UNNEST(
             $1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[],
-            $7::numeric[], $8::numeric[], $9::boolean[], $10::numeric[], $11::numeric[], $12::numeric[]
-          ) AS u(codigo, nombre, marca, tipo, referencia, adicional, precio_compra, precio_venta_sin_iva, tiene_iva, stock_local, stock_bodega, stock_minimo)
+            $7::numeric[], $8::numeric[], $9::boolean[], $10::numeric[]
+          ) AS u(codigo, nombre, marca, tipo, referencia, adicional, precio_compra, precio_venta_sin_iva, tiene_iva, stock_minimo)
           WHERE p.codigo = u.codigo
           `,
-          [codigo, nombre, marca, tipo, referencia, adicional, precioCompra, precioVentaSinIva, tieneIva, stockLocal, stockBodega, stockMinimo],
+          [codigo, nombre, marca, tipo, referencia, adicional, precioCompra, precioVentaSinIva, tieneIva, stockMinimo],
         );
       }
 

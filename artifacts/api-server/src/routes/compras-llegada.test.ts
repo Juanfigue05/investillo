@@ -7,6 +7,7 @@ import {
   comprasTable,
   eventosSincronizacionTable,
   historialPreciosTable,
+  movimientosInventarioTable,
   operacionesSincronizadasTable,
   productosTable,
 } from "@workspace/db/schema";
@@ -45,6 +46,9 @@ afterEach(async () => {
   if (productos.length > 0) {
     await db.delete(historialPreciosTable).where(
       inArray(historialPreciosTable.productoId, productos),
+    );
+    await db.delete(movimientosInventarioTable).where(
+      inArray(movimientosInventarioTable.productoId, productos),
     );
     await db.delete(productosTable).where(
       inArray(productosTable.id, productos),

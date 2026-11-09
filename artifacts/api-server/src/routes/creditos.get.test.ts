@@ -56,16 +56,66 @@ describe("GET /api/creditos", () => {
         credito.concepto !== null && conceptos.includes(credito.concepto),
     );
     expect(encontrados).toHaveLength(2);
-    expect(
+    const lineasPorConcepto = Object.fromEntries(
       encontrados.map(
-        (credito: { lineas: { productoNombre: string }[] }) =>
+        (credito: {
+          concepto: string;
+          lineas: { productoNombre: string }[];
+        }) => [
+          credito.concepto,
           credito.lineas.map((linea) => linea.productoNombre),
+        ],
       ),
-    ).toEqual([["Línea Test Lista 0"], ["Línea Test Lista 1"]]);
+    );
+    expect(lineasPorConcepto).toEqual(
+      Object.fromEntries(
+        conceptos.map((concepto, index) => [
+          concepto,
+          [`Línea Test Lista ${index}`],
+        ]),
+      ),
+    );
   });
 });
 
 describe("GET /api/creditos/:id", () => {
+  it("ordena de forma estable créditos con la misma fecha", async () => {
+    const fechaFactura = new Date().toISOString().slice(0, 10);
+    const idsCreados: number[] = [];
+
+    for (const concepto of ["TEST-ORDEN-A", "TEST-ORDEN-B"]) {
+      const creado = await request(app)
+        .post("/api/creditos")
+        .send({
+          tipo: "credito",
+          concepto: `${concepto}-${Date.now()}-${crypto.randomUUID()}`,
+          fechaFactura,
+          nombreCliente: "Cliente Test Orden",
+          valorCredito: 10,
+          lineas: [
+            {
+              productoNombre: concepto,
+              cantidad: 1,
+              precioVenta: 10,
+              precioCompra: 0,
+            },
+          ],
+        });
+
+      expect(creado.status).toBe(201);
+      creditosCreados.push(creado.body.id as number);
+      idsCreados.push(creado.body.id as number);
+    }
+
+    const respuesta = await request(app).get("/api/creditos?tipo=credito");
+    const idsDevueltos = respuesta.body
+      .filter((credito: { id: number }) => idsCreados.includes(credito.id))
+      .map((credito: { id: number }) => credito.id);
+
+    expect(respuesta.status).toBe(200);
+    expect(idsDevueltos).toEqual(idsCreados);
+  });
+
   it("devuelve el crédito y sus líneas con los mismos IDs del POST", async () => {
     const creado = await request(app)
       .post("/api/creditos")

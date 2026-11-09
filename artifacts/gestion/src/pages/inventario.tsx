@@ -26,12 +26,14 @@ import {
   GitMerge,
   ArrowRightLeft,
   MinusCircle,
+  History,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { encolarOperacion, esFalloDeRed, obtenerIdOperacionOffline } from "@/lib/offline-db";
 import { toast } from "@/hooks/use-toast";
 import { RemachadasPanel } from "@/components/RemachadasPanel";
 import { DescuentoRapidoModal } from "@/components/DescuentoRapidoModal";
+import { HistorialMovimientosInventarioModal } from "@/components/HistorialMovimientosInventarioModal";
 import {
   SearchableSelect,
   type ProductoOpcion,
@@ -150,6 +152,7 @@ export default function Inventario() {
   const [direccionTraslado, setDireccionTraslado] = useState<"bodega-local" | "local-bodega">("bodega-local");
   const [vista, setVista] = useState<"productos" | "remachadas">("productos");
   const [showDescuentoRapido, setShowDescuentoRapido] = useState(false);
+  const [showHistorialMovimientos, setShowHistorialMovimientos] = useState(false);
 
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -191,6 +194,16 @@ export default function Inventario() {
     cambios: { codigo: string; nombre: string; esNuevo: boolean; cambios: { campo: string; actual: string; nuevo: string }[] }[];
     filasParaAplicar: any[];
   } | null>(null);
+  const hayAjusteStockEnImportacion = Boolean(
+    previewCompleto?.cambios.some(
+      (c) =>
+        !c.esNuevo &&
+        c.cambios.some(
+          (cambio) =>
+            cambio.campo === "Stock Local" || cambio.campo === "Stock Bodega",
+        ),
+    ),
+  );
   const [resultadoAplicado, setResultadoAplicado] = useState<{ actualizados: number; creados: number } | null>(null);
   const [importando, setImportando] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -575,6 +588,13 @@ export default function Inventario() {
   );
 
   const openEdit = (prod: any) => {
+    const stockActual = Number(prod.stockActual ?? 0);
+    const stockLocalRegistrado = Number(prod.stockLocal ?? 0);
+    const stockBodega = Number(prod.stockBodega ?? 0);
+    const stockLocal =
+      stockLocalRegistrado === 0 && stockBodega === 0 && stockActual !== 0
+        ? stockActual
+        : stockLocalRegistrado;
     setFormData({
       nombre: prod.nombre,
       codigo: prod.codigo,
@@ -585,9 +605,9 @@ export default function Inventario() {
       precioCompra: prod.precioCompra,
       precioVentaSinIva: prod.precioVentaSinIva,
       tieneIva: prod.tieneIva,
-      stockActual: prod.stockActual,
-      stockLocal: (prod as any).stockLocal ?? 0,
-      stockBodega: (prod as any).stockBodega ?? 0,
+      stockActual,
+      stockLocal,
+      stockBodega,
       stockMinimo: prod.stockMinimo,
       activo: (prod as any).activo !== false,
     });
@@ -761,7 +781,14 @@ export default function Inventario() {
               className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/10 border border-amber-500/40 text-amber-300 rounded-xl font-medium hover:bg-amber-500/20 transition-all shadow-md whitespace-nowrap text-sm"
             >
               <MinusCircle className="w-4 h-4" />
-              Descuento
+              Ajustar / descontar
+            </button>
+            <button
+              onClick={() => setShowHistorialMovimientos(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm"
+            >
+              <History className="w-4 h-4" />
+              Movimientos sin venta
             </button>
             <button
               onClick={() => {
@@ -915,6 +942,11 @@ export default function Inventario() {
                 {previewCompleto.omitidosSinNombre > 0 && (
                   <p className="text-sm text-destructive">⚠ {previewCompleto.omitidosSinNombre} fila(s) se omitieron por ser productos nuevos sin nombre.</p>
                 )}
+                {hayAjusteStockEnImportacion && (
+                  <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
+                    Los cambios de existencias de productos existentes no se aplican desde Excel. Usa “Ajustar / descontar” para registrar el conteo físico con auditoría; también puedes dejar esas celdas vacías para aplicar los demás cambios.
+                  </p>
+                )}
 
                 {previewCompleto.cambios.length === 0 ? (
                   <p className="text-center py-8 text-muted-foreground text-sm">No hay ningún cambio que aplicar — el archivo coincide con lo que ya tienes.</p>
@@ -961,7 +993,7 @@ export default function Inventario() {
                 {previewCompleto.cambios.length > 0 && (
                   <button
                     onClick={handleAplicarCompleto}
-                    disabled={aplicandoCompleto}
+                    disabled={aplicandoCompleto || hayAjusteStockEnImportacion}
                     className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-xl font-bold disabled:opacity-50"
                   >
                     {aplicandoCompleto ? "Aplicando..." : `Aplicar ${previewCompleto.cambios.length} cambio(s)`}
@@ -2249,6 +2281,9 @@ export default function Inventario() {
 
                       <hr className="border-border" />
 
+                      <p className="col-span-full text-xs text-muted-foreground">
+                        Al editar un producto, los cambios de existencias se registran como conteo físico. Para indicar otro motivo, usa “Ajustar / descontar”.
+                      </p>
                       <div className="grid grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-muted-foreground mb-1">
@@ -2257,7 +2292,7 @@ export default function Inventario() {
                           <input
                             required
                             type="number"
-                            step="0.01"
+                            step="0.001"
                             value={formData.stockLocal}
                             onChange={(e) =>
                               setFormData({
@@ -2275,7 +2310,7 @@ export default function Inventario() {
                           <input
                             required
                             type="number"
-                            step="0.01"
+                            step="0.001"
                             value={formData.stockBodega}
                             onChange={(e) =>
                               setFormData({
@@ -2447,7 +2482,14 @@ export default function Inventario() {
           onSaved={() => {
             setShowDescuentoRapido(false);
             queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/descuentos-inventario"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/inventario/movimientos"] });
           }}
+        />
+      )}
+      {showHistorialMovimientos && (
+        <HistorialMovimientosInventarioModal
+          onClose={() => setShowHistorialMovimientos(false)}
         />
       )}
     </Layout>

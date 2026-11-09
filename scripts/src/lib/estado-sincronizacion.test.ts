@@ -40,7 +40,11 @@ test("muestra cursor, eventos agrupados y advertencia de historia anterior", () 
     totalEventos: 7,
   });
 
-  assert.match(informe, /Punto de partida: completo \(21\/21 tablas\)/);
+  assert.ok(
+    informe.includes(
+      `Punto de partida: completo (${TABLAS_HUELLA.length}/${TABLAS_HUELLA.length} tablas)`,
+    ),
+  );
   assert.match(informe, /Cursor remoto: 2026-10-30 12:00:00/);
   assert.match(informe, /local\/pendiente: 2/);
   assert.match(informe, /remoto\/sincronizado: 5/);
@@ -58,7 +62,9 @@ test("advierte cuando no se puede determinar la antigüedad sin huella base", ()
     totalEventos: 2,
   });
 
-  assert.match(informe, /Punto de partida: ausente \(0\/21 tablas\)/);
+  assert.ok(
+    informe.includes(`Punto de partida: ausente (0/${TABLAS_HUELLA.length} tablas)`),
+  );
   assert.match(informe, /Cursor remoto: 1969-12-31/);
   assert.match(informe, /no determinable/);
   assert.match(informe, /no se puede descartar que sean anteriores/);

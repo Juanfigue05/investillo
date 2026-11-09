@@ -72,6 +72,8 @@ export const crearProductoRequest = z.object({
   precioVentaSinIva: numeroNoNegativo,
   tieneIva: z.boolean(),
   stockActual: numeroNoNegativo,
+  stockLocal: numeroNoNegativo.optional(),
+  stockBodega: numeroNoNegativo.optional(),
   stockMinimo: numeroNoNegativo,
 }).passthrough();
 
@@ -97,6 +99,26 @@ export const actualizarStockRequest = z.object({
   precioCompra: numeroNoNegativo.optional(),
   precioVentaSinIva: numeroNoNegativo.optional(),
   tieneIva: z.boolean().optional(),
+}).passthrough();
+
+export const ajustarStockFisicoRequest = z.object({
+  ubicacion: z.enum(["local", "bodega"]),
+  direccion: z.enum(["sumar", "restar"]),
+  cantidad: numero.refine((value) => {
+    const parsed =
+      typeof value === "number" ? value : parseNumeroColombia(value);
+    return parsed > 0 && Math.abs(parsed * 1000 - Math.round(parsed * 1000)) < 0.0001;
+  }, "La cantidad debe ser positiva y tener máximo tres decimales"),
+  motivo: z.enum([
+    "conteo",
+    "danado",
+    "devolucion_fabrica",
+    "perdida_robo",
+    "entrada_extra",
+    "otro",
+  ]),
+  motivoOtro: textoOpcional,
+  observacion: textoOpcional,
 }).passthrough();
 
 export const crearVentaRequest = z.object(datosVenta).passthrough();
