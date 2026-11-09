@@ -15,6 +15,7 @@ export const TABLAS_HUELLA = [
   "distribuciones_mano_obra",
   "grupos_trabajo_default",
   "descuentos_inventario",
+  "movimientos_inventario",
   "historial_precios",
   "obra_electronica",
   "remachadas",

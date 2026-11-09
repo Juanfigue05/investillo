@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
-import { eventosSincronizacionTable, ventasDiariasTable, productosTable } from "@workspace/db/schema";
+import { eventosSincronizacionTable, movimientosInventarioTable, ventasDiariasTable, productosTable } from "@workspace/db/schema";
 import { eq, sql, and, gte, lte } from "drizzle-orm";
 import { manoObraTable, distribucionesTable, trabajadoresTable, operacionesSincronizadasTable } from "@workspace/db/schema";
 import { esLineaManoObra } from "../lib/conceptos-mano-obra";
@@ -13,6 +13,12 @@ import {
   trasladarInventarioRequest,
 } from "@workspace/api-zod/write-requests";
 import { validarBody } from "../lib/validar-body";
+import {
+  bloquearProducto,
+  guardarExistencias,
+  leerExistencias,
+  validarExistenciasNoNegativas,
+} from "../lib/inventario-stock";
 
 const router: IRouter = Router();
 
@@ -24,37 +30,24 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 async function ajustarStockVenta(tx: Tx, productoId: number, delta: number) {
   if (!Number.isFinite(delta) || delta === 0) return;
-  const [producto] = await tx.select().from(productosTable).where(eq(productosTable.id, productoId));
+  const producto = await bloquearProducto(tx, productoId);
   if (!producto) throw new Error("Producto no encontrado");
-
-  const actual = toNum(producto.stockActual);
-  const localRegistrado = toNum(producto.stockLocal);
-  const bodegaRegistrada = toNum(producto.stockBodega);
-  const local = localRegistrado + bodegaRegistrada === 0 && actual > 0 ? actual : localRegistrado;
-  const bodega = bodegaRegistrada;
-
-  if (delta > 0 && local + bodega + 0.0001 < delta) {
+  const existencias = leerExistencias(producto);
+  validarExistenciasNoNegativas(existencias);
+  if (delta > 0 && existencias.local + existencias.bodega + 0.0001 < delta) {
     throw new Error(`No hay existencias suficientes para ${producto.nombre}`);
   }
-
+  let local = existencias.local;
+  let bodega = existencias.bodega;
   if (delta > 0) {
     const desdeLocal = Math.min(local, delta);
     const desdeBodega = delta - desdeLocal;
-    await tx.update(productosTable).set({
-      stockLocal: String(local - desdeLocal),
-      stockBodega: String(bodega - desdeBodega),
-      stockActual: String(actual - delta),
-      actualizadoEn: new Date(),
-    }).where(eq(productosTable.id, productoId));
-    return;
+    local -= desdeLocal;
+    bodega -= desdeBodega;
+  } else {
+    local += -delta;
   }
-
-  await tx.update(productosTable).set({
-    stockLocal: String(local - delta),
-    stockBodega: String(bodega),
-    stockActual: String(actual - delta),
-    actualizadoEn: new Date(),
-  }).where(eq(productosTable.id, productoId));
+  await guardarExistencias(tx, productoId, local, bodega);
 }
 
 async function mapVenta(v: typeof ventasDiariasTable.$inferSelect) {
@@ -538,40 +531,94 @@ router.delete("/:id", async (req, res) => {
 router.post("/:id/trasladar", async (req, res) => {
   if (!validarBody(trasladarInventarioRequest, req.body, res)) return;
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
-  const id = parseInt(req.params.id);
-  const [ya] = await db.select().from(operacionesSincronizadasTable).where(eq(operacionesSincronizadasTable.operationId, operationId));
-  if (ya) { res.status(200).json({ ok: true, yaProcesado: true, recursoId: ya.recursoId }); return; }
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) { res.status(400).json({ error: "ID de producto no válido" }); return; }
   const { cantidad, direccion } = req.body as {
     cantidad: number;
     direccion: "bodega-local" | "local-bodega";
   };
   const cant = parseFloat(String(cantidad));
   if (!cant || cant <= 0) { res.status(400).json({ error: "Cantidad inválida" }); return; }
+  try {
+    const resultado = await db.transaction(async (tx) => {
+      const [reservada] = await tx.insert(operacionesSincronizadasTable)
+        .values({ operationId, tipo: "producto", recursoId: id })
+        .onConflictDoNothing()
+        .returning();
+      if (!reservada) return null;
 
-  const origen = direccion === "local-bodega" ? "stockLocal" : "stockBodega";
-  const destino = direccion === "local-bodega" ? "stockBodega" : "stockLocal";
+      const producto = await bloquearProducto(tx, id);
+      if (!producto) throw new Error("Producto no encontrado");
+      const antes = leerExistencias(producto);
+      validarExistenciasNoNegativas(antes);
+      const origen = direccion === "local-bodega" ? "local" : "bodega";
+      const destino = origen === "local" ? "bodega" : "local";
+      const stockOrigen = origen === "local" ? antes.local : antes.bodega;
+      if (stockOrigen < cant) {
+        throw new Error(`Solo hay ${stockOrigen} en ${origen}.`);
+      }
 
-  const [prod] = await db.select().from(productosTable).where(eq(productosTable.id, id));
-  if (!prod) { res.status(404).json({ error: "Producto no encontrado" }); return; }
-  if (toNum(prod[origen]) < cant) {
-    const nombreOrigen = direccion === "local-bodega" ? "local" : "bodega";
-    res.status(400).json({ error: `Solo hay ${prod[origen]} en ${nombreOrigen}` });
-    return;
+      const local = antes.local + (destino === "local" ? cant : -cant);
+      const bodega = antes.bodega + (destino === "bodega" ? cant : -cant);
+      const actualizado = await guardarExistencias(tx, id, local, bodega);
+      if (!actualizado) throw new Error("No se pudo actualizar el producto");
+
+      let localAhora = antes.local;
+      let bodegaAhora = antes.bodega;
+      for (const [ubicacion, movimientoDireccion] of [
+        [origen, "restar"],
+        [destino, "sumar"],
+      ] as const) {
+        const localSiguiente = ubicacion === "local"
+          ? localAhora + (movimientoDireccion === "sumar" ? cant : -cant)
+          : localAhora;
+        const bodegaSiguiente = ubicacion === "bodega"
+          ? bodegaAhora + (movimientoDireccion === "sumar" ? cant : -cant)
+          : bodegaAhora;
+        await tx.insert(movimientosInventarioTable).values({
+          operationId,
+          productoId: id,
+          productoNombre: producto.nombre,
+          productoCodigo: producto.codigo,
+          tipo: "ajuste",
+          motivo: "traslado",
+          ubicacion,
+          direccion: movimientoDireccion,
+          cantidad: String(cant),
+          stockLocalAntes: String(localAhora),
+          stockLocalDespues: String(localSiguiente),
+          stockBodegaAntes: String(bodegaAhora),
+          stockBodegaDespues: String(bodegaSiguiente),
+          stockActualAntes: String(localAhora + bodegaAhora),
+          stockActualDespues: String(localSiguiente + bodegaSiguiente),
+          observacion: `Traslado de ${origen} a ${destino}`,
+        });
+        localAhora = localSiguiente;
+        bodegaAhora = bodegaSiguiente;
+      }
+
+      if (!req.header("x-sync-apply")) {
+        await tx.insert(eventosSincronizacionTable).values({
+          operationId,
+          entidad: "producto",
+          entidadId: String(id),
+          tipo: "trasladar_stock",
+          metodo: "POST",
+          endpoint: `/ventas/${id}/trasladar`,
+          payload: req.body,
+          origen: "local",
+        });
+      }
+      return actualizado;
+    });
+    if (!resultado) {
+      res.json({ ok: true, yaProcesado: true, recursoId: id });
+      return;
+    }
+    res.json(resultado);
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
   }
-
-  const [actualizado] = await db.update(productosTable)
-    .set({
-      [origen]: sql`${productosTable[origen]} - ${cant}`,
-      [destino]: sql`${productosTable[destino]} + ${cant}`,
-      actualizadoEn: new Date(),
-    })
-    .where(eq(productosTable.id, id))
-    .returning();
-
-  if (!req.header("x-sync-apply")) await db.insert(eventosSincronizacionTable).values({ operationId, entidad: "producto", entidadId: String(id), tipo: "trasladar_stock", metodo: "POST", endpoint: `/ventas/${id}/trasladar`, payload: req.body, origen: "local" });
-  await db.insert(operacionesSincronizadasTable).values({ operationId, tipo: "producto", recursoId: id }).onConflictDoNothing();
-
-  res.json(actualizado);
 });
 
 export default router;

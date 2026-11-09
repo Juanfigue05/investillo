@@ -171,6 +171,19 @@ test("cada tabla y entidad referenciada tiene un destino de huella", () => {
 });
 
 test("traduce el parámetro de producto independiente de la entidad del evento", () => {
+  const ajuste = encontrarRegla("POST", "/inventario/12/ajustes");
+  assert.ok(ajuste);
+  assert.deepEqual(ajuste.segmentos, [
+    { parametro: "id", entidad: "producto" },
+  ]);
+  assert.deepEqual(
+    resolverEndpoint("/inventario/12/ajustes", "12", "99", 2),
+    {
+      endpoint: "/inventario/99/ajustes",
+      cambiado: true,
+    },
+  );
+
   const regla = encontrarRegla(
     "DELETE",
     "/historial-precios/producto/12",
