@@ -15,6 +15,56 @@ afterEach(async () => {
   }
 });
 
+describe("GET /api/creditos", () => {
+  it("devuelve varios créditos con sus líneas asociadas", async () => {
+    const conceptos = [
+      `TEST-LISTA-CREDITO-A-${Date.now()}`,
+      `TEST-LISTA-CREDITO-B-${Date.now()}`,
+    ];
+    const creados = await Promise.all(
+      conceptos.map((concepto, index) =>
+        request(app)
+          .post("/api/creditos")
+          .send({
+            tipo: "credito",
+            concepto,
+            fechaFactura: new Date().toISOString().slice(0, 10),
+            nombreCliente: `Cliente Test Lista ${index}`,
+            valorCredito: 100,
+            lineas: [
+              {
+                productoNombre: `Línea Test Lista ${index}`,
+                cantidad: 1,
+                precioVenta: 100,
+                precioCompra: 0,
+              },
+            ],
+          }),
+      ),
+    );
+
+    for (const creado of creados) {
+      expect(creado.status).toBe(201);
+      creditosCreados.push(creado.body.id as number);
+    }
+
+    const respuesta = await request(app).get("/api/creditos?tipo=credito");
+
+    expect(respuesta.status).toBe(200);
+    const encontrados = respuesta.body.filter(
+      (credito: { concepto: string | null }) =>
+        credito.concepto !== null && conceptos.includes(credito.concepto),
+    );
+    expect(encontrados).toHaveLength(2);
+    expect(
+      encontrados.map(
+        (credito: { lineas: { productoNombre: string }[] }) =>
+          credito.lineas.map((linea) => linea.productoNombre),
+      ),
+    ).toEqual([["Línea Test Lista 0"], ["Línea Test Lista 1"]]);
+  });
+});
+
 describe("GET /api/creditos/:id", () => {
   it("devuelve el crédito y sus líneas con los mismos IDs del POST", async () => {
     const creado = await request(app)
@@ -135,5 +185,150 @@ describe("GET /api/creditos/:id", () => {
     const respuesta = await request(app).get("/api/creditos/no-es-id");
 
     expect(respuesta.status).toBe(400);
+  });
+
+  it("rechaza un abono inicial mayor que el crédito o una de sus líneas", async () => {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const abonoMayorAlCredito = await request(app)
+      .post("/api/creditos")
+      .send({
+        tipo: "credito",
+        concepto: `TEST-ABONO-MAYOR-CREDITO-${Date.now()}`,
+        fechaFactura: hoy,
+        nombreCliente: "Cliente Test Abono Inicial",
+        valorCredito: 100,
+        valorAbonado: 100.01,
+        abonoInicialFecha: hoy,
+        lineas: [
+          {
+            productoNombre: "Línea de cien",
+            cantidad: 1,
+            precioVenta: 100,
+            precioCompra: 0,
+            valorAbonado: 100.01,
+          },
+        ],
+      });
+
+    expect(abonoMayorAlCredito.status).toBe(400);
+    expect(abonoMayorAlCredito.body.error).toMatch(/no puede superar el valor del crédito/i);
+
+    const abonoMayorALinea = await request(app)
+      .post("/api/creditos")
+      .send({
+        tipo: "credito",
+        concepto: `TEST-ABONO-MAYOR-LINEA-${Date.now()}`,
+        fechaFactura: hoy,
+        nombreCliente: "Cliente Test Abono Línea",
+        valorCredito: 100,
+        valorAbonado: 60,
+        abonoInicialFecha: hoy,
+        lineas: [
+          {
+            productoNombre: "Primera línea",
+            cantidad: 1,
+            precioVenta: 50,
+            precioCompra: 0,
+            valorAbonado: 51,
+          },
+          {
+            productoNombre: "Segunda línea",
+            cantidad: 1,
+            precioVenta: 50,
+            precioCompra: 0,
+            valorAbonado: 9,
+          },
+        ],
+      });
+
+    expect(abonoMayorALinea.status).toBe(400);
+    expect(abonoMayorALinea.body.error).toMatch(/no puede superar el valor de esa línea/i);
+  });
+
+  it("rechaza pagos que exceden el saldo y no permite modificar el acumulado por PUT", async () => {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const creado = await request(app)
+      .post("/api/creditos")
+      .send({
+        tipo: "nosdebe",
+        fechaFactura: hoy,
+        nombreCliente: "Cliente Test Tope de Abono",
+        valorCredito: 100,
+        valorAbonado: 90,
+        abonoInicialFecha: hoy,
+        lineas: [
+          {
+            productoNombre: "Servicio de cien",
+            cantidad: 1,
+            precioVenta: 100,
+            precioCompra: 0,
+            valorAbonado: 90,
+          },
+        ],
+      });
+
+    expect(creado.status).toBe(201);
+    creditosCreados.push(creado.body.id as number);
+    const linea = creado.body.lineas[0] as {
+      id: number;
+      productoNombre: string;
+      cantidad: number;
+      precioVenta: number;
+      precioCompra: number;
+      valorAbonado: number;
+    };
+
+    const pagoExcedido = await request(app)
+      .post(`/api/creditos/${creado.body.id}/abono`)
+      .send({ valor: 10.01, lineas: [{ lineaId: linea.id, valor: 10.01 }] });
+    expect(pagoExcedido.status).toBe(400);
+
+    const acumuladoExcedido = await request(app)
+      .put(`/api/creditos/${creado.body.id}`)
+      .send({ valorAbonado: 100.01 });
+    expect(acumuladoExcedido.status).toBe(400);
+    expect(acumuladoExcedido.body.error).toMatch(/no pueden superar el valor del crédito/i);
+
+    const totalReducido = await request(app)
+      .put(`/api/creditos/${creado.body.id}`)
+      .send({
+        valorCredito: 80,
+        lineas: [{ ...linea, precioVenta: 80, valorAbonado: 90 }],
+      });
+    expect(totalReducido.status).toBe(400);
+  });
+
+  it("serializa pagos concurrentes para no abonar por encima del total", async () => {
+    const creado = await request(app)
+      .post("/api/creditos")
+      .send({
+        tipo: "nosdebe",
+        fechaFactura: new Date().toISOString().slice(0, 10),
+        nombreCliente: "Cliente Test Pagos Simultáneos",
+        valorCredito: 100,
+        lineas: [
+          {
+            productoNombre: "Servicio con pagos simultáneos",
+            cantidad: 1,
+            precioVenta: 100,
+            precioCompra: 0,
+          },
+        ],
+      });
+
+    expect(creado.status).toBe(201);
+    creditosCreados.push(creado.body.id as number);
+    const lineaId = creado.body.lineas[0].id as number;
+    const registrarPago = () =>
+      request(app)
+        .post(`/api/creditos/${creado.body.id}/abono`)
+        .send({ valor: 60, lineas: [{ lineaId, valor: 60 }] });
+
+    const respuestas = await Promise.all([registrarPago(), registrarPago()]);
+    expect(respuestas.filter((respuesta) => respuesta.status === 200)).toHaveLength(1);
+    expect(respuestas.filter((respuesta) => respuesta.status !== 200)).toHaveLength(1);
+
+    const persistido = await request(app).get(`/api/creditos/${creado.body.id}`);
+    expect(persistido.body.valorAbonado).toBe(60);
   });
 });

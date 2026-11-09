@@ -1,6 +1,7 @@
 import express, { type ErrorRequestHandler, type Express } from "express";
 import cors from "cors";
 import helmet from "helmet";
+import compression from "compression";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -91,6 +92,7 @@ app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 app.use(cookieParser());
 app.use(bloqueoAccesoRemoto);
 
+app.use(compression({ threshold: 1024 }));
 app.use(capturarCambiosRemotos);
 app.use(bloqueoOperacion);
 app.use("/api", router);
@@ -101,12 +103,27 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendDist = path.join(__dirname, "../../gestion/dist/public");
 
-app.use(express.static(frontendDist));
+app.use(
+  express.static(frontendDist, {
+    setHeaders(res, filePath) {
+      const relativePath = path
+        .relative(frontendDist, filePath)
+        .split(path.sep)
+        .join("/");
+      if (relativePath.startsWith("assets/")) {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        return;
+      }
+      res.setHeader("Cache-Control", "no-cache");
+    },
+  }),
+);
 app.use((req, res, next) => {
   if (req.path.startsWith("/api")) {
     next();
     return;
   }
+  res.setHeader("Cache-Control", "no-cache");
   res.sendFile(path.join(frontendDist, "index.html"));
 });
 

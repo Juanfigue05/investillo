@@ -12,14 +12,26 @@ jobs:
   verificar:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SYNC_ENTORNO: servidor
+      SYNC_FECHA_CORTE: ${{ vars.SYNC_FECHA_CORTE || '2026-11-01' }}
     steps:
       - name: Clonar el repositorio
         uses: actions/checkout@v4
+
+      - name: Validar configuración de base de datos
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Configura el secreto DATABASE_URL en Settings > Secrets and variables > Actions."
+            exit 1
+          fi
 
       - name: Instalar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: pnpm
 
       - name: Instalar pnpm
         run: corepack enable && corepack prepare pnpm@11.22.0 --activate
@@ -28,8 +40,4 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Correr la revisión de consistencia
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SYNC_ENTORNO: servidor
-          SYNC_FECHA_CORTE: ${{ vars.SYNC_FECHA_CORTE || '2026-11-01' }}
-        run: pnpm run verificar
+        run: pnpm --filter @workspace/scripts run verificar

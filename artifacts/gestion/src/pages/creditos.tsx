@@ -482,7 +482,12 @@ export default function Creditos() {
     if (!form.nombreCliente.trim())
       errors.push("El nombre del cliente es obligatorio");
     if (!form.fechaFactura) errors.push("La fecha es obligatoria");
-    if ((parseFloat(form.valorAbonado) || 0) > 0 && !form.abonoInicialFecha)
+    const abonoInicialIngresado = Number(form.valorAbonado || 0);
+    if (!Number.isFinite(abonoInicialIngresado) || abonoInicialIngresado < 0)
+      errors.push("El abono inicial debe ser un valor válido y no negativo");
+    if (!editingId && abonoInicialIngresado > totalFinal + 0.000001)
+      errors.push(`El abono inicial no puede superar el valor del crédito (${formatCurrency(totalFinal)})`);
+    if (abonoInicialIngresado > 0 && !form.abonoInicialFecha)
       errors.push("La fecha del abono inicial es obligatoria");
     if (baseTotal <= 0) errors.push("Agrega al menos un producto con precio");
     if (
@@ -573,10 +578,7 @@ export default function Creditos() {
       });
     }
 
-    const initialAbono = Math.min(
-      totalFinal,
-      parseFloat(form.valorAbonado) || 0,
-    );
+    const initialAbono = Number(form.valorAbonado || 0);
     let remaining = initialAbono;
     const payloadLineas = allLineas.map((l) => {
       const applied = editingId ? l.prevAbonado : Math.min(l.total, remaining);
@@ -786,7 +788,7 @@ export default function Creditos() {
     }
     const pagoEditado = c.abonos?.find((pago: any) => pago.id === editingAbonoId);
     const maxDisponible = getMaximumPayment(c.valorCredito, c.valorAbonado, pagoEditado?.valorTotal || 0);
-    if (abonoNum > maxDisponible + 1) {
+    if (Math.round(abonoNum * 100) > Math.round(maxDisponible * 100)) {
       alert(`El abono no puede superar ${formatCurrency(maxDisponible)}`);
       return;
     }
@@ -1853,12 +1855,20 @@ export default function Creditos() {
                 <input
                   type="number"
                   placeholder="0"
+                  min="0"
+                  max={totalFinal}
+                  step="0.01"
+                  disabled={!!editingId}
                   value={form.valorAbonado}
                   onChange={(e) =>
                     setForm({ ...form, valorAbonado: e.target.value })
                   }
-                  className="w-40 bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
+                  className="w-40 bg-background border border-border px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Máximo: {formatCurrency(totalFinal)}.
+                  {editingId ? " Los pagos existentes se editan desde el historial." : ""}
+                </p>
                 {!editingId && (parseFloat(form.valorAbonado) || 0) > 0 && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 max-w-2xl">
                     <label className="block text-xs font-medium text-muted-foreground">
@@ -2165,6 +2175,9 @@ export default function Creditos() {
                           </h4>
                           <input
                             type="number"
+                            min="0.01"
+                            step="0.01"
+                            max={getMaximumPayment(c.valorCredito, c.valorAbonado, c.abonos?.find((pago: any) => pago.id === editingAbonoId)?.valorTotal || 0)}
                             placeholder={
                               editingAbonoId !== null
                                 ? "Nuevo valor"
@@ -2477,6 +2490,9 @@ export default function Creditos() {
                       </h4>
                       <input
                         type="number"
+                        min="0.01"
+                        step="0.01"
+                        max={getMaximumPayment(c.valorCredito, c.valorAbonado, c.abonos?.find((pago: any) => pago.id === editingAbonoId)?.valorTotal || 0)}
                         placeholder={
                           editingAbonoId !== null ? "Nuevo valor" : "Valor"
                         }

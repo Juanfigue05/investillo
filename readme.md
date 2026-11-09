@@ -102,7 +102,7 @@ PostgreSQL (Aiven, producción)
 - `lib/api-client-react` genera hooks para React Query y `lib/api-zod` genera esquemas Zod.
 - Algunas funciones especiales, como importaciones, reportes y ciertos formularios, usan `fetch` manual. Es importante mantener sus respuestas y payloads sincronizados con el backend.
 
-En producción, `pnpm run build` compila el frontend y el backend; luego Express sirve ambos desde el puerto definido en `PORT`.
+En producción, `pnpm run build` compila el frontend y el backend; luego Express sirve ambos desde el puerto definido en `PORT`. Las pantallas se cargan por ruta y muestran un esqueleto mientras llega el módulo; Express comprime respuestas compatibles con gzip y conserva en caché por un año los recursos con hash de `assets/`. El HTML y los demás archivos estáticos se revalidan para que una versión nueva de la app no quede oculta por una caché antigua. La lista de créditos agrupa la lectura de líneas, abonos y mano de obra en consultas por lote, en lugar de consultar cada crédito por separado.
 
 ### 3.2 Requisitos técnicos comprobados
 
@@ -1042,21 +1042,30 @@ on:
 jobs:
   verificar:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SYNC_ENTORNO: servidor
+      SYNC_FECHA_CORTE: ${{ vars.SYNC_FECHA_CORTE || '2026-11-01' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Validar configuración de base de datos
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Configura el secreto DATABASE_URL en Settings > Secrets and variables > Actions."
+            exit 1
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: pnpm
       - run: corepack enable && corepack prepare pnpm@11.22.0 --activate
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run verificar
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SYNC_ENTORNO: servidor
-          SYNC_FECHA_CORTE: ${{ vars.SYNC_FECHA_CORTE || '2026-11-01' }}
+      - run: pnpm --filter @workspace/scripts run verificar
 ```
 
 Necesita que guardes tu `DATABASE_URL` como **Secret** del repositorio: **Settings → Secrets and variables → Actions → New repository secret**.
+
+El workflow valida que el secreto exista y ejecuta directamente el verificador con esa variable, sin cargar `.env.api`. El registro muestra el nombre de la base conectada, nunca la URL ni sus credenciales. Para repetir la revisión, abre **GitHub → Actions → Verificar Consistencia → Run workflow**, selecciona `main` y confirma **Run workflow**. La comprobación es de solo lectura y no corrige datos.
 
 ### 8.4 Actualizaciones automáticas
 
