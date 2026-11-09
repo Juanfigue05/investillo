@@ -2865,6 +2865,13 @@ test("sincroniza créditos, líneas y abonos en ambas direcciones; confirma rete
               [idsCompras],
             );
           }
+          await pool.query(
+            `DELETE FROM movimientos_inventario
+              WHERE producto_id IN (
+                SELECT id FROM productos WHERE nombre LIKE $1
+              )`,
+            [`${prefix}%`],
+          );
           await pool.query("DELETE FROM productos WHERE nombre LIKE $1", [
             `${prefix}%`,
           ]);
