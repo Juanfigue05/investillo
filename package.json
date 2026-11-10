@@ -1,6 +1,7 @@
 {
   "name": "workspace",
   "version": "0.0.0",
+  "packageManager": "pnpm@11.22.0",
   "license": "MIT",
   "scripts": {
     "start:prod": "pnpm run build && dotenv -e .env.api -- pnpm --filter @workspace/api-server run start",
