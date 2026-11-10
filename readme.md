@@ -1061,11 +1061,14 @@ jobs:
             echo "::error::Configura el secreto DATABASE_URL en Settings > Secrets and variables > Actions."
             exit 1
           fi
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.22.0
+          run_install: false
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
-      - run: corepack enable && corepack prepare pnpm@11.22.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @workspace/scripts run verificar
 ```
