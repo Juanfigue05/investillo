@@ -65,6 +65,22 @@ export default function ObraElectronica() {
     return [...mapa.entries()];
   }, [registros]);
 
+  const totalesPorObra = useMemo(() => {
+    const mapa = new Map<string, { numeroFactura: string; vehiculo: string; valor: number; trabajadores: Set<string> }>();
+    registros.forEach((registro) => {
+      const numeroFactura = registro.numeroFactura.trim();
+      const vehiculo = registro.vehiculo.trim();
+      const clave = JSON.stringify([numeroFactura.toLocaleUpperCase(), vehiculo.toLocaleUpperCase()]);
+      const grupo = mapa.get(clave) ?? { numeroFactura, vehiculo, valor: 0, trabajadores: new Set<string>() };
+      grupo.valor += Number(registro.valor || 0);
+      grupo.trabajadores.add(registro.empleadoNombre);
+      mapa.set(clave, grupo);
+    });
+    return [...mapa.values()].sort((a, b) =>
+      a.numeroFactura.localeCompare(b.numeroFactura) || a.vehiculo.localeCompare(b.vehiculo),
+    );
+  }, [registros]);
+
   const totalMes = registros.reduce((suma, registro) => suma + Number(registro.valor || 0), 0);
   const etiquetaMes = new Date(`${mes}-15T12:00:00`).toLocaleDateString("es-CO", { month: "long", year: "numeric" });
 
@@ -143,6 +159,20 @@ export default function ObraElectronica() {
           <div className="print-date-header">OBRA ELECTRÓNICA — {etiquetaMes.toUpperCase()}</div>
           {cargando ? <p className="py-10 text-center text-muted-foreground no-print">Cargando...</p> : grupos.length === 0 ? <p className="py-10 text-center text-muted-foreground">No hay obras electrónicas en este mes.</p> : (
             <div className="obra-electronica-grid">
+              <section className="obra-electronica-resumen">
+                <h2 className="bg-amber-400 text-black font-bold text-center py-2">TOTALES POR FACTURA / VEHÍCULO</h2>
+                <table className="w-full obra-electronica-table">
+                  <thead><tr><th>NUMERO FACTURA</th><th>PLACA / VEHÍCULO</th><th>TRABAJADORES</th><th className="text-right">TOTAL MANO DE OBRA</th></tr></thead>
+                  <tbody>
+                    {totalesPorObra.map((grupo) => <tr key={`${grupo.numeroFactura}-${grupo.vehiculo}`}>
+                      <td>{grupo.numeroFactura || "-"}</td>
+                      <td className="text-center">{grupo.vehiculo || "-"}</td>
+                      <td className="text-center">{grupo.trabajadores.size}</td>
+                      <td className="text-right">{formatCurrency(grupo.valor)}</td>
+                    </tr>)}
+                  </tbody>
+                </table>
+              </section>
               {grupos.map(([nombre, items]) => {
                 const totalEmpleado = items.reduce((suma, registro) => suma + Number(registro.valor || 0), 0);
                 return (

@@ -13,6 +13,7 @@ import { Calculator as CalcIcon } from "lucide-react";
 import { UserMenu } from "./UserMenu";
 import { RelojColombia } from "./RelojColombia";
 import { fechaHoyColombia } from "@/lib/utils";
+import { ManoObraSelector, calcularDistribucion } from "@/components/ManoObraSelector";
 import { hayGetsApiActivos, suscribirGetsApi } from "@/lib/api-request-tracker";
 import { queryClient } from "@/lib/queryClient";
 import {
@@ -79,7 +80,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [errorTensionada, setErrorTensionada] = useState("");
   const [showObraElectronica, setShowObraElectronica] = useState(false);
   const [obraFecha, setObraFecha] = useState(fechaHoyColombia());
-  const [obraTrabajadorId, setObraTrabajadorId] = useState("");
+  const [obraTrabajadoresSeleccionados, setObraTrabajadoresSeleccionados] = useState<number[]>([]);
+  const [obraValoresFijados, setObraValoresFijados] = useState<Record<number, number>>({});
   const [obraNumeroFactura, setObraNumeroFactura] = useState("");
   const [obraVehiculo, setObraVehiculo] = useState("");
   const [obraValor, setObraValor] = useState("");
@@ -165,8 +167,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const guardarObraElectronica = async () => {
     setObraError("");
-    if (!obraTrabajadorId || !obraFecha || !obraVehiculo.trim() || !obraValor.trim()) {
-      setObraError("Completa empleado, fecha, vehículo y valor.");
+    if (obraTrabajadoresSeleccionados.length === 0 || !obraFecha || !obraVehiculo.trim() || !obraValor.trim()) {
+      setObraError("Selecciona al menos un trabajador y completa fecha, vehículo y valor.");
+      return;
+    }
+    const textoValor = obraValor.trim().replace(/\s/g, "").replace(",", ".");
+    const valorIngresado = Number(textoValor);
+    if (!Number.isFinite(valorIngresado) || valorIngresado <= 0) {
+      setObraError("El valor debe ser mayor que cero.");
+      return;
+    }
+    const valorTotal = Math.round(valorIngresado < 1000 ? valorIngresado * 1000 : valorIngresado);
+    const distribuciones = calcularDistribucion(valorTotal, obraTrabajadoresSeleccionados, obraValoresFijados);
+    const valorDistribuido = distribuciones.reduce((suma, distribucion) => suma + distribucion.valor, 0);
+    if (Math.round(valorDistribuido * 100) !== Math.round(valorTotal * 100)) {
+      setObraError("La suma asignada a los trabajadores debe coincidir con el valor total.");
       return;
     }
     setGuardandoObra(true);
@@ -174,9 +189,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
       await leerRespuestaApi(fetch(`${import.meta.env.BASE_URL}api/obra-electronica`.replace(/\/+/g, "/"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trabajadorId: Number(obraTrabajadorId), fecha: obraFecha, numeroFactura: obraNumeroFactura, vehiculo: obraVehiculo, valor: obraValor }),
+        body: JSON.stringify({
+          fecha: obraFecha,
+          numeroFactura: obraNumeroFactura,
+          vehiculo: obraVehiculo,
+          valorTotal,
+          trabajadores: distribuciones.map(({ trabajadorId, valor }) => ({ trabajadorId, valor })),
+        }),
       }));
       setShowObraElectronica(false);
+      setObraTrabajadoresSeleccionados([]);
+      setObraValoresFijados({});
       setObraNumeroFactura("");
       setObraVehiculo("");
       setObraValor("");
@@ -184,6 +207,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
     } catch (error) {
       if (esOperacionEncoladaOffline(error)) {
         setShowObraElectronica(false);
+        setObraTrabajadoresSeleccionados([]);
+        setObraValoresFijados({});
         setObraNumeroFactura("");
         setObraVehiculo("");
         setObraValor("");
@@ -246,7 +271,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <span className="text-[10px] lg:text-[11px] text-muted-foreground leading-none">Tensión</span>
             </button>
             <button
-              onClick={() => { setObraFecha(fechaHoyColombia()); setObraError(""); setShowObraElectronica(true); }}
+              onClick={() => {
+                setObraFecha(fechaHoyColombia());
+                setObraTrabajadoresSeleccionados([]);
+                setObraValoresFijados({});
+                setObraNumeroFactura("");
+                setObraVehiculo("");
+                setObraValor("");
+                setObraError("");
+                setShowObraElectronica(true);
+              }}
               className="flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors shrink-0"
               aria-label="Registrar obra electrónica"
             >
@@ -310,11 +344,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <div className="bg-card border border-amber-500/40 rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
                   <h3 className="font-bold text-foreground flex items-center gap-2"><Hand className="w-5 h-5 text-amber-400" /> Obra electrónica</h3>
                   <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Empleado</label>
-                    <select value={obraTrabajadorId} onChange={(e) => setObraTrabajadorId(e.target.value)} className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm">
-                      <option value="">Selecciona un empleado</option>
-                      {trabajadores.filter((t) => t.obraElectronica && t.activo !== false).map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-                    </select>
+                    <label className="block text-xs text-muted-foreground mb-1">Trabajadores</label>
+                    <ManoObraSelector
+                      trabajadores={trabajadores.filter((t) => t.obraElectronica && t.activo !== false)}
+                      total={(() => {
+                        const texto = obraValor.trim().replace(/\s/g, "").replace(",", ".");
+                        const numero = Number(texto);
+                        return Number.isFinite(numero) && numero > 0 ? Math.round(numero < 1000 ? numero * 1000 : numero) : 0;
+                      })()}
+                      seleccionados={obraTrabajadoresSeleccionados}
+                      fijados={obraValoresFijados}
+                      onChangeSeleccionados={setObraTrabajadoresSeleccionados}
+                      onChangeFijados={setObraValoresFijados}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs text-muted-foreground mb-1">Fecha</label>
@@ -329,7 +371,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     <input type="text" value={obraVehiculo} onChange={(e) => setObraVehiculo(e.target.value)} placeholder="Ej. BTA 123" className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
                   </div>
                   <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Valor (12,5 = $12.500)</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Valor total mano de obra (12,5 = $12.500)</label>
                     <input type="text" inputMode="decimal" value={obraValor} onChange={(e) => setObraValor(e.target.value)} placeholder="60 o 12,5" className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
                   </div>
                   {obraError && <p className="text-sm text-destructive">{obraError}</p>}

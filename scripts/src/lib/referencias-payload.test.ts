@@ -78,6 +78,39 @@ test("extrae IDs de arreglos anidados y elimina referencias duplicadas", () => {
   );
 });
 
+test("resuelve los trabajadores de una obra electrónica grupal al sincronizar", () => {
+  const regla = encontrarRegla("POST", "/obra-electronica");
+  assert.ok(regla);
+  const payload = {
+    valorTotal: 12000,
+    trabajadores: [
+      { trabajadorId: 7, valor: 6000 },
+      { trabajadorId: "8", valor: 6000 },
+    ],
+  };
+  assert.deepEqual(extraerReferencias(regla, payload), [
+    { entidad: "trabajador", valorLocal: "7" },
+    { entidad: "trabajador", valorLocal: "8" },
+  ]);
+  assert.deepEqual(
+    traducirPayload(
+      regla,
+      payload,
+      new Map([
+        ["trabajador:7", "70"],
+        ["trabajador:8", "80"],
+      ]),
+    ),
+    {
+      valorTotal: 12000,
+      trabajadores: [
+        { trabajadorId: 70, valor: 6000 },
+        { trabajadorId: "80", valor: 6000 },
+      ],
+    },
+  );
+});
+
 test("traduce referencias anidadas sin mutar el original y conserva el tipo", () => {
   const regla: ReglaReferencias = {
     metodo: "PUT",

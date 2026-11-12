@@ -171,7 +171,10 @@ export const REGLAS_REFERENCIAS: readonly ReglaReferencias[] = [
   {
     metodo: "POST",
     endpoint: "/obra-electronica",
-    campos: [{ ruta: "trabajadorId", entidad: "trabajador" }],
+    campos: [
+      { ruta: "trabajadorId", entidad: "trabajador" },
+      { ruta: "trabajadores[].trabajadorId", entidad: "trabajador" },
+    ],
   },
   {
     metodo: "PATCH",

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { eventosSincronizacionTable, obraElectronicaTable, operacionesSincronizadasTable, trabajadoresTable } from "@workspace/db/schema";
-import { and, asc, eq, gte, lt } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
 import { operacionYaProcesada } from "./lib/operacion-sincronizada";
 
 const router = Router();
@@ -11,6 +11,13 @@ function parseValor(raw: unknown): number {
   const numero = Number(texto);
   if (!Number.isFinite(numero) || numero < 0) return 0;
   return Math.round((numero < 1000 ? numero * 1000 : numero) * 100) / 100;
+}
+
+function parseValorExacto(raw: unknown): number | null {
+  if (raw === null || raw === undefined || String(raw).trim() === "") return null;
+  const numero = Number(String(raw ?? "").trim().replace(/\s/g, "").replace(",", "."));
+  if (!Number.isFinite(numero) || numero < 0) return null;
+  return Math.round(numero * 100) / 100;
 }
 
 function inicioFinMes(mes: string) {
@@ -46,36 +53,67 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   const operationId = req.header("x-operation-id") ?? crypto.randomUUID();
-  const { trabajadorId, fecha, numeroFactura, vehiculo } = req.body;
-  const id = Number(trabajadorId);
-  const valor = parseValor(req.body.valor);
+  const { fecha, numeroFactura, vehiculo } = req.body;
+  const esLote = Array.isArray(req.body.trabajadores);
+  const trabajadoresSolicitados: Array<{ trabajadorId: number; valor: number }> = esLote
+    ? req.body.trabajadores.map((trabajador: { trabajadorId?: unknown; valor?: unknown } | null) => ({
+        trabajadorId: Number(trabajador?.trabajadorId),
+        valor: parseValorExacto(trabajador?.valor) ?? -1,
+      }))
+    : [{ trabajadorId: Number(req.body.trabajadorId), valor: parseValor(req.body.valor) }];
+  const valorTotal = esLote ? parseValorExacto(req.body.valorTotal) : null;
   const resultado = await db.transaction(async (tx) => {
     const ya = await operacionYaProcesada(tx, operationId);
     if (ya) return { yaProcesado: ya } as const;
-    if (!Number.isInteger(id) || !fecha) return { error: "Empleado y fecha son obligatorios", status: 400 } as const;
-    if (valor <= 0) return { error: "El valor debe ser mayor que cero", status: 400 } as const;
-    const [trabajador] = await tx.select({ id: trabajadoresTable.id, nombre: trabajadoresTable.nombre, obraElectronica: trabajadoresTable.obraElectronica })
-      .from(trabajadoresTable).where(eq(trabajadoresTable.id, id)).limit(1);
-    if (!trabajador) return { error: "Empleado no encontrado", status: 404 } as const;
-    if (!trabajador.obraElectronica) return { error: "Este empleado no tiene habilitada la obra electrónica", status: 403 } as const;
-    const [registro] = await tx.insert(obraElectronicaTable).values({
-      trabajadorId: trabajador.id,
-      empleadoNombre: trabajador.nombre,
-      fecha,
-      numeroFactura: String(numeroFactura || "").trim(),
-      vehiculo: String(vehiculo || "").trim(),
-      valor: String(valor),
-    }).returning();
-    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "obra_electronica", entidadId: String(registro.id), tipo: "crear", metodo: "POST", endpoint: "/obra-electronica", payload: req.body, origen: "local" });
-    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "obra_electronica", recursoId: registro.id }).onConflictDoNothing();
-    return { registro } as const;
+    if (!fecha) return { error: "La fecha es obligatoria", status: 400 } as const;
+    if (
+      trabajadoresSolicitados.length === 0 ||
+      trabajadoresSolicitados.some(({ trabajadorId, valor }) => !Number.isInteger(trabajadorId) || valor < 0) ||
+      new Set(trabajadoresSolicitados.map(({ trabajadorId }) => trabajadorId)).size !== trabajadoresSolicitados.length
+    ) {
+      return { error: "Selecciona trabajadores válidos sin duplicados", status: 400 } as const;
+    }
+    if (esLote && (valorTotal === null || valorTotal <= 0 ||
+      Math.round(trabajadoresSolicitados.reduce((suma, trabajador) => suma + trabajador.valor, 0) * 100) !== Math.round(valorTotal * 100))) {
+      return { error: "La suma asignada debe coincidir con el valor total de la obra", status: 400 } as const;
+    }
+    if (!esLote && trabajadoresSolicitados[0].valor <= 0) {
+      return { error: "El valor debe ser mayor que cero", status: 400 } as const;
+    }
+    const ids = trabajadoresSolicitados.map(({ trabajadorId }) => trabajadorId);
+    const trabajadores = await tx.select({
+      id: trabajadoresTable.id,
+      nombre: trabajadoresTable.nombre,
+      obraElectronica: trabajadoresTable.obraElectronica,
+    }).from(trabajadoresTable).where(inArray(trabajadoresTable.id, ids));
+    if (trabajadores.length !== ids.length) return { error: "Uno o más empleados no fueron encontrados", status: 404 } as const;
+    const trabajadoresPorId = new Map(trabajadores.map((trabajador) => [trabajador.id, trabajador]));
+    if (trabajadores.some((trabajador) => !trabajador.obraElectronica)) {
+      return { error: "Todos los empleados deben tener habilitada la obra electrónica", status: 403 } as const;
+    }
+    const valoresRegistros = trabajadoresSolicitados.flatMap(({ trabajadorId, valor }) => {
+      const trabajador = trabajadoresPorId.get(trabajadorId);
+      if (!trabajador) return [];
+      return {
+        trabajadorId: trabajador.id,
+        empleadoNombre: trabajador.nombre,
+        fecha,
+        numeroFactura: String(numeroFactura || "").trim(),
+        vehiculo: String(vehiculo || "").trim(),
+        valor: String(valor),
+      };
+    });
+    const registros = await tx.insert(obraElectronicaTable).values(valoresRegistros).returning();
+    if (!req.header("x-sync-apply")) await tx.insert(eventosSincronizacionTable).values({ operationId, entidad: "obra_electronica", entidadId: String(registros[0].id), tipo: "crear", metodo: "POST", endpoint: "/obra-electronica", payload: req.body, origen: "local" });
+    await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "obra_electronica", recursoId: registros[0].id }).onConflictDoNothing();
+    return { registros, esLote } as const;
   });
   if (resultado.yaProcesado) {
     res.status(200).json({ ok: true, yaProcesado: true, recursoId: resultado.yaProcesado.recursoId });
     return;
   }
   if (resultado.status !== undefined) { res.status(resultado.status).json({ error: resultado.error }); return; }
-  res.status(201).json(mapRegistro(resultado.registro));
+  res.status(201).json(resultado.esLote ? resultado.registros.map(mapRegistro) : mapRegistro(resultado.registros[0]));
 });
 
 router.put("/:id", async (req, res) => {
