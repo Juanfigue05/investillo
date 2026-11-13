@@ -6,7 +6,13 @@ import {
   useActualizarProducto,
   useEliminarProducto,
 } from "@workspace/api-client-react";
-import { coincideBusqueda, formatCurrency, formatCurrencyDecimal, calcularPrecioConIva } from "@/lib/utils";
+import {
+  coincideBusqueda,
+  formatCurrency,
+  formatCurrencyDecimal,
+  parseNumberCO,
+  calcularPrecioConIva,
+} from "@/lib/utils";
 import {
   Plus,
   Search,
@@ -2367,11 +2373,15 @@ export default function Inventario() {
                           <input
                             required
                             type="number"
+                            lang="es-CO"
+                            inputMode="decimal"
+                            min="0"
+                            step="0.01"
                             value={formData.precioCompra}
                             onChange={(e) =>
                               setFormData({
                                 ...formData,
-                                precioCompra: parseFloat(e.target.value) || 0,
+                                precioCompra: parseNumberCO(e.target.value),
                               })
                             }
                             className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground"
@@ -2393,12 +2403,16 @@ export default function Inventario() {
                           <input
                             required
                             type="number"
+                            lang="es-CO"
+                            inputMode="decimal"
+                            min="0"
+                            step="0.01"
                             value={formData.precioVentaSinIva}
                             onChange={(e) =>
                               setFormData({
                                 ...formData,
                                 precioVentaSinIva:
-                                  parseFloat(e.target.value) || 0,
+                                  parseNumberCO(e.target.value),
                               })
                             }
                             className={`w-full px-4 py-2 bg-background border rounded-lg focus:ring-2 focus:ring-primary focus:outline-none text-foreground ${formData.precioCompra > 0 && formData.precioVentaSinIva < formData.precioCompra ? "border-destructive" : "border-border"}`}
@@ -2412,6 +2426,17 @@ export default function Inventario() {
                             )}
                         </div>
                       </div>
+                      <p className="col-span-full text-xs text-muted-foreground">
+                        Admite centavos: puedes escribir 40586.66 o 40.586,66. Se interpretará como Compra{" "}
+                        <span className="font-medium text-foreground">
+                          {formatCurrencyDecimal(formData.precioCompra)}
+                        </span>
+                        {" "}y Venta{" "}
+                        <span className="font-medium text-foreground">
+                          {formatCurrencyDecimal(formData.precioVentaSinIva)}
+                        </span>
+                        .
+                      </p>
 
                       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-muted/30 p-4 rounded-xl border border-border">
                         <label className="flex items-center gap-2 text-foreground cursor-pointer">
