@@ -340,6 +340,7 @@ export default function Compras() {
   );
   const [editCantidad, setEditCantidad] = useState("");
   const [editPrecioCompra, setEditPrecioCompra] = useState("");
+  const [editPrecioVenta, setEditPrecioVenta] = useState("");
   const [editProductoId, setEditProductoId] = useState<number | null>(null);
   const [editPrecioCompraAnterior, setEditPrecioCompraAnterior] = useState("");
   const [editPrecioVentaSinIvaAnterior, setEditPrecioVentaSinIvaAnterior] = useState("");
@@ -1057,7 +1058,13 @@ export default function Compras() {
                   comprasExistentes={compras || []}
                   selectedId={editProductoId}
                   incluirProductosConCompraPendiente
-                  onSelect={setEditProductoId}
+                  onSelect={(id) => {
+                    setEditProductoId(id);
+                    const producto = productos?.find((item) => item.id === id);
+                    if (producto) {
+                      setEditPrecioVenta(String(producto.precioVentaSinIva));
+                    }
+                  }}
                 />
               </div>
               <div>
@@ -1081,6 +1088,22 @@ export default function Compras() {
                   onChange={(e) => setEditPrecioCompra(e.target.value)}
                   className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm"
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Precio de venta sin IVA correcto
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editPrecioVenta}
+                  onChange={(e) => setEditPrecioVenta(e.target.value)}
+                  className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Si cambia, también se actualizará el precio de venta del producto en inventario.
+                </p>
               </div>
               {editProductoId !== null &&
                 compraEnEdicion &&
@@ -1149,6 +1172,7 @@ export default function Compras() {
                       const payload: Record<string, unknown> = {
                         cantidadRecibida: editCantidad,
                         precioCompraRegistrado: editPrecioCompra,
+                        precioVentaRegistrado: editPrecioVenta,
                         productoId: editProductoId,
                       };
                       const preciosManuales = [
@@ -1841,6 +1865,16 @@ export default function Compras() {
                                                     );
                                                     setEditPrecioCompra(
                                                       String(precioC),
+                                                    );
+                                                    setEditPrecioVenta(
+                                                      String(
+                                                        compra.precioVentaRegistrado ??
+                                                          productos?.find(
+                                                            (producto) =>
+                                                              producto.id === compra.productoId,
+                                                          )?.precioVentaSinIva ??
+                                                          0,
+                                                      ),
                                                     );
                                                     setEditPrecioCompraAnterior("");
                                                     setEditPrecioVentaSinIvaAnterior("");

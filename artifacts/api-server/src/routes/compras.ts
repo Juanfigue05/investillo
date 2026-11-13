@@ -930,6 +930,8 @@ router.patch("/:id/corregir", async (req, res) => {
       const cantidadBodegaNueva = cantidadNueva - cantidadLocalNueva;
       let productoDestino: typeof productosTable.$inferSelect | undefined;
       let historialPrecioId: number | undefined;
+      let preciosAntesCorreccion: PreciosInventarioCompra | undefined;
+      let preciosAplicadosCorreccion: PreciosInventarioCompra | undefined;
 
       if (cambiarProducto) {
         for (const productoIdBloquear of [
@@ -1008,6 +1010,55 @@ router.patch("/:id/corregir", async (req, res) => {
         }
       }
 
+      if (precioVentaRegistrado !== undefined) {
+        productoDestino ??= await bloquearProducto(tx, productoIdNuevo);
+        if (!productoDestino) {
+          throw new CompraRouteError(
+            `Producto ${productoIdNuevo} no encontrado para actualizar su precio de venta.`,
+            404,
+          );
+        }
+        const precioVentaSinIva = parseNumeroColombia(precioVentaRegistrado);
+        if (
+          Math.abs(precioVentaSinIva - toNum(productoDestino.precioVentaSinIva)) >
+          0.01
+        ) {
+          const preciosActuales = leerPreciosInventario(productoDestino);
+          preciosAplicadosCorreccion = {
+            ...preciosActuales,
+            precioVentaSinIva,
+            precioVentaConIva: calcPrecioConIva(precioVentaSinIva),
+          };
+          preciosAntesCorreccion =
+            !cambiarProducto &&
+            existing.preciosInventarioActualizados &&
+            existing.preciosInventarioAntes
+              ? existing.preciosInventarioAntes
+              : preciosActuales;
+
+          await tx
+            .update(productosTable)
+            .set({
+              precioVentaSinIva: String(preciosAplicadosCorreccion.precioVentaSinIva),
+              precioVentaConIva: String(preciosAplicadosCorreccion.precioVentaConIva),
+              actualizadoEn: new Date(),
+            })
+            .where(eq(productosTable.id, productoDestino.id));
+          if (!cambiarProducto) {
+            await tx
+              .update(historialPreciosTable)
+              .set({
+                precioVenta: String(preciosAplicadosCorreccion.precioVentaConIva),
+                actualizoPrecioInventario: "si",
+              })
+              .where(and(
+                eq(historialPreciosTable.compraId, existing.id),
+                eq(historialPreciosTable.productoId, productoDestino.id),
+              ));
+          }
+        }
+      }
+
       const datosActualizacion: Partial<typeof comprasTable.$inferInsert> = {
         productoId: productoIdNuevo,
         cantidadRecibida: String(cantidadNueva),
@@ -1030,9 +1081,18 @@ router.patch("/:id/corregir", async (req, res) => {
         datosActualizacion.stockActual = productoDestino.stockActual;
         datosActualizacion.stockMinimo = productoDestino.stockMinimo;
         const preciosDestino = leerPreciosInventario(productoDestino);
-        datosActualizacion.preciosInventarioAntes = preciosDestino;
-        datosActualizacion.preciosInventarioAplicados = preciosDestino;
-        datosActualizacion.preciosInventarioActualizados = false;
+        datosActualizacion.preciosInventarioAntes =
+          preciosAntesCorreccion ?? preciosDestino;
+        datosActualizacion.preciosInventarioAplicados =
+          preciosAplicadosCorreccion ?? preciosDestino;
+        datosActualizacion.preciosInventarioActualizados =
+          preciosAplicadosCorreccion !== undefined;
+      } else if (preciosAplicadosCorreccion && preciosAntesCorreccion) {
+        datosActualizacion.preciosInventarioAntes =
+          preciosAntesCorreccion;
+        datosActualizacion.preciosInventarioAplicados =
+          preciosAplicadosCorreccion;
+        datosActualizacion.preciosInventarioActualizados = true;
       }
 
       const [actualizada] = await tx.update(comprasTable)

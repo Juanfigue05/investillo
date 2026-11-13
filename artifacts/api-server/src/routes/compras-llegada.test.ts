@@ -502,16 +502,60 @@ describe("llegada de compras", () => {
     const response = await request(app)
       .patch(`/api/compras/${compraId}/corregir`)
       .set("X-Operation-Id", operation)
-      .send({ cantidadRecibida: 4, precioCompraRegistrado: 125 });
+      .send({
+        cantidadRecibida: 4,
+        precioCompraRegistrado: 125,
+        precioVentaRegistrado: 275,
+      });
 
     expect(response.status).toBe(200);
     expect((await stock(productoId))?.stockActual).toBe("12.000");
+    expect(await precios(productoId)).toMatchObject({
+      precioVentaSinIva: "275.00",
+      precioVentaConIva: "1000.00",
+    });
     expect((await compra(compraId))?.cantidadRecibida).toBe("4.000");
+    expect((await compra(compraId))?.precioVentaRegistrado).toBe("275.00");
     expect(await historial(compraId)).toHaveLength(0);
     expect(await evento(operation)).toMatchObject({
       tipo: "corregir",
       entidad: "compra",
     });
+  });
+
+  it("restaura el precio de venta anterior al eliminar una llegada corregida", async () => {
+    const operationLlegada = operationId();
+    const operationCorreccion = operationId();
+    const operationEliminacion = operationId();
+    const productoId = await crearProducto();
+    const compraId = await crearCompra(productoId);
+
+    const llegadaResponse = await request(app)
+      .put(`/api/compras/${compraId}`)
+      .set("X-Operation-Id", operationLlegada)
+      .send(llegada());
+    const correccionResponse = await request(app)
+      .patch(`/api/compras/${compraId}/corregir`)
+      .set("X-Operation-Id", operationCorreccion)
+      .send({
+        cantidadRecibida: 3,
+        precioVentaRegistrado: 275,
+      });
+    const eliminacionResponse = await request(app)
+      .delete(`/api/compras/${compraId}`)
+      .set("X-Operation-Id", operationEliminacion);
+
+    expect(llegadaResponse.status).toBe(200);
+    expect(correccionResponse.status).toBe(200);
+    expect(eliminacionResponse.status).toBe(200);
+    expect(await stock(productoId)).toMatchObject({
+      stockActual: "10.000",
+    });
+    expect(await precios(productoId)).toMatchObject({
+      precioVentaSinIva: "200.00",
+      precioVentaConIva: "238.00",
+    });
+    expect(await compra(compraId)).toBeUndefined();
   });
 
   it("rechaza corregir una compra pendiente sin tocar el stock", async () => {
@@ -560,6 +604,7 @@ describe("llegada de compras", () => {
         cantidadRecibida: 4,
         productoId: productoCorrectoId,
         precioCompraRegistrado: 120,
+        precioVentaRegistrado: 275,
       });
 
     expect(llegadaResponse.status).toBe(200);
@@ -574,15 +619,15 @@ describe("llegada de compras", () => {
     });
     expect(await precios(productoCorrectoId)).toMatchObject({
       precioCompra: "80.00",
-      precioVentaSinIva: "150.00",
-      precioVentaConIva: "178.50",
+      precioVentaSinIva: "275.00",
+      precioVentaConIva: "1000.00",
     });
     expect(await compra(compraId)).toMatchObject({
       productoId: productoCorrectoId,
       cantidadRecibida: "4.000",
       cantidadLocalRecibida: "2.667",
       cantidadBodegaRecibida: "1.333",
-      preciosInventarioActualizados: false,
+      preciosInventarioActualizados: true,
     });
   });
 
