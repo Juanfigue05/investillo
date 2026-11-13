@@ -25,9 +25,12 @@ import {
   formatCurrencyDecimal,
   parseNumberCO,
   formatTelefono,
-  soloDigitos,
   fechaColombia,
 } from "@/lib/utils";
+import {
+  buscarCreditoDuplicadoPorReferencia,
+  coincideBusquedaCredito,
+} from "@/lib/credito-busqueda";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -380,6 +383,23 @@ export default function Creditos() {
   const baseTotal = totalLineas + manoObraValor;
   const ivaValor = aplicaIva ? Math.round(baseTotal * 0.19) : 0;
   const totalFinal = baseTotal + ivaValor;
+  const referenciasRecientes = useMemo(() => {
+    const registros = (creditos as any[] | undefined) ?? [];
+    return [...new Set(
+      [...registros]
+        .sort((a, b) => String(b.fechaFactura || "").localeCompare(String(a.fechaFactura || "")))
+        .map((credito) => String(credito.concepto || "").trim())
+        .filter(Boolean),
+    )].slice(0, 8);
+  }, [creditos]);
+  const placasRecientes = useMemo(() => {
+    const registros = (creditos as any[] | undefined) ?? [];
+    return [...new Set(
+      registros
+        .map((credito) => String(credito.placaVehiculo || "").trim())
+        .filter(Boolean),
+    )].slice(0, 8);
+  }, [creditos]);
 
   const toggleTrabajadorMO = (id: number) =>
     setManoObra((prev) => ({
@@ -521,6 +541,33 @@ export default function Creditos() {
       );
       if (!ok) return;
     }
+
+    const posibleDuplicado = buscarCreditoDuplicadoPorReferencia(
+      (creditos as any[] | undefined) ?? [],
+      form.concepto,
+      form.nombreCliente,
+      editingId,
+    );
+    const lineasConStockInsuficiente = lineas.filter((linea) =>
+      typeof linea.stockActual === "number" &&
+      (parseFloat(linea.cantidad) || 0) > linea.stockActual,
+    );
+    const alertasAntesDeGuardar: string[] = [];
+    if (posibleDuplicado) {
+      alertasAntesDeGuardar.push(
+        `Ya existe el crédito ${posibleDuplicado.concepto} para ${posibleDuplicado.nombreCliente} (${formatCurrency(posibleDuplicado.valorCredito)}).`,
+      );
+    }
+    if (lineasConStockInsuficiente.length > 0) {
+      alertasAntesDeGuardar.push(
+        ...lineasConStockInsuficiente.map((linea) =>
+          `${linea.productoNombre}: se solicitan ${linea.cantidad} y hay ${linea.stockActual} en inventario.`,
+        ),
+      );
+    }
+    if (alertasAntesDeGuardar.length > 0 && !window.confirm(
+      `Revisa estas alertas antes de guardar:\n\n${alertasAntesDeGuardar.map((alerta) => `• ${alerta}`).join("\n")}\n\nPuedes continuar si es correcto. ¿Deseas guardar de todas formas?`,
+    )) return;
 
     const nombresTrabajadores = manoObra.trabajadores
       .map(
@@ -904,7 +951,7 @@ export default function Creditos() {
     });
   };
 
-  const q = busqueda.toLowerCase();
+  const q = busqueda.trim();
   const hayFiltros = !!(
     busqueda ||
     filtroDesde ||
@@ -918,17 +965,7 @@ export default function Creditos() {
   const allCreditos = useMemo(() => {
     if (!creditos) return [];
     return creditos.filter((c) => {
-      if (
-        q &&
-        !c.nombreCliente.toLowerCase().includes(q) &&
-        !(c.concepto || "").toLowerCase().includes(q) &&
-        !(
-          soloDigitos(q) &&
-          soloDigitos(c.telefonoCliente).includes(soloDigitos(q))
-        ) &&
-        !(c.placaVehiculo || "").toLowerCase().includes(q)
-      )
-        return false;
+      if (q && !coincideBusquedaCredito(c, q)) return false;
       if (filtroDesde && c.fechaFactura < filtroDesde) return false;
       if (filtroHasta && c.fechaFactura > filtroHasta) return false;
       if (filtroFechaExacta && c.fechaFactura !== filtroFechaExacta)
@@ -1282,7 +1319,7 @@ export default function Creditos() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Buscar por nombre o teléfono..."
+              placeholder="Buscar por nombre, teléfono, factura o placa..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               className="w-full pl-9 pr-9 py-2.5 bg-card border border-border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
@@ -1433,12 +1470,18 @@ export default function Creditos() {
                   <input
                     type="text"
                     placeholder="Ej: R2568 03-AGOST"
+                    list="referencias-creditos-recientes"
                     value={form.concepto}
                     onChange={(e) =>
                       setForm({ ...form, concepto: e.target.value })
                     }
                     className="w-full bg-background border border-primary/30 px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm font-mono"
                   />
+                  <datalist id="referencias-creditos-recientes">
+                    {referenciasRecientes.map((referencia) => (
+                      <option key={referencia} value={referencia} />
+                    ))}
+                  </datalist>
                   <p className="text-xs text-muted-foreground mt-1">
                     Se usará como referencia en Ventas Diarias al registrar
                     pagos.
@@ -1454,11 +1497,16 @@ export default function Creditos() {
                     readOnly
                   />
                   <SearchableSelect
-                    opciones={(clientes || []).map((c) => ({ id: c.nombre, nombre: c.nombre }))}
+                    opciones={(clientes || []).map((c) => ({
+                      id: c.nombre,
+                      recentId: String(c.id),
+                      nombre: c.nombre,
+                    }))}
                     value={form.nombreCliente}
                     onChange={handleClienteSelect}
                     placeholder="Nombre del cliente (selecciona o escribe)"
                     allowCustom
+                    recentKey="clientes-recientes"
                   />
                   {clientes && clientes.length > 0 && (
                     <p className="text-xs text-muted-foreground mt-1">
@@ -1514,6 +1562,9 @@ export default function Creditos() {
                               {v.modelo ? ` ${v.modelo}` : ""}
                             </option>
                           ))}
+                          {placasRecientes
+                            .filter((placa) => !vehiculosActivo.some((vehiculo: any) => vehiculo.placa === placa))
+                            .map((placa) => <option key={placa} value={placa} />)}
                         </datalist>
                       </>
                     );
@@ -1588,6 +1639,7 @@ export default function Creditos() {
                                 handleProductoSelect(linea.id, id)
                               }
                               placeholder="Buscar producto..."
+                              recentKey="creditos-productos-recientes"
                             />
                             {linea.productoCodigo === SPECIAL_EXTERNO && <input type="text" value={linea.productoNombre} onChange={(e) => updateLinea(linea.id, "productoNombre", e.target.value)} placeholder="Nombre del producto externo" className="w-full mt-1 bg-background border border-amber-500/50 px-3 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-amber-500 outline-none" />}
                             {linea.stockActual !== null &&
@@ -1841,6 +1893,7 @@ export default function Creditos() {
                           onChangeFijados={(fijados) =>
                             setManoObra((p) => ({ ...p, fijados }))
                           }
+                          recentKey="trabajadores-recientes"
                         />
                       </div>
                     </div>

@@ -1,7 +1,14 @@
-import { pgTable, serial, text, numeric, timestamp, integer, foreignKey, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, timestamp, integer, foreignKey, index, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { productosTable } from "./inventario";
+
+export interface PreciosInventarioCompra {
+  precioCompra: number;
+  precioVentaSinIva: number;
+  precioVentaConIva: number;
+  tieneIva: boolean;
+}
 
 export const comprasTable = pgTable("compras", {
   id: serial("id").primaryKey(),
@@ -13,10 +20,15 @@ export const comprasTable = pgTable("compras", {
   stockMinimo: numeric("stock_minimo", { precision: 15, scale: 3 }).notNull(),
   estado: text("estado").notNull().default("pendiente"),
   cantidadRecibida: numeric("cantidad_recibida", { precision: 15, scale: 3 }),
+  cantidadLocalRecibida: numeric("cantidad_local_recibida", { precision: 15, scale: 3 }),
+  cantidadBodegaRecibida: numeric("cantidad_bodega_recibida", { precision: 15, scale: 3 }),
   fechaLlegada: text("fecha_llegada"),
   proveedor: text("proveedor"),
   precioCompraRegistrado: numeric("precio_compra_registrado", { precision: 15, scale: 2 }),
   precioVentaRegistrado: numeric("precio_venta_registrado", { precision: 15, scale: 2 }),
+  preciosInventarioAntes: jsonb("precios_inventario_antes").$type<PreciosInventarioCompra>(),
+  preciosInventarioAplicados: jsonb("precios_inventario_aplicados").$type<PreciosInventarioCompra>(),
+  preciosInventarioActualizados: boolean("precios_inventario_actualizados").notNull().default(false),
   creadoEn: timestamp("creado_en").defaultNow(),
   actualizadoEn: timestamp("actualizado_en").defaultNow(),
 }, (table) => [

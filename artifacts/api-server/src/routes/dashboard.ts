@@ -1,13 +1,34 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { ventasDiariasTable, creditosTable, productosTable, comprasTable } from "@workspace/db/schema";
-import { eq, lte, sql, and } from "drizzle-orm";
-import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
+import { eq, lte, sql, and, gte } from "drizzle-orm";
+import { fechaHoyColombia } from "../lib/fecha";
+import { obtenerRangoMesCreditos, resumirCreditosMes } from "../lib/dashboard-analisis";
 const router: IRouter = Router();
 
 function toNum(v: unknown): number {
   return typeof v === "string" ? parseFloat(v) : Number(v);
 }
+
+router.get("/analisis", async (req, res) => {
+  const mes = String(req.query.mes || "");
+  const rango = obtenerRangoMesCreditos(mes);
+  if (!rango) {
+    res.status(400).json({ error: "El mes debe tener formato YYYY-MM válido" });
+    return;
+  }
+
+  const creditos = await db.select({
+    valorCredito: creditosTable.valorCredito,
+    valorAbonado: creditosTable.valorAbonado,
+  }).from(creditosTable).where(and(
+    eq(creditosTable.tipo, "credito"),
+    gte(creditosTable.fechaFactura, rango.desde),
+    lte(creditosTable.fechaFactura, rango.hasta),
+  ));
+
+  res.json(resumirCreditosMes(creditos));
+});
 
 router.get("/", async (req, res) => {
   const hoy = fechaHoyColombia();

@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useGetDashboard, useGetAlertasStock, useGetVentasResumen } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
 import {
   TrendingUp,
   CreditCard,
@@ -10,6 +12,8 @@ import {
   BarChart3,
   ShoppingCart,
   HandCoins,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   BarChart,
@@ -25,6 +29,60 @@ import { format, subDays, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
 import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
 import { InstallAppCard } from "@/components/InstallAppCard";
+import {
+  guardarProductosAlertaColapsados,
+  leerProductosAlertaColapsados,
+  obtenerRangoAnio,
+  obtenerRangoMes,
+  sumarVentasResumen,
+} from "@/lib/dashboard-analisis";
+import { leerRespuestaApi } from "@/lib/respuesta-api";
+
+const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/").replace(/\/$/, "");
+
+type ResumenCreditosMes = {
+  totalCreditosMes: number;
+  saldoPendienteMes: number;
+  cantidadCreditosMes: number;
+  cantidadPendientesMes: number;
+};
+
+function TarjetaAnalisis({
+  titulo,
+  valor,
+  detalle,
+  icono: Icono,
+  color,
+  cargando,
+  error,
+}: {
+  titulo: string;
+  valor?: number;
+  detalle: string;
+  icono: typeof TrendingUp;
+  color: string;
+  cargando: boolean;
+  error?: string;
+}) {
+  return (
+    <div className="bg-card rounded-2xl p-4 lg:p-5 border border-border shadow-lg shadow-black/20">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-muted-foreground text-xs font-medium leading-tight">{titulo}</p>
+          <h3 className="text-xl lg:text-2xl font-display font-bold mt-1 text-foreground truncate">
+            {cargando ? "Cargando..." : error ? "No disponible" : formatCurrency(valor ?? 0)}
+          </h3>
+        </div>
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
+          <Icono className="w-5 h-5" />
+        </div>
+      </div>
+      <p className={`mt-3 text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
+        {error || detalle}
+      </p>
+    </div>
+  );
+}
 
 function buildRange(days: number) {
   const hasta = new Date();
@@ -62,16 +120,39 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function Dashboard() {
+  const [mesAnalisis, setMesAnalisis] = useState(() => fechaHoyColombia().slice(0, 7));
+  const [anioAnalisis, setAnioAnalisis] = useState(() => Number(fechaHoyColombia().slice(0, 4)));
+  const [productosAgotandoColapsados, setProductosAgotandoColapsados] = useState(leerProductosAlertaColapsados);
   const { data: dashboard, isLoading } = useGetDashboard();
   const { data: alertas } = useGetAlertasStock();
+
+  useEffect(() => {
+    guardarProductosAlertaColapsados(productosAgotandoColapsados);
+  }, [productosAgotandoColapsados]);
 
   const range15 = buildRange(15);
   const range7 = buildRange(7);
   const mesRange = buildMonthRange();
+  const rangoMesSeleccionado = obtenerRangoMes(mesAnalisis)!;
+  const rangoAnioSeleccionado = obtenerRangoAnio(anioAnalisis)!;
 
   const { data: ventas15 } = useGetVentasResumen({ desde: range15.desde, hasta: range15.hasta });
   const { data: ventas7 } = useGetVentasResumen({ desde: range7.desde, hasta: range7.hasta });
   const { data: ventasMes } = useGetVentasResumen({ desde: mesRange.desde, hasta: mesRange.hasta });
+  const ventasMesSeleccionadoQuery = useGetVentasResumen({
+    desde: rangoMesSeleccionado.desde,
+    hasta: rangoMesSeleccionado.hasta,
+  });
+  const ventasAnioSeleccionadoQuery = useGetVentasResumen({
+    desde: rangoAnioSeleccionado.desde,
+    hasta: rangoAnioSeleccionado.hasta,
+  });
+  const creditosMesQuery = useQuery({
+    queryKey: ["/api/dashboard/analisis", mesAnalisis],
+    queryFn: ({ signal }) => leerRespuestaApi<ResumenCreditosMes>(
+      fetch(`${API}/dashboard/analisis?mes=${encodeURIComponent(mesAnalisis)}`, { signal }),
+    ),
+  });
 
   function fillDays(data: typeof ventas15, desde: string, hasta: string) {
     const result: { fecha: string; label: string; totalVentas: number }[] = [];
@@ -96,6 +177,15 @@ export default function Dashboard() {
   const total15Ventas = chartData15.reduce((a, d) => a + d.totalVentas, 0);
   const total7Ventas = (ventas7 || []).reduce((a, d) => a + (d.totalVentas || 0), 0);
   const totalMesVentas = chartDataMes.reduce((a, d) => a + d.totalVentas, 0);
+  const totalVentasMesSeleccionado = sumarVentasResumen(ventasMesSeleccionadoQuery.data);
+  const totalVentasAnioSeleccionado = sumarVentasResumen(ventasAnioSeleccionadoQuery.data);
+  const etiquetaMesSeleccionado = new Date(`${mesAnalisis}-15T12:00:00`).toLocaleDateString("es-CO", {
+    month: "long",
+    year: "numeric",
+  });
+  const aniosDisponibles = Array.from({ length: 10 }, (_, indice) =>
+    Number(fechaHoyColombia().slice(0, 4)) + 1 - indice,
+  );
 
   if (isLoading || !dashboard) {
     return (
@@ -117,7 +207,7 @@ export default function Dashboard() {
       bg: "bg-green-500/10",
     },
     {
-      title: "Créditos",
+      title: "Créditos pendientes",
       value: formatCurrency(dashboard.noDeben),
       subtitle: `${dashboard.cantidadCreditos ?? 0} pendiente${(dashboard.cantidadCreditos ?? 0) === 1 ? "" : "s"}`,
       icon: CreditCard,
@@ -180,6 +270,79 @@ export default function Dashboard() {
           })}
           <InstallAppCard />
         </div>
+
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-card border border-border rounded-2xl p-4 lg:px-5">
+            <div>
+              <h3 className="font-bold text-foreground">Análisis de ventas y créditos</h3>
+              <p className="text-xs text-muted-foreground mt-1">Los créditos se agrupan por fecha de factura; los pagos completos aparecen en ventas por fecha de pago.</p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                Mes
+                <input
+                  type="month"
+                  value={mesAnalisis}
+                  onChange={(e) => {
+                    if (obtenerRangoMes(e.target.value)) setMesAnalisis(e.target.value);
+                  }}
+                  aria-label="Mes para el análisis"
+                  className="bg-background border border-border px-3 py-2 rounded-xl text-sm text-foreground"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                Año
+                <select
+                  value={anioAnalisis}
+                  onChange={(e) => setAnioAnalisis(Number(e.target.value))}
+                  aria-label="Año para el análisis"
+                  className="bg-background border border-border px-3 py-2 rounded-xl text-sm text-foreground"
+                >
+                  {aniosDisponibles.map((anio) => <option key={anio} value={anio}>{anio}</option>)}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4">
+            <TarjetaAnalisis
+              titulo="Ventas del mes"
+              valor={totalVentasMesSeleccionado}
+              detalle={etiquetaMesSeleccionado}
+              icono={TrendingUp}
+              color="bg-green-500/10 text-green-500"
+              cargando={ventasMesSeleccionadoQuery.isLoading}
+              error={ventasMesSeleccionadoQuery.error instanceof Error ? ventasMesSeleccionadoQuery.error.message : undefined}
+            />
+            <TarjetaAnalisis
+              titulo="Ventas del año"
+              valor={totalVentasAnioSeleccionado}
+              detalle={`Año ${anioAnalisis}`}
+              icono={BarChart3}
+              color="bg-purple-500/10 text-purple-500"
+              cargando={ventasAnioSeleccionadoQuery.isLoading}
+              error={ventasAnioSeleccionadoQuery.error instanceof Error ? ventasAnioSeleccionadoQuery.error.message : undefined}
+            />
+            <TarjetaAnalisis
+              titulo="Créditos del mes"
+              valor={creditosMesQuery.data?.totalCreditosMes}
+              detalle={`${creditosMesQuery.data?.cantidadCreditosMes ?? 0} créditos · ${etiquetaMesSeleccionado}`}
+              icono={CreditCard}
+              color="bg-blue-500/10 text-blue-500"
+              cargando={creditosMesQuery.isLoading}
+              error={creditosMesQuery.error instanceof Error ? creditosMesQuery.error.message : undefined}
+            />
+            <TarjetaAnalisis
+              titulo="Pendiente de pago del mes"
+              valor={creditosMesQuery.data?.saldoPendienteMes}
+              detalle={`${creditosMesQuery.data?.cantidadPendientesMes ?? 0} créditos con saldo`}
+              icono={HandCoins}
+              color="bg-cyan-500/10 text-cyan-500"
+              cargando={creditosMesQuery.isLoading}
+              error={creditosMesQuery.error instanceof Error ? creditosMesQuery.error.message : undefined}
+            />
+          </div>
+        </section>
 
         {/* Charts Section */}
         <div className="bg-card border border-border rounded-2xl p-4 lg:p-6 shadow-lg">
@@ -251,11 +414,23 @@ export default function Dashboard() {
         {/* Alerts Section */}
         {alertas && alertas.length > 0 && (
           <div className="bg-destructive/10 border border-destructive/20 rounded-2xl overflow-hidden">
-            <div className="flex items-center gap-3 p-4 lg:p-5 border-b border-destructive/20">
-              <PackageX className="w-5 h-5 text-destructive flex-shrink-0" />
-              <h3 className="text-sm lg:text-base font-bold text-destructive">Productos Agotándose ({alertas.length})</h3>
+            <div className="flex items-center justify-between gap-3 p-4 lg:p-5 border-b border-destructive/20">
+              <div className="flex items-center gap-3 min-w-0">
+                <PackageX className="w-5 h-5 text-destructive flex-shrink-0" />
+                <h3 className="text-sm lg:text-base font-bold text-destructive">Productos Agotándose ({alertas.length})</h3>
+              </div>
+              <button
+                type="button"
+                aria-expanded={!productosAgotandoColapsados}
+                aria-controls={!productosAgotandoColapsados ? "productos-agotandose-lista" : undefined}
+                onClick={() => setProductosAgotandoColapsados((colapsados) => !colapsados)}
+                className="flex items-center gap-2 shrink-0 rounded-lg px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
+              >
+                {productosAgotandoColapsados ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                {productosAgotandoColapsados ? "Mostrar" : "Minimizar"}
+              </button>
             </div>
-            <div className="overflow-x-auto">
+            {!productosAgotandoColapsados && <div id="productos-agotandose-lista" className="overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead>
                   <tr className="bg-destructive/10 text-muted-foreground border-b border-destructive/20">
@@ -288,7 +463,7 @@ export default function Dashboard() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </div>}
           </div>
         )}
       </div>

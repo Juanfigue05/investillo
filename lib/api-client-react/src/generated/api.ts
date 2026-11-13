@@ -23,11 +23,13 @@ import type {
   Compra,
   CompraInput,
   CompraUpdate,
+  CorregirCompraBody,
   Credito,
   CreditoAbonoInput,
   CreditoInput,
   CreditoUpdate,
   Dashboard,
+  ErrorResponse,
   GetClientesParams,
   GetCreditosParams,
   GetHistorialPreciosParams,
@@ -2108,6 +2110,93 @@ export const useEliminarCompra = <
   TContext
 > => {
   return useMutation(getEliminarCompraMutationOptions(options));
+};
+
+/**
+ * @summary Corregir una compra llegada y reasignar su producto
+ */
+export const getReubicarProductoCompraUrl = (id: number) => {
+  return `/api/compras/${id}/corregir`;
+};
+
+export const reubicarProductoCompra = async (
+  id: number,
+  corregirCompraBody: CorregirCompraBody,
+  options?: RequestInit,
+): Promise<Compra> => {
+  return customFetch<Compra>(getReubicarProductoCompraUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(corregirCompraBody),
+  });
+};
+
+export const getReubicarProductoCompraMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reubicarProductoCompra>>,
+    TError,
+    { id: number; data: BodyType<CorregirCompraBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reubicarProductoCompra>>,
+  TError,
+  { id: number; data: BodyType<CorregirCompraBody> },
+  TContext
+> => {
+  const mutationKey = ["reubicarProductoCompra"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reubicarProductoCompra>>,
+    { id: number; data: BodyType<CorregirCompraBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return reubicarProductoCompra(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReubicarProductoCompraMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reubicarProductoCompra>>
+>;
+export type ReubicarProductoCompraMutationBody = BodyType<CorregirCompraBody>;
+export type ReubicarProductoCompraMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Corregir una compra llegada y reasignar su producto
+ */
+export const useReubicarProductoCompra = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reubicarProductoCompra>>,
+    TError,
+    { id: number; data: BodyType<CorregirCompraBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reubicarProductoCompra>>,
+  TError,
+  { id: number; data: BodyType<CorregirCompraBody> },
+  TContext
+> => {
+  return useMutation(getReubicarProductoCompraMutationOptions(options));
 };
 
 /**

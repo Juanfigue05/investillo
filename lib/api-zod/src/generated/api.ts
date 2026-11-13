@@ -793,6 +793,7 @@ export const GetComprasResponseItem = zod.object({
   proveedor: zod.string().nullish(),
   precioCompraRegistrado: zod.number().nullish(),
   precioVentaRegistrado: zod.number().nullish(),
+  tieneSnapshotPrecios: zod.boolean(),
 });
 export const GetComprasResponse = zod.array(GetComprasResponseItem);
 
@@ -844,6 +845,7 @@ export const ActualizarCompraResponse = zod.object({
   proveedor: zod.string().nullish(),
   precioCompraRegistrado: zod.number().nullish(),
   precioVentaRegistrado: zod.number().nullish(),
+  tieneSnapshotPrecios: zod.boolean(),
 });
 
 /**
@@ -855,6 +857,57 @@ export const EliminarCompraParams = zod.object({
 
 export const EliminarCompraResponse = zod.object({
   mensaje: zod.string(),
+});
+
+/**
+ * @summary Corregir una compra llegada y reasignar su producto
+ */
+export const ReubicarProductoCompraParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ReubicarProductoCompraBody = zod.object({
+  cantidadRecibida: zod.number(),
+  precioCompraRegistrado: zod.number().optional(),
+  precioVentaRegistrado: zod.number().optional(),
+  productoId: zod.number().optional(),
+  preciosInventarioAntesManual: zod
+    .object({
+      precioCompra: zod.number(),
+      precioVentaSinIva: zod.number(),
+      precioVentaConIva: zod.number(),
+      tieneIva: zod.boolean(),
+    })
+    .optional(),
+  preciosInventarioActualesEsperados: zod
+    .object({
+      precioCompra: zod.number(),
+      precioVentaSinIva: zod.number(),
+      precioVentaConIva: zod.number(),
+      tieneIva: zod.boolean(),
+    })
+    .optional(),
+});
+
+export const ReubicarProductoCompraResponse = zod.object({
+  id: zod.number(),
+  productoId: zod.number(),
+  productoNombre: zod.string(),
+  productoCodigo: zod.string(),
+  productoMarca: zod.string().nullish(),
+  stockActual: zod.number(),
+  stockMinimo: zod.number(),
+  estado: zod
+    .enum(["pendiente", "llegado"])
+    .describe("pendiente=rojo, llegado=verde"),
+  creadoEn: zod.coerce.date().optional(),
+  actualizadoEn: zod.coerce.date().optional(),
+  cantidadRecibida: zod.number().nullish(),
+  fechaLlegada: zod.string().nullish(),
+  proveedor: zod.string().nullish(),
+  precioCompraRegistrado: zod.number().nullish(),
+  precioVentaRegistrado: zod.number().nullish(),
+  tieneSnapshotPrecios: zod.boolean(),
 });
 
 /**

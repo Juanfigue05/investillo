@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { X, Lock, Unlock } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { filtrarTrabajadoresPorNombre, ordenarPorUsoReciente } from "@/lib/sugerencias-obra";
+import { cargarIdsRecientes, guardarIdReciente } from "@/lib/recent-options";
 
 interface Trabajador {
   id: number;
@@ -21,6 +23,9 @@ interface Props {
   fijados: Record<number, number>;
   onChangeSeleccionados: (ids: number[]) => void;
   onChangeFijados: (fijados: Record<number, number>) => void;
+  searchable?: boolean;
+  recentlyUsedIds?: number[];
+  recentKey?: string;
 }
 
 export function calcularDistribucion(total: number, seleccionados: number[], fijados: Record<number, number>): DistribucionItem[] {
@@ -40,11 +45,35 @@ export function calcularDistribucion(total: number, seleccionados: number[], fij
   return resultado;
 }
 
-export function ManoObraSelector({ trabajadores, total, seleccionados, fijados, onChangeSeleccionados, onChangeFijados }: Props) {
+export function ManoObraSelector({
+  trabajadores,
+  total,
+  seleccionados,
+  fijados,
+  onChangeSeleccionados,
+  onChangeFijados,
+  searchable = false,
+  recentlyUsedIds = [],
+  recentKey,
+}: Props) {
   const [isOpen, setIsOpen] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
+  const [idsRecientesGuardados, setIdsRecientesGuardados] = useState(() =>
+    recentKey ? cargarIdsRecientes(recentKey).map(Number).filter(Number.isInteger) : [],
+  );
   const triggerRef = useRef<HTMLButtonElement>(null);
   const portalRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const idsRecientesActivos = recentlyUsedIds.length > 0
+    ? recentlyUsedIds
+    : idsRecientesGuardados;
+  const trabajadoresFiltrados = useMemo(
+    () => filtrarTrabajadoresPorNombre(
+      ordenarPorUsoReciente(trabajadores, idsRecientesActivos),
+      busqueda,
+    ),
+    [trabajadores, idsRecientesActivos, busqueda],
+  );
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -61,6 +90,7 @@ export function ManoObraSelector({ trabajadores, total, seleccionados, fijados, 
   }, []);
 
   const abrir = () => {
+    setBusqueda("");
     const el = triggerRef.current;
     if (el) {
       const rect = el.getBoundingClientRect();
@@ -105,6 +135,11 @@ export function ManoObraSelector({ trabajadores, total, seleccionados, fijados, 
       onChangeFijados(rest);
     } else {
       onChangeSeleccionados([...seleccionados, id]);
+      if (recentKey) {
+        setIdsRecientesGuardados((actuales) =>
+          guardarIdReciente(recentKey, String(id), actuales.map(String)).map(Number),
+        );
+      }
     }
   };
 
@@ -147,13 +182,34 @@ export function ManoObraSelector({ trabajadores, total, seleccionados, fijados, 
             </button>
           </div>
 
+          {searchable && (
+            <div className="border-b border-border px-3 py-2">
+              <input
+                type="search"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Buscar trabajador..."
+                aria-label="Buscar trabajador"
+                className="w-full bg-background border border-border px-2 py-1.5 rounded-lg text-sm"
+              />
+              {idsRecientesActivos.length > 0 && (
+                <p className="mt-1 text-[10px] text-muted-foreground">Los trabajadores recientes aparecen primero.</p>
+              )}
+            </div>
+          )}
+
           <div className="max-h-64 overflow-y-auto p-2 space-y-1">
             {trabajadores.length === 0 && (
               <p className="text-xs text-muted-foreground px-2 py-3 text-center">
                 No hay trabajadores registrados todavía.
               </p>
             )}
-            {trabajadores.map((t) => {
+            {trabajadores.length > 0 && trabajadoresFiltrados.length === 0 && (
+              <p className="text-xs text-muted-foreground px-2 py-3 text-center">
+                No hay trabajadores que coincidan con la búsqueda.
+              </p>
+            )}
+            {trabajadoresFiltrados.map((t) => {
               const seleccionado = seleccionados.includes(t.id);
               const item = distribucion.find((d) => d.trabajadorId === t.id);
               const fijado = fijados[t.id] !== undefined;

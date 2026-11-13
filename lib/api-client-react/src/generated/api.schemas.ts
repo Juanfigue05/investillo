@@ -13,6 +13,10 @@ export interface MensajeRespuesta {
   mensaje: string;
 }
 
+export interface ErrorResponse {
+  error: string;
+}
+
 export interface Producto {
   id: number;
   nombre: string;
@@ -284,6 +288,7 @@ export interface Compra {
   proveedor?: string | null;
   precioCompraRegistrado?: number | null;
   precioVentaRegistrado?: number | null;
+  tieneSnapshotPrecios: boolean;
 }
 
 export type CompraInputEstado =
@@ -316,6 +321,22 @@ export interface CompraUpdate {
   proveedor?: string | null;
   /** Si true, actualiza los precios del producto en inventario al marcar llegado */
   actualizarPrecioInventario?: boolean | null;
+}
+
+export interface PreciosInventario {
+  precioCompra: number;
+  precioVentaSinIva: number;
+  precioVentaConIva: number;
+  tieneIva: boolean;
+}
+
+export interface CorregirCompraBody {
+  cantidadRecibida: number;
+  precioCompraRegistrado?: number;
+  precioVentaRegistrado?: number;
+  productoId?: number;
+  preciosInventarioAntesManual?: PreciosInventario;
+  preciosInventarioActualesEsperados?: PreciosInventario;
 }
 
 export interface DistribucionTrabajador {

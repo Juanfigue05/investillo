@@ -28,6 +28,10 @@ import {
 } from "@/lib/respuesta-api";
 import { Pencil } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
+import {
+  cargarIdsRecientes,
+  guardarIdReciente,
+} from "@/lib/recent-options";
 
 function agregarFilaOptimista(
   queryClient: any,
@@ -117,16 +121,32 @@ function ProductoAutocomplete({
   productos,
   comprasExistentes,
   onSelect,
+  selectedId,
+  incluirProductosConCompraPendiente = false,
 }: {
   productos: any[];
   comprasExistentes: any[];
-  onSelect: (id: number) => void;
+  onSelect: (id: number | null) => void;
+  selectedId?: number | null;
+  incluirProductosConCompraPendiente?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<any | null>(null);
+  const [idsRecientes, setIdsRecientes] = useState(() =>
+    cargarIdsRecientes("compras-productos-recientes"),
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const [loteFecha, setLoteFecha] = useState(fechaHoyColombia());
+
+  useEffect(() => {
+    if (selectedId === undefined || selectedId === null) return;
+    const producto = productos.find((item) => item.id === selectedId);
+    if (producto) {
+      setSelected(producto);
+      setQuery(producto.nombre);
+    }
+  }, [productos, selectedId]);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -143,19 +163,28 @@ function ProductoAutocomplete({
 
   const disponibles = productos.filter(
     (p) =>
+      incluirProductosConCompraPendiente ||
       !comprasExistentes.some(
         (c) => c.productoId === p.id && c.estado === "pendiente",
       ),
   );
 
-  const filtered = disponibles.filter((p) =>
+  const coincidencias = disponibles.filter((p) =>
     coincideBusqueda(query, p.nombre, p.codigo, p.marca, p.tipo, p.referencia, p.adicional),
+  );
+  const posicionesRecientes = new Map(idsRecientes.map((id, indice) => [id, indice]));
+  const filtered = [...coincidencias].sort((a, b) =>
+    (posicionesRecientes.get(String(a.id)) ?? Number.MAX_SAFE_INTEGER) -
+    (posicionesRecientes.get(String(b.id)) ?? Number.MAX_SAFE_INTEGER),
   );
 
   const handleSelect = (p: any) => {
     setSelected(p);
     setQuery(p.nombre);
     setOpen(false);
+    setIdsRecientes((actuales) =>
+      guardarIdReciente("compras-productos-recientes", String(p.id), actuales),
+    );
     onSelect(p.id);
   };
 
@@ -163,6 +192,7 @@ function ProductoAutocomplete({
     setSelected(null);
     setQuery("");
     setOpen(false);
+    onSelect(null);
   };
 
   return (
@@ -175,6 +205,7 @@ function ProductoAutocomplete({
           onChange={(e) => {
             setQuery(e.target.value);
             setSelected(null);
+            onSelect(null);
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
@@ -190,7 +221,7 @@ function ProductoAutocomplete({
           </button>
         )}
       </div>
-      {open && query.trim().length > 0 && (
+      {open && (query.trim().length > 0 || idsRecientes.length > 0) && (
         <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-2xl overflow-hidden max-h-[60vh] overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="text-center py-4 text-muted-foreground text-sm">
@@ -200,6 +231,7 @@ function ProductoAutocomplete({
             <>
             <p className="sticky top-0 z-10 bg-card px-4 py-1 text-[10px] text-muted-foreground border-b border-border">
               {filtered.length} resultado{filtered.length === 1 ? "" : "s"}
+              {filtered.some((producto) => idsRecientes.includes(String(producto.id))) && " · usados recientemente primero"}
             </p>
             {filtered.map((p) => {
               const detalle = [p.tipo, p.marca, p.referencia ? `Ref: ${p.referencia}` : ""]
@@ -308,6 +340,11 @@ export default function Compras() {
   );
   const [editCantidad, setEditCantidad] = useState("");
   const [editPrecioCompra, setEditPrecioCompra] = useState("");
+  const [editProductoId, setEditProductoId] = useState<number | null>(null);
+  const [editPrecioCompraAnterior, setEditPrecioCompraAnterior] = useState("");
+  const [editPrecioVentaSinIvaAnterior, setEditPrecioVentaSinIvaAnterior] = useState("");
+  const [editPrecioVentaConIvaAnterior, setEditPrecioVentaConIvaAnterior] = useState("");
+  const [editTieneIvaAnterior, setEditTieneIvaAnterior] = useState(false);
   const [guardandoCorreccion, setGuardandoCorreccion] = useState(false);
   const [deleteCompraId, setDeleteCompraId] = useState<number | null>(null);
 
@@ -564,6 +601,17 @@ export default function Compras() {
             .includes(buscarHistorial.toLowerCase()),
       )
     : llegados;
+  const compraEnEdicion = compras?.find(
+    (compra) => compra.id === editandoLlegadaId,
+  );
+  const productoOriginal = productos?.find(
+    (producto) => producto.id === compraEnEdicion?.productoId,
+  );
+  const requiereRestauracionManual =
+    compraEnEdicion !== undefined &&
+    editProductoId !== null &&
+    editProductoId !== compraEnEdicion.productoId &&
+    !compraEnEdicion.tieneSnapshotPrecios;
 
   useEffect(() => {
     if (mesImprimir || !llegados.length) return;
@@ -993,12 +1041,25 @@ export default function Compras() {
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4"
           >
             <div
-              className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-3"
+              className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-6 space-y-3"
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="text-lg font-bold text-foreground">
                 Corregir llegada
               </h3>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Producto correcto
+                </label>
+                <ProductoAutocomplete
+                  key={editandoLlegadaId}
+                  productos={productos || []}
+                  comprasExistentes={compras || []}
+                  selectedId={editProductoId}
+                  incluirProductosConCompraPendiente
+                  onSelect={setEditProductoId}
+                />
+              </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">
                   Cantidad correcta
@@ -1021,21 +1082,104 @@ export default function Compras() {
                   className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm"
                 />
               </div>
+              {editProductoId !== null &&
+                compraEnEdicion &&
+                editProductoId !== compraEnEdicion.productoId && (
+                <details
+                  open={requiereRestauracionManual ? true : undefined}
+                  className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3"
+                >
+                  <summary className="cursor-pointer text-xs font-medium text-foreground">
+                    Restaurar precios anteriores manualmente (opcional)
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      {requiereRestauracionManual
+                        ? "Esta llegada no guarda los precios anteriores. Si al recibirla se cambiaron los precios del producto equivocado, ingresa aquí los valores previos para poder restaurarlos. Si no cambiaron, deja estos campos vacíos."
+                        : "Si los precios del producto equivocado se modificaron después de esta llegada, puedes indicar aquí los valores anteriores que deben restaurarse."}
+                    </p>
+                    <label className="block text-xs font-medium text-muted-foreground">
+                      Precio de compra anterior
+                    </label>
+                    <input
+                      type="number"
+                      value={editPrecioCompraAnterior}
+                      onChange={(e) => setEditPrecioCompraAnterior(e.target.value)}
+                      className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm"
+                    />
+                    <label className="block text-xs font-medium text-muted-foreground">
+                      Precio de venta sin IVA anterior
+                    </label>
+                    <input
+                      type="number"
+                      value={editPrecioVentaSinIvaAnterior}
+                      onChange={(e) => setEditPrecioVentaSinIvaAnterior(e.target.value)}
+                      className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm"
+                    />
+                    <label className="block text-xs font-medium text-muted-foreground">
+                      Precio de venta con IVA anterior
+                    </label>
+                    <input
+                      type="number"
+                      value={editPrecioVentaConIvaAnterior}
+                      onChange={(e) => setEditPrecioVentaConIvaAnterior(e.target.value)}
+                      className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm"
+                    />
+                    <label className="flex items-center gap-2 text-xs text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={editTieneIvaAnterior}
+                        onChange={(e) => setEditTieneIvaAnterior(e.target.checked)}
+                      />
+                      El precio anterior tenía IVA
+                    </label>
+                  </div>
+                </details>
+              )}
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={async () => {
-                    if (guardandoCorreccion || editandoLlegadaId === null) return;
+                    if (
+                      guardandoCorreccion ||
+                      editandoLlegadaId === null ||
+                      editProductoId === null
+                    ) return;
                     setGuardandoCorreccion(true);
                     try {
+                      const payload: Record<string, unknown> = {
+                        cantidadRecibida: editCantidad,
+                        precioCompraRegistrado: editPrecioCompra,
+                        productoId: editProductoId,
+                      };
+                      const preciosManuales = [
+                        editPrecioCompraAnterior,
+                        editPrecioVentaSinIvaAnterior,
+                        editPrecioVentaConIvaAnterior,
+                      ];
+                      if (
+                        editProductoId !== compraEnEdicion?.productoId &&
+                        preciosManuales.every((value) => value.trim() !== "") &&
+                        productoOriginal
+                      ) {
+                        payload.preciosInventarioAntesManual = {
+                          precioCompra: parseNumberCO(editPrecioCompraAnterior),
+                          precioVentaSinIva: parseNumberCO(editPrecioVentaSinIvaAnterior),
+                          precioVentaConIva: parseNumberCO(editPrecioVentaConIvaAnterior),
+                          tieneIva: editTieneIvaAnterior,
+                        };
+                        payload.preciosInventarioActualesEsperados = {
+                          precioCompra: productoOriginal.precioCompra,
+                          precioVentaSinIva: productoOriginal.precioVentaSinIva,
+                          precioVentaConIva: productoOriginal.precioVentaConIva,
+                          tieneIva: productoOriginal.tieneIva,
+                        };
+                      }
                       await leerRespuestaApi(fetch(
                         `${API}/compras/${editandoLlegadaId}/corregir`,
                         {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          cantidadRecibida: editCantidad,
-                          precioCompraRegistrado: editPrecioCompra,
-                        }),
+                        body: JSON.stringify(payload),
                         },
                       ));
                       await queryClient.invalidateQueries({
@@ -1045,6 +1189,7 @@ export default function Compras() {
                         queryKey: ["/api/inventario"],
                       });
                       setEditandoLlegadaId(null);
+                      setEditProductoId(null);
                     } catch (error) {
                       if (esOperacionEncoladaOffline(error)) {
                         await queryClient.invalidateQueries({
@@ -1054,6 +1199,7 @@ export default function Compras() {
                           queryKey: ["/api/inventario"],
                         });
                         setEditandoLlegadaId(null);
+                        setEditProductoId(null);
                         return;
                       }
                       if (esOperacionOfflineNoGuardada(error)) return;
@@ -1066,13 +1212,17 @@ export default function Compras() {
                       setGuardandoCorreccion(false);
                     }
                   }}
-                  disabled={guardandoCorreccion}
+                  disabled={guardandoCorreccion || editProductoId === null}
                   className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm"
                 >
                   {guardandoCorreccion ? "Guardando..." : "Guardar corrección"}
                 </button>
                 <button
-                  onClick={() => setEditandoLlegadaId(null)}
+                  onClick={() => {
+                    setEditandoLlegadaId(null);
+                    setEditProductoId(null);
+                  }}
+                  disabled={guardandoCorreccion}
                   className="px-4 py-2 bg-muted text-foreground rounded-xl font-medium border border-border text-sm"
                 >
                   Cancelar
@@ -1683,12 +1833,19 @@ export default function Compras() {
                                                     setEditandoLlegadaId(
                                                       compra.id,
                                                     );
+                                                    setEditProductoId(
+                                                      compra.productoId,
+                                                    );
                                                     setEditCantidad(
                                                       String(cantRec),
                                                     );
                                                     setEditPrecioCompra(
                                                       String(precioC),
                                                     );
+                                                    setEditPrecioCompraAnterior("");
+                                                    setEditPrecioVentaSinIvaAnterior("");
+                                                    setEditPrecioVentaConIvaAnterior("");
+                                                    setEditTieneIvaAnterior(false);
                                                   }}
                                                   className="p-1 text-muted-foreground hover:text-primary rounded transition-colors"
                                                 >
@@ -1746,14 +1903,30 @@ export default function Compras() {
       </div>
       <ConfirmDeleteDialog
         open={deleteCompraId !== null}
-        description="La orden de compra se eliminará de forma permanente."
-        onCancel={() => setDeleteCompraId(null)}
+        description="La orden de compra se eliminará de forma permanente. Si ya fue recibida, se revertirá el stock disponible; si no alcanza, el borrado se cancelará y se explicará el motivo. Los precios se restauran automáticamente solo cuando existe una copia segura."
+        onCancel={() => {
+          if (eliminarMutation.isPending) return;
+          setDeleteCompraId(null);
+        }}
         onConfirm={() => {
           if (deleteCompraId === null) return;
           eliminarMutation.mutate({ id: deleteCompraId }, {
-            onSuccess: () => {
+            onSuccess: (respuesta) => {
               queryClient.invalidateQueries({ queryKey: ["/api/compras"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/inventario"] });
               setDeleteCompraId(null);
+              toast({
+                title: "Compra eliminada",
+                description: respuesta.mensaje,
+              });
+            },
+            onError: (error) => {
+              toast({
+                title: "No se pudo eliminar la compra",
+                description:
+                  error instanceof Error ? error.message : String(error),
+                variant: "destructive",
+              });
             },
           });
         }}

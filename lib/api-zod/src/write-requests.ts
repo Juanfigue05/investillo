@@ -207,4 +207,17 @@ export const corregirCompraRequest = z.object({
   cantidadRecibida: numeroNoNegativo,
   precioCompraRegistrado: numeroNoNegativo.optional(),
   precioVentaRegistrado: numeroNoNegativo.optional(),
+  productoId: idPositivo.optional(),
+  preciosInventarioAntesManual: z.object({
+    precioCompra: numeroNoNegativo,
+    precioVentaSinIva: numeroNoNegativo,
+    precioVentaConIva: numeroNoNegativo,
+    tieneIva: z.boolean(),
+  }).optional(),
+  preciosInventarioActualesEsperados: z.object({
+    precioCompra: numeroNoNegativo,
+    precioVentaSinIva: numeroNoNegativo,
+    precioVentaConIva: numeroNoNegativo,
+    tieneIva: z.boolean(),
+  }).optional(),
 }).passthrough();

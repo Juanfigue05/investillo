@@ -58,6 +58,12 @@ const DB_NAME = "investillo-offline";
 const DB_VERSION = 2;
 let dbPromise: Promise<IDBPDatabase<InvestilloOfflineDB>> | null = null;
 
+function notificarEstadoSincronizacion() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("investillo:sincronizacion-actualizada"));
+  }
+}
+
 function getDB() {
   if (!dbPromise) {
     dbPromise = openDB<InvestilloOfflineDB>(DB_NAME, DB_VERSION, {
@@ -118,6 +124,7 @@ export async function listarPendientes(): Promise<OperacionPendiente[]> {
 export async function marcarSincronizada(operationId: string) {
   const db = await getDB();
   await db.delete("operaciones-pendientes", operationId);
+  notificarEstadoSincronizacion();
 }
 
 export async function contarPendientes(): Promise<number> {
@@ -208,6 +215,7 @@ export async function importarRespaldoLocal(
     backupId: contenido.backupId,
     importadoEn: new Date().toISOString(),
   });
+  if (agregadas > 0) notificarEstadoSincronizacion();
 
   return {
     ok: true,
@@ -258,6 +266,7 @@ export async function marcarConError(operationId: string, mensaje: string) {
     ultimoError: mensaje,
     intentos: (operacion.intentos ?? 0) + 1,
   });
+  notificarEstadoSincronizacion();
 }
 
 /** Devuelve los errores al estado pendiente para permitir un nuevo intento. */
@@ -273,5 +282,6 @@ export async function reintentarErrores(): Promise<number> {
     });
   }
   await tx.done;
+  if (errores.length > 0) notificarEstadoSincronizacion();
   return errores.length;
 }

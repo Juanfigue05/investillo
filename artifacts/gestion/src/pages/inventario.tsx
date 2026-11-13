@@ -753,7 +753,7 @@ export default function Inventario() {
               Gestiona tus productos, precios y alertas de stock.
             </p>
           </div>
-          <div className="flex gap-2 flex-wrap">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
             {/* Import Excel button */}
             <input
               ref={fileInputRef}
@@ -771,24 +771,27 @@ export default function Inventario() {
             />
             <button
               onClick={() => setShowTrasladar(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm"
+              className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-2.5 py-2.5 text-center text-xs font-medium text-foreground shadow-md transition-all hover:bg-muted sm:min-h-0 sm:w-auto sm:justify-start sm:px-4 sm:text-sm sm:text-left sm:whitespace-nowrap"
             >
-              <ArrowRightLeft className="w-4 h-4 text-cyan-400" />
-              Trasladar Stock
+              <ArrowRightLeft className="hidden h-4 w-4 text-cyan-400 sm:block" />
+              <span className="leading-tight sm:hidden">TRASLADAR<br />STOCK</span>
+              <span className="hidden sm:inline">Trasladar Stock</span>
             </button>
             <button
               onClick={() => setShowDescuentoRapido(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/10 border border-amber-500/40 text-amber-300 rounded-xl font-medium hover:bg-amber-500/20 transition-all shadow-md whitespace-nowrap text-sm"
+              className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-2.5 py-2.5 text-center text-xs font-medium text-amber-300 shadow-md transition-all hover:bg-amber-500/20 sm:min-h-0 sm:w-auto sm:justify-start sm:px-4 sm:text-sm sm:text-left sm:whitespace-nowrap"
             >
-              <MinusCircle className="w-4 h-4" />
-              Ajustar / descontar
+              <MinusCircle className="hidden h-4 w-4 sm:block" />
+              <span className="leading-tight sm:hidden">AJUSTAR<br />DESCONTAR</span>
+              <span className="hidden sm:inline">Ajustar / descontar</span>
             </button>
             <button
               onClick={() => setShowHistorialMovimientos(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm"
+              className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-2.5 py-2.5 text-center text-xs font-medium text-foreground shadow-md transition-all hover:bg-muted sm:min-h-0 sm:w-auto sm:justify-start sm:px-4 sm:text-sm sm:text-left sm:whitespace-nowrap"
             >
-              <History className="w-4 h-4" />
-              Movimientos sin venta
+              <History className="hidden h-4 w-4 sm:block" />
+              <span className="leading-tight sm:hidden">MOVIMIENTOS<br />SIN VENTAS</span>
+              <span className="hidden sm:inline">Movimientos sin venta</span>
             </button>
             <button
               onClick={() => {
@@ -811,21 +814,23 @@ export default function Inventario() {
                 });
                 setShowForm(true);
               }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all shadow-lg hover:shadow-primary/25 whitespace-nowrap text-sm"
+              className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-primary px-2.5 py-2.5 text-center text-xs font-medium text-primary-foreground shadow-lg transition-all hover:bg-primary/90 hover:shadow-primary/25 sm:min-h-0 sm:w-auto sm:justify-start sm:px-4 sm:text-sm sm:text-left sm:whitespace-nowrap"
             >
-              <Plus className="w-4 h-4" />
-              Nuevo Producto
+              <Plus className="hidden h-4 w-4 sm:block" />
+              <span className="leading-tight sm:hidden">+ NUEVO<br />PRODUCTO</span>
+              <span className="hidden sm:inline">Nuevo Producto</span>
             </button>
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setShowMoreActions((open) => !open)}
                 aria-expanded={showMoreActions}
-                className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md whitespace-nowrap text-sm"
+                className="relative flex min-h-14 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-2.5 py-2.5 text-center text-xs font-medium text-foreground shadow-md transition-all hover:bg-muted sm:min-h-0 sm:w-auto sm:justify-start sm:px-4 sm:text-sm sm:text-left sm:whitespace-nowrap"
               >
-                Más acciones
+                <span className="leading-tight sm:hidden">MÁS<br />ACCIONES</span>
+                <span className="hidden sm:inline">Más acciones</span>
                 <ChevDown
-                  className={`w-4 h-4 transition-transform ${showMoreActions ? "rotate-180" : ""}`}
+                  className={`absolute right-2 h-3.5 w-3.5 transition-transform sm:static sm:h-4 sm:w-4 ${showMoreActions ? "rotate-180" : ""}`}
                 />
               </button>
               {showMoreActions && (
@@ -1088,6 +1093,7 @@ export default function Inventario() {
                     value={trasladarProductoId}
                     onChange={setTrasladarProductoId}
                     placeholder="Buscar producto..."
+                    recentKey="inventario-productos-recientes"
                   />
                 </div>
 

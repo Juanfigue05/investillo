@@ -8,6 +8,11 @@ import { toast } from "@/hooks/use-toast";
 import { CalculadoraCierre } from "@/components/CalculadoraCierre";
 import { Calculator as CalcIcon } from "lucide-react";
 import { fechaHoyColombia, fechaColombia } from "@/lib/utils";
+import { resumirCierre } from "@/lib/resumen-cierre";
+import {
+  resumirOperacionDiaria,
+  type VentaOperativaDia,
+} from "@/lib/resumen-operativo-dia";
 import {
   esOperacionEncoladaOffline,
   esOperacionOfflineNoGuardada,
@@ -417,6 +422,12 @@ export default function CierreDiario() {
   const [editado, setEditado] = useState(false);
   const [salidaPendiente, setSalidaPendiente] = useState<(() => void) | null>(null);
   const [cierreInicialCargado, setCierreInicialCargado] = useState(false);
+  const [ventasOperativas, setVentasOperativas] = useState<VentaOperativaDia[]>([]);
+  const [egresosCompras, setEgresosCompras] = useState<number | null>(null);
+  const [cantidadComprasDia, setCantidadComprasDia] = useState(0);
+  const [cargandoResumenOperativo, setCargandoResumenOperativo] = useState(false);
+  const [errorResumenOperativo, setErrorResumenOperativo] = useState("");
+  const [reintentosResumen, setReintentosResumen] = useState(0);
 
   const solicitarSalida = (accion: () => void) => {
     if (editFecha && editado) setSalidaPendiente(() => accion);
@@ -626,9 +637,73 @@ export default function CierreDiario() {
     () => items.reduce((s, t, i) => s + calcTrabajador(t, gruposDia, trabajadores || []).total, 0),
     [items, gruposDia, trabajadores]
   );
+  const resumenOperativo = useMemo(
+    () => egresosCompras === null
+      ? null
+      : resumirOperacionDiaria(ventasOperativas, egresosCompras, grandTotal),
+    [egresosCompras, ventasOperativas, grandTotal],
+  );
+
+  useEffect(() => {
+    let activo = true;
+    setCargandoResumenOperativo(true);
+    setErrorResumenOperativo("");
+    setVentasOperativas([]);
+    setEgresosCompras(null);
+    setCantidadComprasDia(0);
+    Promise.all([
+      leerRespuestaApi(fetch(`${API}/ventas?fecha=${encodeURIComponent(fechaCierre)}`)),
+      leerRespuestaApi(fetch(`${API}/compras/resumen-diario?fecha=${encodeURIComponent(fechaCierre)}`)),
+    ]).then(([ventas, compras]) => {
+      if (!Array.isArray(ventas)) throw new Error("La respuesta de ventas no tiene el formato esperado.");
+      if (!compras || typeof compras !== "object" || typeof (compras as { total?: unknown }).total !== "number") {
+        throw new Error("La respuesta de compras no tiene el formato esperado.");
+      }
+      if (!activo) return;
+      setVentasOperativas(ventas);
+      setEgresosCompras((compras as { total: number }).total);
+      setCantidadComprasDia(
+        typeof (compras as { cantidadCompras?: unknown }).cantidadCompras === "number"
+          ? (compras as { cantidadCompras: number }).cantidadCompras
+          : 0,
+      );
+    }).catch((error) => {
+      if (!activo) return;
+      setErrorResumenOperativo(
+        error instanceof Error ? error.message : String(error),
+      );
+      setEgresosCompras(null);
+    }).finally(() => {
+      if (activo) setCargandoResumenOperativo(false);
+    });
+    return () => { activo = false; };
+  }, [fechaCierre, reintentosResumen]);
 
   const handleGuardar = async () => {
     if (items.length === 0) return;
+    const resumen = resumirCierre(
+      items.map((item) => calcTrabajador(item, gruposDia, trabajadores || [])),
+    );
+    const confirmar = window.confirm(
+      `Revisa el cierre del ${new Date((editFecha ?? fechaCierre) + "T12:00:00").toLocaleDateString("es-CO")}:\n\n` +
+      `Trabajadores: ${items.length}\n` +
+      `Mano de obra: ${formatCurrency(resumen.manoObra)}\n` +
+      `Descuentos: ${formatCurrency(resumen.descuentos)}\n` +
+      `Seguros: ${formatCurrency(resumen.seguros)}\n` +
+      `Ajustes a favor del trabajador: ${formatCurrency(resumen.leDamos)}\n` +
+      `Deudas/retenciones: ${formatCurrency(resumen.nosDebe)}\n` +
+      `Total neto a pagar: ${formatCurrency(resumen.total)}\n\n` +
+      (resumenOperativo
+        ? `Ventas de productos: ${formatCurrency(resumenOperativo.ventasProductos)}\n` +
+          `Abonos de créditos recibidos: ${formatCurrency(resumenOperativo.abonosCredito)}\n` +
+          `Mano de obra cobrada: ${formatCurrency(resumenOperativo.manoObraVendida)}\n` +
+          `Compras recibidas (${cantidadComprasDia}): ${formatCurrency(resumenOperativo.egresosCompras)}\n` +
+          `Balance estimado: ${formatCurrency(resumenOperativo.balanceEstimado)}\n\n` +
+          "El balance resta compras recibidas y mano de obra por pagar a ventas, abonos y mano de obra cobrada."
+        : `No se pudo cargar el resumen de ventas y compras (${errorResumenOperativo || "todavía se está consultando"}). El cierre de trabajadores se puede guardar, pero ese resumen no se incluye.`) +
+      "\n\n¿Confirmas guardar?",
+    );
+    if (!confirmar) return;
     setGuardando(true);
     setGuardadoOk(false);
 
@@ -726,6 +801,47 @@ export default function CierreDiario() {
         </div>
 
         <CalculadoraCierre open={calcCierreOpen} onClose={() => setCalcCierreOpen(false)} />
+        <section className="rounded-2xl border border-border bg-card p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-bold text-foreground">Resumen operativo del día</h2>
+              <p className="text-xs text-muted-foreground">
+                Ventas, abonos recibidos, compras llegadas y mano de obra del cierre.
+              </p>
+            </div>
+            {errorResumenOperativo && (
+              <button
+                type="button"
+                onClick={() => setReintentosResumen((intentos) => intentos + 1)}
+                disabled={cargandoResumenOperativo}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs text-foreground hover:bg-muted disabled:opacity-50"
+              >
+                Reintentar
+              </button>
+            )}
+          </div>
+          {cargandoResumenOperativo ? (
+            <p className="text-sm text-muted-foreground">Cargando movimientos del día...</p>
+          ) : errorResumenOperativo ? (
+            <p role="alert" className="text-sm text-destructive">
+              No se pudo cargar el resumen: {errorResumenOperativo}
+            </p>
+          ) : resumenOperativo ? (
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+                <div><p className="text-xs text-muted-foreground">Ventas de productos</p><p className="font-semibold text-foreground">{formatCurrency(resumenOperativo.ventasProductos)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Abonos de créditos</p><p className="font-semibold text-foreground">{formatCurrency(resumenOperativo.abonosCredito)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Mano de obra cobrada</p><p className="font-semibold text-foreground">{formatCurrency(resumenOperativo.manoObraVendida)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Compras recibidas ({cantidadComprasDia})</p><p className="font-semibold text-amber-400">{formatCurrency(resumenOperativo.egresosCompras)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Mano de obra por pagar</p><p className="font-semibold text-foreground">{formatCurrency(resumenOperativo.manoObraPorPagar)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Balance estimado</p><p className={`font-semibold ${resumenOperativo.balanceEstimado < 0 ? "text-destructive" : "text-emerald-400"}`}>{formatCurrency(resumenOperativo.balanceEstimado)}</p></div>
+              </div>
+              <p className="mt-3 text-[11px] text-muted-foreground">
+                Las compras se cuentan por fecha de llegada y costo registrado. El balance es estimado; no incluye otros gastos ni un conteo de caja.
+              </p>
+            </>
+          ) : null}
+        </section>
         <GruposTrabajoPanel
           open={gruposPanelOpen}
           onClose={() => setGruposPanelOpen(false)}

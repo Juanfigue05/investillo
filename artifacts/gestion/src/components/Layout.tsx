@@ -4,10 +4,11 @@ import { useLocation } from "wouter";
 import { Sidebar } from "./Sidebar";
 import { FloatingNotepad } from "./FloatingNotepad";
 import { FloatingPriceCheck } from "./FloatingPriceCheck";
-import { Bell, Menu, X, CheckCheck, Trash2, Check, Pin, PinOff, Zap, Hand } from "lucide-react";
+import { Bell, Menu, MoreHorizontal, X, CheckCheck, Trash2, Check, Pin, PinOff, Zap, Hand } from "lucide-react";
 import { getGetAlertasStockQueryKey, useGetAlertasStock } from "@workspace/api-client-react";
 import { BackupLocal } from "./BackupLocal";
 import { ConnectionStatus } from "./ConnectionStatus";
+import { GlobalSearchDialog } from "./GlobalSearchDialog";
 import { CalculadoraCierre } from "./CalculadoraCierre";
 import { Calculator as CalcIcon } from "lucide-react";
 import { UserMenu } from "./UserMenu";
@@ -21,6 +22,16 @@ import {
   esOperacionOfflineNoGuardada,
   leerRespuestaApi,
 } from "@/lib/respuesta-api";
+import {
+  CLAVE_FACTURAS_OBRA,
+  CLAVE_VALORES_OBRA,
+  CLAVE_VEHICULOS_OBRA,
+  cargarSugerenciasRecientes,
+  cargarTrabajadoresRecientes,
+  guardarSugerenciaReciente,
+  guardarTrabajadoresRecientes,
+  ordenarPorUsoReciente,
+} from "@/lib/sugerencias-obra";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 function loadSet(key: string): Set<number> {
@@ -85,6 +96,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [obraNumeroFactura, setObraNumeroFactura] = useState("");
   const [obraVehiculo, setObraVehiculo] = useState("");
   const [obraValor, setObraValor] = useState("");
+  const [mostrarObraFactura, setMostrarObraFactura] = useState(false);
+  const [facturasObraRecientes, setFacturasObraRecientes] = useState(() => cargarSugerenciasRecientes(CLAVE_FACTURAS_OBRA));
+  const [vehiculosObraRecientes, setVehiculosObraRecientes] = useState(() => cargarSugerenciasRecientes(CLAVE_VEHICULOS_OBRA));
+  const [valoresObraRecientes, setValoresObraRecientes] = useState(() => cargarSugerenciasRecientes(CLAVE_VALORES_OBRA));
+  const [trabajadoresObraRecientes, setTrabajadoresObraRecientes] = useState(cargarTrabajadoresRecientes);
   const [guardandoObra, setGuardandoObra] = useState(false);
   const [obraError, setObraError] = useState("");
 
@@ -97,6 +113,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [showObraElectronica, alertasHabilitadas]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [read, setRead] = useState<Set<number>>(() => loadSet(KEYS.read));
   const [dismissed, setDismissed] = useState<Set<number>>(() => loadSet(KEYS.dismissed));
   const [pinned, setPinned] = useState<Set<number>>(() => loadSet(KEYS.pinned));
@@ -119,6 +136,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
     });
 
   const alertCount = visible.length;
+  const trabajadoresDisponiblesObra = ordenarPorUsoReciente(
+    trabajadores.filter((t) => t.obraElectronica && t.activo !== false),
+    trabajadoresObraRecientes,
+  );
 
   // ── actions ──
   const markRead = (id: number) =>
@@ -136,6 +157,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const dismissAll = () => {
     setDismissed(new Set((alertas ?? []).map((p) => p.id)));
     setAlertsOpen(false);
+  };
+
+  const guardarValoresRecientesObra = () => {
+    setFacturasObraRecientes(
+      guardarSugerenciaReciente(CLAVE_FACTURAS_OBRA, obraNumeroFactura, facturasObraRecientes),
+    );
+    setVehiculosObraRecientes(
+      guardarSugerenciaReciente(CLAVE_VEHICULOS_OBRA, obraVehiculo, vehiculosObraRecientes),
+    );
+    setValoresObraRecientes(
+      guardarSugerenciaReciente(CLAVE_VALORES_OBRA, obraValor, valoresObraRecientes),
+    );
+    setTrabajadoresObraRecientes(
+      guardarTrabajadoresRecientes(obraTrabajadoresSeleccionados, trabajadoresObraRecientes),
+    );
   };
 
   const guardarTensionada = async () => {
@@ -197,21 +233,25 @@ export function Layout({ children }: { children: React.ReactNode }) {
           trabajadores: distribuciones.map(({ trabajadorId, valor }) => ({ trabajadorId, valor })),
         }),
       }));
+      guardarValoresRecientesObra();
       setShowObraElectronica(false);
       setObraTrabajadoresSeleccionados([]);
       setObraValoresFijados({});
       setObraNumeroFactura("");
       setObraVehiculo("");
       setObraValor("");
+      setMostrarObraFactura(false);
       window.dispatchEvent(new Event("obra-electronica-actualizada"));
     } catch (error) {
       if (esOperacionEncoladaOffline(error)) {
+        guardarValoresRecientesObra();
         setShowObraElectronica(false);
         setObraTrabajadoresSeleccionados([]);
         setObraValoresFijados({});
         setObraNumeroFactura("");
         setObraVehiculo("");
         setObraValor("");
+        setMostrarObraFactura(false);
         return;
       }
       if (esOperacionOfflineNoGuardada(error)) return;
@@ -221,8 +261,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const abrirObraElectronica = () => {
+    setObraFecha(fechaHoyColombia());
+    setObraTrabajadoresSeleccionados([]);
+    setObraValoresFijados({});
+    setObraNumeroFactura("");
+    setObraVehiculo("");
+    setObraValor(valoresObraRecientes[0] || "");
+    setMostrarObraFactura(false);
+    setObraError("");
+    setShowObraElectronica(true);
+  };
+
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen w-full min-w-0 overflow-x-clip bg-background flex">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -243,57 +295,54 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 lg:ml-40">
+      <div className="flex-1 flex flex-col min-w-0 w-full lg:ml-40">
         {/* Header */}
-        <header className="h-[59px] lg:h-[84px] px-3 lg:px-6 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-20 flex items-center gap-2 lg:gap-3">
+        <header className="relative min-h-[59px] xl:h-[84px] w-full min-w-0 px-3 xl:px-6 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-20 flex items-center gap-2 xl:gap-3">
           {/* Mobile hamburger */}
           <button
             className="lg:hidden p-2 rounded-xl hover:bg-muted transition-colors flex-shrink-0"
+            aria-label="Abrir navegación"
             onClick={() => setSidebarOpen(true)}
           >
             <Menu className="w-5 h-5 text-foreground" />
           </button>
 
-          <h2 className="text-base lg:text-xl font-display font-medium text-foreground truncate hidden sm:block shrink-0">
+          <h2 className="text-xl font-display font-medium text-foreground truncate hidden xl:block shrink-0">
             Panel de Control
           </h2>
-          <span className="text-base font-display font-bold text-primary sm:hidden">Investillo</span>
+          <span className="text-base font-display font-bold text-primary xl:hidden shrink-0">Investillo</span>
 
-          <RelojColombia />
+          <div className="hidden xl:block min-w-0">
+            <RelojColombia />
+          </div>
 
           <div className="flex items-center gap-1 lg:gap-2 ml-auto shrink-0">
-            <ConnectionStatus />
+            <GlobalSearchDialog />
+            <div className="hidden xl:block"><ConnectionStatus /></div>
+            <div className="hidden min-[360px]:flex sm:hidden xl:hidden"><ConnectionStatus compact /></div>
+            <div className="hidden sm:block xl:hidden"><ConnectionStatus /></div>
             <button
               onClick={() => setShowTensionada(true)}
-              className="flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors shrink-0"
+              className="hidden xl:flex flex-col items-center justify-center gap-1 w-[67px] h-[67px] rounded-xl hover:bg-muted transition-colors shrink-0"
             >
-              <Zap className="w-5 h-5 lg:w-6 lg:h-6 text-cyan-400" />
-              <span className="text-[10px] lg:text-[11px] text-muted-foreground leading-none">Tensión</span>
+              <Zap className="w-6 h-6 text-cyan-400" />
+              <span className="text-[11px] text-muted-foreground leading-none">Tensión</span>
             </button>
             <button
-              onClick={() => {
-                setObraFecha(fechaHoyColombia());
-                setObraTrabajadoresSeleccionados([]);
-                setObraValoresFijados({});
-                setObraNumeroFactura("");
-                setObraVehiculo("");
-                setObraValor("");
-                setObraError("");
-                setShowObraElectronica(true);
-              }}
-              className="flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors shrink-0"
+              onClick={abrirObraElectronica}
+              className="hidden xl:flex flex-col items-center justify-center gap-1 w-[67px] h-[67px] rounded-xl hover:bg-muted transition-colors shrink-0"
               aria-label="Registrar obra electrónica"
             >
-              <Hand className="w-5 h-5 lg:w-6 lg:h-6 text-amber-400" />
-              <span className="text-[10px] lg:text-[11px] text-muted-foreground leading-none">Obra elec.</span>
+              <Hand className="w-6 h-6 text-amber-400" />
+              <span className="text-[11px] text-muted-foreground leading-none">Obra elec.</span>
             </button>
-            <FloatingPriceCheck topbar requestsEnabled={alertasHabilitadas} />
-            <FloatingNotepad topbar requestsEnabled={alertasHabilitadas} />
-            <BackupLocal topbar />
+            <div className="hidden xl:block"><FloatingPriceCheck topbar requestsEnabled={alertasHabilitadas} /></div>
+            <div className="hidden xl:block"><FloatingNotepad topbar requestsEnabled={alertasHabilitadas} /></div>
+            <div className="hidden xl:block"><BackupLocal topbar /></div>
 
-            <button onClick={() => setCalcCierreOpen(true)} className="flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors shrink-0" aria-label="Calculadora de cierre">
-              <CalcIcon className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground hover:text-foreground transition-colors" />
-              <span className="text-[10px] lg:text-[11px] text-muted-foreground leading-none">Cierre</span>
+            <button onClick={() => setCalcCierreOpen(true)} className="hidden xl:flex flex-col items-center justify-center gap-1 w-[67px] h-[67px] rounded-xl hover:bg-muted transition-colors shrink-0" aria-label="Calculadora de cierre">
+              <CalcIcon className="w-6 h-6 text-muted-foreground hover:text-foreground transition-colors" />
+              <span className="text-[11px] text-muted-foreground leading-none">Cierre</span>
             </button>
             
             <button
@@ -301,10 +350,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
               aria-label="Ver alertas de inventario"
               aria-expanded={alertsOpen}
               onClick={() => setAlertsOpen((open) => !open)}
-              className="relative flex flex-col items-center justify-center gap-1 w-[50px] h-[59px] lg:w-[67px] lg:h-[67px] rounded-xl hover:bg-muted transition-colors cursor-pointer shrink-0"
+              className="relative flex h-10 w-10 xl:h-[67px] xl:w-[67px] flex-col items-center justify-center gap-1 rounded-xl hover:bg-muted transition-colors cursor-pointer shrink-0"
             >
-              <Bell className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground hover:text-foreground transition-colors" />
-              <span className="text-[10px] lg:text-[11px] text-muted-foreground leading-none">Alertas</span>
+              <Bell className="w-5 h-5 xl:w-6 xl:h-6 text-muted-foreground hover:text-foreground transition-colors" />
+              <span className="hidden xl:block text-[11px] text-muted-foreground leading-none">Alertas</span>
               {alertCount > 0 && (
                 <span className="absolute top-0.5 right-0.5 w-4 h-4 lg:w-5 lg:h-5 bg-destructive text-destructive-foreground text-[9px] lg:text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
                   {alertCount > 999 ? "999+" : alertCount}
@@ -312,6 +361,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
               )}
             </button>
             <UserMenu />
+            <button
+              type="button"
+              aria-label="Acciones rápidas"
+              aria-expanded={mobileActionsOpen}
+              onClick={() => setMobileActionsOpen((open) => !open)}
+              className="flex xl:hidden h-10 w-10 items-center justify-center rounded-xl hover:bg-muted"
+            >
+              {mobileActionsOpen ? <X className="h-5 w-5" /> : <MoreHorizontal className="h-5 w-5" />}
+            </button>
 
             {showTensionada && createPortal(
               <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 90 }}>
@@ -346,7 +404,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <div>
                     <label className="block text-xs text-muted-foreground mb-1">Trabajadores</label>
                     <ManoObraSelector
-                      trabajadores={trabajadores.filter((t) => t.obraElectronica && t.activo !== false)}
+                      trabajadores={trabajadoresDisponiblesObra}
+                      searchable
+                      recentlyUsedIds={trabajadoresObraRecientes}
                       total={(() => {
                         const texto = obraValor.trim().replace(/\s/g, "").replace(",", ".");
                         const numero = Number(texto);
@@ -363,16 +423,33 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     <input type="date" value={obraFecha} onChange={(e) => setObraFecha(e.target.value)} className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
                   </div>
                   <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Número factura</label>
-                    <input type="text" value={obraNumeroFactura} onChange={(e) => setObraNumeroFactura(e.target.value)} placeholder="Número de factura" className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+                    <button type="button" aria-expanded={mostrarObraFactura} onClick={() => setMostrarObraFactura((mostrar) => !mostrar)} className="text-xs text-primary hover:underline">
+                      {mostrarObraFactura ? "Ocultar número de factura opcional" : "Agregar número de factura (opcional)"}
+                    </button>
+                    {mostrarObraFactura && (
+                      <div className="mt-2">
+                        <label className="block text-xs text-muted-foreground mb-1">Número factura</label>
+                        <input type="text" value={obraNumeroFactura} list="obra-electronica-facturas-recientes" onChange={(e) => setObraNumeroFactura(e.target.value)} placeholder="Número de factura" className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+                        <datalist id="obra-electronica-facturas-recientes">
+                          {facturasObraRecientes.map((factura) => <option key={factura} value={factura} />)}
+                        </datalist>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs text-muted-foreground mb-1">Placa o vehículo</label>
-                    <input type="text" value={obraVehiculo} onChange={(e) => setObraVehiculo(e.target.value)} placeholder="Ej. BTA 123" className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+                    <input type="text" value={obraVehiculo} list="obra-electronica-vehiculos-recientes" onChange={(e) => setObraVehiculo(e.target.value)} placeholder="Ej. BTA 123" className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+                    <datalist id="obra-electronica-vehiculos-recientes">
+                      {vehiculosObraRecientes.map((vehiculo) => <option key={vehiculo} value={vehiculo} />)}
+                    </datalist>
                   </div>
                   <div>
                     <label className="block text-xs text-muted-foreground mb-1">Valor total mano de obra (12,5 = $12.500)</label>
-                    <input type="text" inputMode="decimal" value={obraValor} onChange={(e) => setObraValor(e.target.value)} placeholder="60 o 12,5" className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+                    <input type="text" inputMode="decimal" value={obraValor} list="obra-electronica-valores-recientes" onChange={(e) => setObraValor(e.target.value)} placeholder="60 o 12,5" className="w-full bg-background border border-border px-3 py-2 rounded-lg text-sm" />
+                    <p className="mt-1 text-[10px] text-muted-foreground">Se precarga el último valor usado; puedes cambiarlo.</p>
+                    <datalist id="obra-electronica-valores-recientes">
+                      {valoresObraRecientes.map((valor) => <option key={valor} value={valor} />)}
+                    </datalist>
                   </div>
                   {obraError && <p className="text-sm text-destructive">{obraError}</p>}
                   <div className="flex gap-2">
@@ -498,18 +575,61 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </div>
             )}
 
-            <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-full bg-gradient-to-tr from-accent to-primary p-[2px] flex-shrink-0">
+            <div className="hidden xl:flex w-10 h-10 rounded-full bg-gradient-to-tr from-accent to-primary p-[2px] flex-shrink-0">
               <div className="w-full h-full rounded-full border-2 border-background overflow-hidden bg-muted flex items-center justify-center font-bold text-xs lg:text-sm">
                 I
               </div>
             </div>
           </div>
+          {mobileActionsOpen && (
+            <div className="absolute right-2 top-full z-[75] mt-2 max-h-[calc(100dvh-5rem)] w-[min(360px,calc(100vw-1rem))] overflow-y-auto rounded-2xl border border-border bg-card p-3 shadow-2xl xl:hidden">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setMobileActionsOpen(false); setShowTensionada(true); }}
+                  className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-muted"
+                >
+                  <Zap className="h-4 w-4 shrink-0 text-cyan-400" />
+                  <span>Tensión</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMobileActionsOpen(false); abrirObraElectronica(); }}
+                  className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-muted"
+                >
+                  <Hand className="h-4 w-4 shrink-0 text-amber-400" />
+                  <span>Obra electrónica</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMobileActionsOpen(false); setCalcCierreOpen(true); }}
+                  className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-muted"
+                >
+                  <CalcIcon className="h-4 w-4 shrink-0" />
+                  <span>Cierre diario</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMobileActionsOpen(false); setAlertsOpen(true); }}
+                  className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-muted"
+                >
+                  <Bell className="h-4 w-4 shrink-0" />
+                  <span>Alertas {alertCount > 0 ? `(${alertCount})` : ""}</span>
+                </button>
+                <div className="col-span-2 flex justify-end gap-1 border-t border-border pt-2">
+                  <FloatingPriceCheck topbar requestsEnabled={alertasHabilitadas} />
+                  <FloatingNotepad topbar requestsEnabled={alertasHabilitadas} />
+                  <BackupLocal topbar />
+                </div>
+              </div>
+            </div>
+          )}
         </header>
 
         <CalculadoraCierre open={calcCierreOpen} requestsEnabled={alertasHabilitadas} onClose={() => setCalcCierreOpen(false)} />
 
         {/* Main Content */}
-        <main className="p-4 lg:p-8 flex-1 overflow-x-hidden">
+        <main className="w-full min-w-0 p-4 lg:p-8 flex-1 overflow-x-hidden">
           {children}
         </main>
       </div>

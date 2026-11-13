@@ -24,4 +24,5 @@ export interface Compra {
   proveedor?: string | null;
   precioCompraRegistrado?: number | null;
   precioVentaRegistrado?: number | null;
+  tieneSnapshotPrecios: boolean;
 }

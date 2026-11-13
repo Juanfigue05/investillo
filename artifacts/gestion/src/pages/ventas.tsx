@@ -770,7 +770,7 @@ export default function VentasDiarias() {
                     <input type="text" placeholder="R 1234 24-ENE" value={newRow.referencia} onChange={(e) => setNewRow({ ...newRow, referencia: e.target.value })} className="w-full bg-background border border-border px-3 py-2 rounded-lg focus:ring-1 focus:ring-primary outline-none text-sm" />
                   </td>
                   <td className="p-2 min-w-[180px]">
-                    <SearchableSelect opciones={opcionesProducto} value={newRow.productoSeleccionado} onChange={handleProductoSelect} placeholder="Seleccionar producto..." camposDetalle={["tipo", "marca", "referencia"]} />
+                    <SearchableSelect opciones={opcionesProducto} value={newRow.productoSeleccionado} onChange={handleProductoSelect} placeholder="Seleccionar producto..." camposDetalle={["tipo", "marca", "referencia"]} recentKey="ventas-productos-recientes" />
                     {modoActual === "normal" && stockAlerta !== null && (
                       stockAlerta.stock === 0 ? <p className="text-red-500 text-[11px] mt-1 leading-tight font-medium">⚠ Sin existencias — stock en 0</p> : stockAlerta.stock <= stockAlerta.minimo ? <p className="text-yellow-500 text-[11px] mt-1 leading-tight font-medium">⚠ Pocas existencias ({stockAlerta.stock} en stock)</p> : null
                     )}
@@ -779,7 +779,7 @@ export default function VentasDiarias() {
                   </td>
                   <td className="p-2">
                     {modoActual === "normal" && <input type="text" value={newRow.marca || "X"} readOnly disabled className="w-20 bg-muted border border-border px-2 py-2 rounded-lg text-sm text-muted-foreground cursor-not-allowed" />}
-                    {(modoActual === "manoobra" || modoActual === "soldadura") && <div className="max-w-[160px]"><ManoObraSelector trabajadores={trabajadores || []} total={newRow.precioManoObra} seleccionados={newRow.trabajadoresSeleccionados} fijados={newRow.valoresFijados} onChangeSeleccionados={(ids) => setNewRow((prev) => ({ ...prev, trabajadoresSeleccionados: ids }))} onChangeFijados={(fijados) => setNewRow((prev) => ({ ...prev, valoresFijados: fijados }))} /></div>}
+                    {(modoActual === "manoobra" || modoActual === "soldadura") && <div className="max-w-[160px]"><ManoObraSelector trabajadores={trabajadores || []} total={newRow.precioManoObra} seleccionados={newRow.trabajadoresSeleccionados} fijados={newRow.valoresFijados} onChangeSeleccionados={(ids) => setNewRow((prev) => ({ ...prev, trabajadoresSeleccionados: ids }))} onChangeFijados={(fijados) => setNewRow((prev) => ({ ...prev, valoresFijados: fijados }))} recentKey="trabajadores-recientes" /></div>}
                     {modoActual === "abono" && <span className="text-xs text-blue-400 italic">Abono</span>}
                   </td>
                   <td className="p-2">

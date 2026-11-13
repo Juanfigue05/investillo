@@ -1079,11 +1079,16 @@ export default function NosDebePage() {
                     readOnly
                   />
                   <SearchableSelect
-                    opciones={(clientes || []).map((c) => ({ id: c.nombre, nombre: c.nombre }))}
+                    opciones={(clientes || []).map((c) => ({
+                      id: c.nombre,
+                      recentId: String(c.id),
+                      nombre: c.nombre,
+                    }))}
                     value={form.nombreCliente}
                     onChange={handleClienteSelect}
                     placeholder="Nombre del cliente (selecciona o escribe)"
                     allowCustom
+                    recentKey="clientes-recientes"
                   />
                   {clientes && clientes.length > 0 && (
                     <p className="text-xs text-muted-foreground mt-1">
@@ -1210,6 +1215,7 @@ export default function NosDebePage() {
                                 handleProductoSelect(linea.id, id)
                               }
                               placeholder="Buscar producto..."
+                              recentKey="nos-debe-productos-recientes"
                             />
                             {linea.productoCodigo === SPECIAL_EXTERNO && <input type="text" value={linea.productoNombre} onChange={(e) => updateLinea(linea.id, "productoNombre", e.target.value)} placeholder="Nombre del producto externo" className="w-full mt-1 bg-background border border-amber-500/50 px-3 py-1.5 rounded-lg text-xs focus:ring-1 focus:ring-amber-500 outline-none" />}
                             {linea.stockActual !== null &&
@@ -1415,6 +1421,7 @@ export default function NosDebePage() {
                           onChangeFijados={(fijados) =>
                             setManoObra((p) => ({ ...p, fijados }))
                           }
+                          recentKey="trabajadores-recientes"
                         />
                       </div>
                     </div>

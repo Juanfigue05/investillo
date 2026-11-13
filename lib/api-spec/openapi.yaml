@@ -468,6 +468,56 @@ paths:
               schema:
                 $ref: "#/components/schemas/Compra"
 
+  /compras/resumen-diario:
+    get:
+      operationId: getResumenDiarioCompras
+      tags: [compras]
+      summary: Resumir compras recibidas en una fecha
+      parameters:
+        - name: fecha
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Total de compras recibidas ese día por costo unitario
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [fecha, cantidadCompras, total, items]
+                properties:
+                  fecha:
+                    type: string
+                    format: date
+                  cantidadCompras:
+                    type: integer
+                  total:
+                    type: number
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, productoNombre, cantidad, precioUnitario, total]
+                      properties:
+                        id:
+                          type: integer
+                        productoNombre:
+                          type: string
+                        proveedor:
+                          type: string
+                          nullable: true
+                        cantidad:
+                          type: number
+                        precioUnitario:
+                          type: number
+                        total:
+                          type: number
+        "400":
+          description: Fecha faltante o no válida
+
   /compras/{id}:
     put:
       operationId: actualizarCompra
@@ -509,6 +559,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MensajeRespuesta"
+
+  /compras/{id}/corregir:
+    patch:
+      operationId: reubicarProductoCompra
+      tags: [compras]
+      summary: Corregir una compra llegada y reasignar su producto
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CorregirCompraBody"
+      responses:
+        "200":
+          description: Compra corregida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Compra"
+        "409":
+          description: No se puede corregir sin afectar existencias o precios de forma insegura
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /manoobra:
     get:
@@ -977,6 +1058,14 @@ components:
           type: string
       required:
         - mensaje
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
 
     Producto:
       type: object
@@ -1583,6 +1672,8 @@ components:
         precioVentaRegistrado:
           type: number
           nullable: true
+        tieneSnapshotPrecios:
+          type: boolean
       required:
         - id
         - productoId
@@ -1591,6 +1682,7 @@ components:
         - stockActual
         - stockMinimo
         - estado
+        - tieneSnapshotPrecios
 
     CompraInput:
       type: object
@@ -1630,6 +1722,41 @@ components:
           description: Si true, actualiza los precios del producto en inventario al marcar llegado
       required:
         - estado
+
+    CorregirCompraBody:
+      type: object
+      properties:
+        cantidadRecibida:
+          type: number
+        precioCompraRegistrado:
+          type: number
+        precioVentaRegistrado:
+          type: number
+        productoId:
+          type: integer
+        preciosInventarioAntesManual:
+          $ref: "#/components/schemas/PreciosInventario"
+        preciosInventarioActualesEsperados:
+          $ref: "#/components/schemas/PreciosInventario"
+      required:
+        - cantidadRecibida
+
+    PreciosInventario:
+      type: object
+      properties:
+        precioCompra:
+          type: number
+        precioVentaSinIva:
+          type: number
+        precioVentaConIva:
+          type: number
+        tieneIva:
+          type: boolean
+      required:
+        - precioCompra
+        - precioVentaSinIva
+        - precioVentaConIva
+        - tieneIva
 
     ManoObra:
       type: object

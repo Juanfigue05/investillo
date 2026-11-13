@@ -119,6 +119,19 @@ async function stock(productoId: number) {
   return producto;
 }
 
+async function precios(productoId: number) {
+  const [producto] = await db
+    .select({
+      precioCompra: productosTable.precioCompra,
+      precioVentaSinIva: productosTable.precioVentaSinIva,
+      precioVentaConIva: productosTable.precioVentaConIva,
+      tieneIva: productosTable.tieneIva,
+    })
+    .from(productosTable)
+    .where(eq(productosTable.id, productoId));
+  return producto;
+}
+
 async function compra(id: number) {
   const [registro] = await db
     .select()
@@ -518,6 +531,184 @@ describe("llegada de compras", () => {
     expect((await compra(compraId))?.estado).toBe("pendiente");
     expect(await historial(compraId)).toHaveLength(0);
     expect(await evento(operation)).toBeUndefined();
+  });
+
+  it("reasigna una llegada a otro producto y restaura los precios del producto equivocado", async () => {
+    const operationLlegada = operationId();
+    const operationCorreccion = operationId();
+    const productoAnteriorId = await crearProducto();
+    const productoCorrectoId = await crearProducto();
+    const compraId = await crearCompra(productoAnteriorId);
+    await db.update(productosTable).set({
+      precioCompra: "80",
+      precioVentaSinIva: "150",
+      precioVentaConIva: "178.5",
+    }).where(eq(productosTable.id, productoCorrectoId));
+
+    const llegadaResponse = await request(app)
+      .put(`/api/compras/${compraId}`)
+      .set("X-Operation-Id", operationLlegada)
+      .send({
+        ...llegada(),
+        cantidadLocal: 2,
+        cantidadBodega: 1,
+      });
+    const response = await request(app)
+      .patch(`/api/compras/${compraId}/corregir`)
+      .set("X-Operation-Id", operationCorreccion)
+      .send({
+        cantidadRecibida: 4,
+        productoId: productoCorrectoId,
+        precioCompraRegistrado: 120,
+      });
+
+    expect(llegadaResponse.status).toBe(200);
+    expect(response.status).toBe(200);
+    expect(response.body.productoId).toBe(productoCorrectoId);
+    expect((await stock(productoAnteriorId))?.stockActual).toBe("10.000");
+    expect((await stock(productoCorrectoId))?.stockActual).toBe("14.000");
+    expect(await precios(productoAnteriorId)).toMatchObject({
+      precioCompra: "100.00",
+      precioVentaSinIva: "200.00",
+      precioVentaConIva: "238.00",
+    });
+    expect(await precios(productoCorrectoId)).toMatchObject({
+      precioCompra: "80.00",
+      precioVentaSinIva: "150.00",
+      precioVentaConIva: "178.50",
+    });
+    expect(await compra(compraId)).toMatchObject({
+      productoId: productoCorrectoId,
+      cantidadRecibida: "4.000",
+      cantidadLocalRecibida: "2.667",
+      cantidadBodegaRecibida: "1.333",
+      preciosInventarioActualizados: false,
+    });
+  });
+
+  it("permite corregir compras antiguas con los precios previos ingresados manualmente", async () => {
+    const operationLlegada = operationId();
+    const operationCorreccion = operationId();
+    const productoAnteriorId = await crearProducto();
+    const productoCorrectoId = await crearProducto();
+    const compraId = await crearCompra(productoAnteriorId);
+    await request(app)
+      .put(`/api/compras/${compraId}`)
+      .set("X-Operation-Id", operationLlegada)
+      .send(llegada());
+    const preciosActuales = await precios(productoAnteriorId);
+    await db.update(comprasTable).set({
+      preciosInventarioAntes: null,
+      preciosInventarioAplicados: null,
+      preciosInventarioActualizados: false,
+    }).where(eq(comprasTable.id, compraId));
+
+    const response = await request(app)
+      .patch(`/api/compras/${compraId}/corregir`)
+      .set("X-Operation-Id", operationCorreccion)
+      .send({
+        cantidadRecibida: 3,
+        productoId: productoCorrectoId,
+        preciosInventarioAntesManual: {
+          precioCompra: 100,
+          precioVentaSinIva: 200,
+          precioVentaConIva: 238,
+          tieneIva: false,
+        },
+        preciosInventarioActualesEsperados: {
+          precioCompra: Number(preciosActuales?.precioCompra),
+          precioVentaSinIva: Number(preciosActuales?.precioVentaSinIva),
+          precioVentaConIva: Number(preciosActuales?.precioVentaConIva),
+          tieneIva: preciosActuales?.tieneIva,
+        },
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.productoId).toBe(productoCorrectoId);
+    expect(await precios(productoAnteriorId)).toMatchObject({
+      precioCompra: "100.00",
+      precioVentaSinIva: "200.00",
+      precioVentaConIva: "238.00",
+      tieneIva: false,
+    });
+  });
+
+  it("elimina una compra llegada y restaura inventario y precios cuando es seguro", async () => {
+    const operationLlegada = operationId();
+    const operationEliminacion = operationId();
+    const productoId = await crearProducto();
+    const compraId = await crearCompra(productoId);
+    const stockAntes = await stock(productoId);
+
+    await request(app)
+      .put(`/api/compras/${compraId}`)
+      .set("X-Operation-Id", operationLlegada)
+      .send(llegada());
+    const response = await request(app)
+      .delete(`/api/compras/${compraId}`)
+      .set("X-Operation-Id", operationEliminacion);
+
+    expect(response.status).toBe(200);
+    expect(response.body.mensaje).toMatch(/stock revertido/i);
+    expect(await stock(productoId)).toEqual(stockAntes);
+    expect(await precios(productoId)).toMatchObject({
+      precioCompra: "100.00",
+      precioVentaSinIva: "200.00",
+      precioVentaConIva: "238.00",
+    });
+    expect(await compra(compraId)).toBeUndefined();
+  });
+
+  it("rechaza eliminar una compra si el stock fue consumido y no deja cambios parciales", async () => {
+    const operationLlegada = operationId();
+    const operationEliminacion = operationId();
+    const productoId = await crearProducto();
+    const compraId = await crearCompra(productoId);
+    await request(app)
+      .put(`/api/compras/${compraId}`)
+      .set("X-Operation-Id", operationLlegada)
+      .send(llegada());
+    const preciosDespuesLlegada = await precios(productoId);
+    await db.update(productosTable).set({
+      stockActual: "1",
+      stockLocal: "1",
+      stockBodega: "0",
+    }).where(eq(productosTable.id, productoId));
+
+    const response = await request(app)
+      .delete(`/api/compras/${compraId}`)
+      .set("X-Operation-Id", operationEliminacion);
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatch(/existencias suficientes/i);
+    expect((await compra(compraId))?.estado).toBe("llegado");
+    expect(await precios(productoId)).toEqual(preciosDespuesLlegada);
+  });
+
+  it("permite borrar una compra antigua y avisa cuando no puede reconstruir los precios previos", async () => {
+    const operationLlegada = operationId();
+    const operationEliminacion = operationId();
+    const productoId = await crearProducto();
+    const compraId = await crearCompra(productoId);
+    const stockAntes = await stock(productoId);
+    await request(app)
+      .put(`/api/compras/${compraId}`)
+      .set("X-Operation-Id", operationLlegada)
+      .send(llegada());
+    await db.update(comprasTable).set({
+      preciosInventarioAntes: null,
+      preciosInventarioAplicados: null,
+      preciosInventarioActualizados: false,
+    }).where(eq(comprasTable.id, compraId));
+
+    const response = await request(app)
+      .delete(`/api/compras/${compraId}`)
+      .set("X-Operation-Id", operationEliminacion);
+
+    expect(response.status).toBe(200);
+    expect(response.body.mensaje).toMatch(/no se restauraron los precios/i);
+    expect(await stock(productoId)).toEqual(stockAntes);
+    expect(await compra(compraId)).toBeUndefined();
   });
 
   it("reconoce una llegada ya procesada aunque la compra se haya borrado", async () => {

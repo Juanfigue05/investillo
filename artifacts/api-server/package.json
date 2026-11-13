@@ -8,7 +8,8 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:stock": "vitest run --config vitest.config.ts src/routes/creditos.stock.test.ts"
+    "test:stock": "vitest run --config vitest.config.ts src/routes/creditos.stock.test.ts",
+    "test:compras": "vitest run --config vitest.config.ts src/lib/compras-resumen.test.ts"
   },
   "dependencies": {
     "@types/multer": "^2.2.0",

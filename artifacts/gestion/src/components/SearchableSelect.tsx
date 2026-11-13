@@ -2,9 +2,15 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import { coincideBusqueda, formatCurrencyDecimal } from "@/lib/utils";
+import {
+  cargarIdsRecientes,
+  guardarIdReciente,
+  ordenarOpcionesRecientes,
+} from "@/lib/recent-options";
 
 export interface ProductoOpcion {
   id: string;
+  recentId?: string;
   nombre: string;
   codigo?: string;
   marca?: string;
@@ -27,6 +33,7 @@ export function SearchableSelect({
   placeholder,
   allowCustom = false,
   camposDetalle = ["codigo", "marca", "referencia", "tipo", "adicional", "stock"],
+  recentKey,
 }: {
   opciones: ProductoOpcion[];
   value: string;
@@ -34,9 +41,13 @@ export function SearchableSelect({
   placeholder?: string;
   allowCustom?: boolean;
   camposDetalle?: CampoDetalle[];
+  recentKey?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [busqueda, setBusqueda] = useState("");
+  const [idsRecientes, setIdsRecientes] = useState(() =>
+    recentKey ? cargarIdsRecientes(recentKey) : [],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const portalRef = useRef<HTMLDivElement | null>(null);
@@ -48,8 +59,14 @@ export function SearchableSelect({
     if (triggerRef.current) setDropdownRect(triggerRef.current.getBoundingClientRect());
   };
 
-  const filtered = opciones.filter((o) =>
+  const coincidencias = opciones.filter((o) =>
     coincideBusqueda(busqueda, o.nombre, o.codigo, o.marca, o.tipo, o.referencia, o.adicional),
+  );
+  const filtered = recentKey
+    ? ordenarOpcionesRecientes(coincidencias, idsRecientes)
+    : coincidencias;
+  const hayRecientesVisibles = filtered.some((opcion) =>
+    idsRecientes.includes(opcion.recentId ?? opcion.id),
   );
 
   useEffect(() => {
@@ -78,6 +95,12 @@ export function SearchableSelect({
   }, [open]);
 
   const handleSelect = (id: string) => {
+    const opcion = opciones.find((actual) => actual.id === id);
+    if (recentKey && opcion && !opcion.special) {
+      setIdsRecientes((actuales) =>
+        guardarIdReciente(recentKey, opcion.recentId ?? id, actuales),
+      );
+    }
     onChange(id);
     setOpen(false);
     setBusqueda("");
@@ -142,6 +165,7 @@ export function SearchableSelect({
               <>
               <p className="sticky top-0 z-10 bg-card px-3 py-1 text-[10px] text-muted-foreground border-b border-border">
                 {filtered.length} resultado{filtered.length === 1 ? "" : "s"}
+                {hayRecientesVisibles && " · usados recientemente primero"}
               </p>
               {filtered.map((o) => {
                 const sinStock = o.stockActual === 0;
