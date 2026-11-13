@@ -11,6 +11,7 @@
     "typecheck:libs": "tsc --build",
     "db:push": "dotenv -e .env.api -- pnpm --filter db run push",
     "db:push:local": "dotenv -e .env.local -- pnpm --filter db run push",
+    "db:migrate:compras": "dotenv -e .env.api -- pnpm --filter db run migrate:compras",
     "backup": "dotenv -e .env.backup -- pnpm --filter @workspace/scripts run backup",
     "backup:local": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run backup:local",
     "sync:local": "dotenv -e .env.local -- pnpm --filter @workspace/scripts run sync:local",

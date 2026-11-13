@@ -600,6 +600,8 @@ Render ejecuta el API y Aiven conserva la base PostgreSQL principal. El computad
 
 Antes de fusionar o desplegar cambios, completa los pasos de configuración de esta sección y el [procedimiento de primer arranque de sincronización](#primer-arranque-aiven-a-pc), incluidos los requisitos previos de la base de datos.
 
+Si el cambio incluye una migración SQL, ejecútala primero contra la base de producción de Aiven y confirma que terminó correctamente antes de desplegar el API. El cambio de registro de llegadas de compras se aplica con `pnpm run db:migrate:compras`, que carga `.env.api`, valida que el destino sea Aiven y agrega las columnas sin alterar los registros existentes. El SQL está en [`20261113_compras_llegada.sql`](./lib/db/migrations/20261113_compras_llegada.sql). No ejecutes `db:push` como sustituto sin revisar sus cambios propuestos.
+
 1. Crea cuenta en **[render.com](https://render.com)** (puedes entrar directo con tu cuenta de GitHub).
 2. Clic en **"New +"** → **"Web Service"** → conecta tu repositorio de GitHub.
 3. Llena el formulario así:
