@@ -17,6 +17,7 @@ interface Props {
   onCancel: () => void;
   onConfirm: () => void;
   confirming?: boolean;
+  windowMs?: number;
 }
 
 export function ConfirmDeleteDialog({
@@ -26,10 +27,11 @@ export function ConfirmDeleteDialog({
   onCancel,
   onConfirm,
   confirming = false,
+  windowMs = 10_000,
 }: Props) {
-  const ventanaMs = 10_000;
+  const segundosVentana = Math.ceil(windowMs / 1_000);
   const [esperandoBorrado, setEsperandoBorrado] = useState(false);
-  const [segundosRestantes, setSegundosRestantes] = useState(10);
+  const [segundosRestantes, setSegundosRestantes] = useState(segundosVentana);
   const [confirmacionEnviada, setConfirmacionEnviada] = useState(false);
   const temporizadorRef = useRef<(() => void) | null>(null);
   const cuentaRegresivaRef = useRef<number | null>(null);
@@ -54,14 +56,14 @@ export function ConfirmDeleteDialog({
     limpiarTemporizadores();
     setEsperandoBorrado(false);
     setConfirmacionEnviada(false);
-    setSegundosRestantes(10);
+    setSegundosRestantes(segundosVentana);
     onCancel();
   };
 
   const programarBorrado = () => {
     if (esperandoBorrado || confirming || confirmacionEnviada) return;
     setEsperandoBorrado(true);
-    setSegundosRestantes(10);
+    setSegundosRestantes(segundosVentana);
     cuentaRegresivaRef.current = window.setInterval(() => {
       setSegundosRestantes((actual) => Math.max(0, actual - 1));
     }, 1_000);
@@ -78,7 +80,7 @@ export function ConfirmDeleteDialog({
         setConfirmacionEnviada(false);
         reinicioRef.current = null;
       }, 2_000);
-    }, ventanaMs);
+    }, windowMs);
   };
 
   return (
@@ -91,7 +93,7 @@ export function ConfirmDeleteDialog({
           </DialogTitle>
           <DialogDescription className="whitespace-pre-line pt-2">
             {description}
-            {"\n\nAl confirmar, el borrado se programa por 10 segundos. Puedes deshacerlo antes de que se envíe."}
+            {`\n\nAl confirmar, el borrado se programa por ${segundosVentana} segundos. Puedes deshacerlo antes de que se envíe.`}
             {esperandoBorrado && `\n\nEliminación en espera: ${segundosRestantes} segundos.`}
           </DialogDescription>
         </DialogHeader>

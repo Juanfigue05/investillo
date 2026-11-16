@@ -576,6 +576,15 @@ export default function Compras() {
 
   const pendientes = compras?.filter((c) => c.estado === "pendiente") || [];
   const llegados = compras?.filter((c) => c.estado === "llegado") || [];
+  const totalCompraLote = seleccionadas.reduce((total, id) => {
+    const datos = loteDatos[id];
+    if (!datos) return total;
+    const cantidad =
+      parseNumberCO(datos.cantidadLocal || "0") +
+      parseNumberCO(datos.cantidadBodega || "0");
+    const precioCompra = parseNumberCO(datos.nuevoPrecioCompra || "0");
+    return total + cantidad * precioCompra;
+  }, 0);
   const [aniosAbiertos, setAniosAbiertos] = useState<Set<string>>(new Set());
   const [buscarPendientes, setBuscarPendientes] = useState("");
   const [buscarHistorial, setBuscarHistorial] = useState("");
@@ -775,6 +784,11 @@ export default function Compras() {
                     </div>
                   );
                 })}
+              </div>
+
+              <div className="flex items-center justify-between gap-4 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3">
+                <span className="text-sm font-medium text-foreground">Total de compra del lote</span>
+                <span className="font-display text-lg font-bold text-primary">{formatCurrency(totalCompraLote)}</span>
               </div>
 
               <div className="flex gap-2">

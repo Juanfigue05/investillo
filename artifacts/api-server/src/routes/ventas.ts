@@ -19,6 +19,7 @@ import {
   leerExistencias,
   validarExistenciasNoNegativas,
 } from "../lib/inventario-stock";
+import { debeAjustarInventarioVenta } from "./ventas-inventario.logic";
 
 const router: IRouter = Router();
 
@@ -166,8 +167,7 @@ router.post("/", async (req, res) => {
     cantidad, precioCompraUnidad, precioVentaUnidad,
     precioVentaTotal, beneficio, descripcion, formaPago, origen, afectaInventario,
   } = req.body;
-  const esPagoCreditoAntiguo = origen === "pago_credito_antiguo";
-  const afectaInventarioReal = !esPagoCreditoAntiguo && afectaInventario !== false;
+  const afectaInventarioReal = debeAjustarInventarioVenta({ origen, afectaInventario });
   const cantidadNum = parseFloat(String(cantidad));
   if (!Number.isFinite(cantidadNum) || cantidadNum <= 0) {
     res.status(400).json({ error: "La cantidad debe ser mayor que cero" });
@@ -427,10 +427,15 @@ router.put("/:id", async (req, res) => {
     res.status(404).json({ error: "Venta no encontrada" });
     return;
   }
-  const esPagoCreditoAntiguo = existing.origen === "pago_credito_antiguo";
-  const nuevaAfectaInventario = esPagoCreditoAntiguo ? false : afectaInventario !== undefined
-    ? Boolean(afectaInventario)
-    : existing.afectaInventario;
+  const origenActualizado = existing.origen === "pago_credito_antiguo"
+    ? existing.origen
+    : origen || existing.origen;
+  const nuevaAfectaInventario = debeAjustarInventarioVenta({
+    origen: origenActualizado,
+    afectaInventario: afectaInventario !== undefined
+      ? Boolean(afectaInventario)
+      : existing.afectaInventario,
+  });
 
   const setData: Partial<typeof ventasDiariasTable.$inferInsert> = {
     fecha,
@@ -446,7 +451,7 @@ router.put("/:id", async (req, res) => {
     precioVentaTotal: String(parseFloat(precioVentaTotal)),
     beneficio: String(parseFloat(beneficio || 0)),
     formaPago: formaPago || null,
-    origen: esPagoCreditoAntiguo ? existing.origen : origen || existing.origen,
+    origen: origenActualizado,
     afectaInventario: nuevaAfectaInventario,
   };
   // Solo sobreescribir descripción si viene explícitamente en el payload;
@@ -488,7 +493,7 @@ router.put("/:id", async (req, res) => {
       const newProdId = productoId ? parseInt(String(productoId)) : null;
       const esFilaManual = !existing.creditoAbonoId;
 
-      if (esFilaManual && oldEsVenta && existing.afectaInventario !== false && !esPagoCreditoAntiguo && oldProdId) {
+      if (esFilaManual && oldEsVenta && debeAjustarInventarioVenta(existing) && oldProdId) {
         await ajustarStockVenta(tx, oldProdId, -toNum(existing.cantidad));
       }
       if (esFilaManual && newEsVenta && newProdId && nuevaAfectaInventario) {
@@ -514,7 +519,7 @@ router.delete("/:id", async (req, res) => {
   try {
     await db.transaction(async (tx) => {
       const [venta] = await tx.select().from(ventasDiariasTable).where(eq(ventasDiariasTable.id, id));
-      if (venta && venta.origen !== "pago_credito_antiguo" && (venta.tipoLinea === "venta" || !venta.tipoLinea) && venta.productoId && !venta.creditoAbonoId && venta.afectaInventario === true) {
+      if (venta && (venta.tipoLinea === "venta" || !venta.tipoLinea) && venta.productoId && !venta.creditoAbonoId && venta.afectaInventario === true && debeAjustarInventarioVenta(venta)) {
         await ajustarStockVenta(tx, venta.productoId, -toNum(venta.cantidad));
       }
 

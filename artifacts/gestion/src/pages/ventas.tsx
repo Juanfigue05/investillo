@@ -831,6 +831,7 @@ export default function VentasDiarias() {
       {pagoCreditoAntiguoOpen && <PagoCreditoAntiguoModal fecha={fecha} productos={(productos || []) as any[]} trabajadores={(trabajadores || []) as any[]} onClose={() => setPagoCreditoAntiguoOpen(false)} onSaved={async (nuevasVentas) => { setPagoCreditoAntiguoOpen(false); if (nuevasVentas.length) queryClient.setQueryData(["/api/ventas", { fecha }], (actuales: any[] = []) => [...actuales, ...nuevasVentas]); await queryClient.refetchQueries({ queryKey: ["/api/ventas", { fecha }] }); }} />}
       <ConfirmDeleteDialog
         open={deleteVentaId !== null}
+        windowMs={3_000}
         description="Esta fila se eliminará de Ventas Diarias. Esta acción no se puede deshacer."
         onCancel={() => setDeleteVentaId(null)}
         onConfirm={() => {
