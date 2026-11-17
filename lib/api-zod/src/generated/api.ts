@@ -417,6 +417,20 @@ export const GetCreditosResponseItem = zod.object({
       valorRestante: zod.number(),
     }),
   ),
+  servicios: zod.array(
+    zod.object({
+      id: zod.number(),
+      tipo: zod.string(),
+      valor: zod.number(),
+      trabajadores: zod.array(
+        zod.object({
+          id: zod.number(),
+          nombre: zod.string(),
+          valor: zod.number(),
+        }),
+      ),
+    }),
+  ),
   abonos: zod.array(
     zod.object({
       id: zod.number(),
@@ -460,6 +474,24 @@ export const CrearCreditoBody = zod.object({
       valorAbonado: zod.number().optional(),
     }),
   ),
+  servicios: zod
+    .array(
+      zod.object({
+        id: zod.number().optional(),
+        tipo: zod.string(),
+        valor: zod.number(),
+        trabajadores: zod
+          .array(
+            zod.object({
+              id: zod.number(),
+              nombre: zod.string(),
+              valor: zod.number().optional(),
+            }),
+          )
+          .optional(),
+      }),
+    )
+    .optional(),
   manoObra: zod
     .object({
       valor: zod.number(),
@@ -533,6 +565,20 @@ export const AbonarCreditoResponse = zod.object({
       valorRestante: zod.number(),
     }),
   ),
+  servicios: zod.array(
+    zod.object({
+      id: zod.number(),
+      tipo: zod.string(),
+      valor: zod.number(),
+      trabajadores: zod.array(
+        zod.object({
+          id: zod.number(),
+          nombre: zod.string(),
+          valor: zod.number(),
+        }),
+      ),
+    }),
+  ),
   abonos: zod.array(
     zod.object({
       id: zod.number(),
@@ -584,6 +630,20 @@ export const EliminarAbonoCreditoResponse = zod.object({
       precioCompra: zod.number(),
       valorAbonado: zod.number(),
       valorRestante: zod.number(),
+    }),
+  ),
+  servicios: zod.array(
+    zod.object({
+      id: zod.number(),
+      tipo: zod.string(),
+      valor: zod.number(),
+      trabajadores: zod.array(
+        zod.object({
+          id: zod.number(),
+          nombre: zod.string(),
+          valor: zod.number(),
+        }),
+      ),
     }),
   ),
   abonos: zod.array(
@@ -654,6 +714,20 @@ export const EditarAbonoCreditoResponse = zod.object({
       valorRestante: zod.number(),
     }),
   ),
+  servicios: zod.array(
+    zod.object({
+      id: zod.number(),
+      tipo: zod.string(),
+      valor: zod.number(),
+      trabajadores: zod.array(
+        zod.object({
+          id: zod.number(),
+          nombre: zod.string(),
+          valor: zod.number(),
+        }),
+      ),
+    }),
+  ),
   abonos: zod.array(
     zod.object({
       id: zod.number(),
@@ -695,6 +769,24 @@ export const ActualizarCreditoBody = zod.object({
         precioVenta: zod.number(),
         precioCompra: zod.number(),
         valorAbonado: zod.number().optional(),
+      }),
+    )
+    .optional(),
+  servicios: zod
+    .array(
+      zod.object({
+        id: zod.number().optional(),
+        tipo: zod.string(),
+        valor: zod.number(),
+        trabajadores: zod
+          .array(
+            zod.object({
+              id: zod.number(),
+              nombre: zod.string(),
+              valor: zod.number().optional(),
+            }),
+          )
+          .optional(),
       }),
     )
     .optional(),
@@ -747,6 +839,20 @@ export const ActualizarCreditoResponse = zod.object({
       precioCompra: zod.number(),
       valorAbonado: zod.number(),
       valorRestante: zod.number(),
+    }),
+  ),
+  servicios: zod.array(
+    zod.object({
+      id: zod.number(),
+      tipo: zod.string(),
+      valor: zod.number(),
+      trabajadores: zod.array(
+        zod.object({
+          id: zod.number(),
+          nombre: zod.string(),
+          valor: zod.number(),
+        }),
+      ),
     }),
   ),
   abonos: zod.array(

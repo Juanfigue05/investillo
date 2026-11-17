@@ -3,6 +3,8 @@ const CONCEPTOS_MANO_OBRA = new Set([
   "soldadura",
   "chispeada",
   "pulida",
+  "tensionada",
+  "prensa",
 ]);
 
 export function esLineaManoObra(

@@ -13,7 +13,7 @@ import {
   eventosSincronizacionTable,
   operacionesSincronizadasTable,
 } from "@workspace/db/schema";
-import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
 import { fechaHoyColombia, fechaColombia } from "../lib/fecha";
 import { esLineaManoObra } from "../lib/conceptos-mano-obra";
 import {
@@ -44,6 +44,15 @@ function abreviarNombre(nombre: string): string {
 }
 
 type CreditoManoObraInput = {
+  id?: number;
+  tipoServicio?: string;
+  valor: number;
+  trabajadores?: { id: number; nombre: string; valor?: number }[];
+};
+
+type CreditoServicioInput = {
+  id?: number;
+  tipo: string;
   valor: number;
   trabajadores?: { id: number; nombre: string; valor?: number }[];
 };
@@ -155,7 +164,15 @@ async function syncManoObraCredito(
   credito: typeof creditosTable.$inferSelect,
   input: CreditoManoObraInput | null | undefined,
 ): Promise<number | null> {
-  const [existing] = await tx.select().from(manoObraTable).where(eq(manoObraTable.creditoId, credito.id));
+  const filtroExistente = input?.id !== undefined
+    ? and(eq(manoObraTable.id, input.id), eq(manoObraTable.creditoId, credito.id))
+    : and(
+        eq(manoObraTable.creditoId, credito.id),
+        input?.tipoServicio
+          ? eq(manoObraTable.tipoServicio, input.tipoServicio)
+          : isNull(manoObraTable.tipoServicio),
+      );
+  const [existing] = await tx.select().from(manoObraTable).where(filtroExistente);
 
   // Revertir distribuciones existentes (resta totalGanado y borra las filas)
   const revertir = async (moId: number) => {
@@ -228,19 +245,33 @@ async function syncManoObraCredito(
     throw new Error("Selecciona los trabajadores para la mano de obra");
   }
 
-  const descripcion = `${credito.tipo === "nosdebe" ? "Nos Debe" : credito.concepto || "Crédito"} — ${credito.nombreCliente}`;
+  const conceptoCredito = `${credito.tipo === "nosdebe" ? "Nos Debe" : credito.concepto || "Crédito"} — ${credito.nombreCliente}`;
+  const descripcion = input.tipoServicio
+    ? `${input.tipoServicio} — ${conceptoCredito}`
+    : conceptoCredito;
 
   let moId: number;
   if (existing) {
     await tx
       .update(manoObraTable)
-      .set({ fecha: credito.fechaFactura, descripcion, valorTotal: String(valor) })
+      .set({
+        fecha: credito.fechaFactura,
+        descripcion,
+        valorTotal: String(valor),
+        tipoServicio: input.tipoServicio ?? existing.tipoServicio,
+      })
       .where(eq(manoObraTable.id, existing.id));
     moId = existing.id;
   } else {
     const [mo] = await tx
       .insert(manoObraTable)
-      .values({ fecha: credito.fechaFactura, descripcion, valorTotal: String(valor), creditoId: credito.id })
+      .values({
+        fecha: credito.fechaFactura,
+        descripcion,
+        valorTotal: String(valor),
+        creditoId: credito.id,
+        tipoServicio: input.tipoServicio ?? null,
+      })
       .returning();
     moId = mo.id;
   }
@@ -257,6 +288,56 @@ async function syncManoObraCredito(
     await ajustarTotalGanado(tx, d.trabajadorId, d.valor);
   }
   return moId;
+}
+
+async function syncServiciosCredito(
+  tx: Tx,
+  credito: typeof creditosTable.$inferSelect,
+  servicios: CreditoServicioInput[],
+): Promise<number[]> {
+  const existentes = await tx
+    .select()
+    .from(manoObraTable)
+    .where(eq(manoObraTable.creditoId, credito.id));
+  const tipos = servicios.map((servicio) => servicio.tipo.trim());
+  if (tipos.some((tipo) => !tipo) || new Set(tipos).size !== tipos.length) {
+    throw new Error("Cada servicio del crédito debe tener un tipo único");
+  }
+  if (servicios.some((servicio) =>
+    toNum(servicio.valor) > 0 && (!servicio.trabajadores || servicio.trabajadores.length === 0),
+  )) {
+    throw new Error("Selecciona los trabajadores de cada servicio del crédito");
+  }
+
+  const pendientes = new Map(existentes.map((servicio) => [servicio.id, servicio]));
+  const ids: number[] = [];
+  for (const servicio of servicios) {
+    const existente = servicio.id !== undefined
+      ? pendientes.get(servicio.id)
+      : [...pendientes.values()].find(
+          (actual) => (actual.tipoServicio ?? "Mano de Obra") === servicio.tipo,
+        );
+    if (servicio.id !== undefined && !existente) {
+      throw new Error("El servicio seleccionado no pertenece a este crédito");
+    }
+    if (existente) pendientes.delete(existente.id);
+    const id = await syncManoObraCredito(tx, credito, {
+      ...(existente ? { id: existente.id } : {}),
+      tipoServicio: servicio.tipo,
+      valor: servicio.valor,
+      trabajadores: servicio.trabajadores,
+    });
+    if (id !== null) ids.push(id);
+  }
+
+  for (const servicio of pendientes.values()) {
+    await syncManoObraCredito(tx, credito, {
+      id: servicio.id,
+      tipoServicio: servicio.tipoServicio ?? "Mano de Obra",
+      valor: 0,
+    });
+  }
+  return ids;
 }
 
 type CreditoLineaInput = {
@@ -308,7 +389,8 @@ async function mapCreditos(creditos: (typeof creditosTable.$inferSelect)[]) {
     db
       .select()
       .from(manoObraTable)
-      .where(inArray(manoObraTable.creditoId, creditoIds)),
+      .where(inArray(manoObraTable.creditoId, creditoIds))
+      .orderBy(asc(manoObraTable.id)),
   ]);
   const manoObraIds = manosObra.map((manoObra) => manoObra.id);
   const distribuciones =
@@ -333,9 +415,12 @@ async function mapCreditos(creditos: (typeof creditosTable.$inferSelect)[]) {
     abonosPorCredito.set(abono.creditoId, grupo);
   }
 
-  const manoObraPorCredito = new Map(
-    manosObra.map((manoObra) => [manoObra.creditoId, manoObra]),
-  );
+  const manosObraPorCredito = new Map<number, typeof manosObra>();
+  for (const manoObra of manosObra) {
+    const grupo = manosObraPorCredito.get(manoObra.creditoId!) ?? [];
+    grupo.push(manoObra);
+    manosObraPorCredito.set(manoObra.creditoId!, grupo);
+  }
   const distribucionesPorManoObra = new Map<number, typeof distribuciones>();
   for (const distribucion of distribuciones) {
     const grupo =
@@ -347,10 +432,17 @@ async function mapCreditos(creditos: (typeof creditosTable.$inferSelect)[]) {
   return creditos.map((c) => {
     const valorCredito = toNum(c.valorCredito);
     const valorAbonado = toNum(c.valorAbonado);
-    const manoObra = manoObraPorCredito.get(c.id);
-    const distribucionesDeManoObra = manoObra
-      ? (distribucionesPorManoObra.get(manoObra.id) ?? [])
-      : [];
+    const servicios = (manosObraPorCredito.get(c.id) ?? []).map((manoObra) => ({
+      id: manoObra.id,
+      tipo: manoObra.tipoServicio ?? "Mano de Obra",
+      valor: toNum(manoObra.valorTotal),
+      trabajadores: (distribucionesPorManoObra.get(manoObra.id) ?? []).map((d) => ({
+        id: d.trabajadorId,
+        nombre: d.trabajadorNombre,
+        valor: toNum(d.valor),
+      })),
+    }));
+    const manoObra = servicios.find((servicio) => servicio.tipo === "Mano de Obra") ?? servicios[0];
     return {
       id: c.id,
       clienteId: c.clienteId ?? null,
@@ -367,15 +459,9 @@ async function mapCreditos(creditos: (typeof creditosTable.$inferSelect)[]) {
       ordenImpresion: c.ordenImpresion,
       lineas: (lineasPorCredito.get(c.id) ?? []).map(mapLinea),
       manoObra: manoObra
-        ? {
-            valor: toNum(manoObra.valorTotal),
-            trabajadores: distribucionesDeManoObra.map((d) => ({
-              id: d.trabajadorId,
-              nombre: d.trabajadorNombre,
-              valor: toNum(d.valor),
-            })),
-          }
+        ? { valor: manoObra.valor, trabajadores: manoObra.trabajadores }
         : null,
+      servicios,
       abonos: (abonosPorCredito.get(c.id) ?? []).map((a) => {
         let detalle: { ref?: string; lineas?: unknown } | null = null;
         try {
@@ -537,6 +623,7 @@ router.post("/", async (req, res) => {
     abonoInicialFormaPago,
     lineas = [],
     manoObra,
+    servicios,
   } = req.body as {
     tipo?: string;
     concepto?: string;
@@ -553,6 +640,7 @@ router.post("/", async (req, res) => {
     abonoInicialFormaPago?: string;
     lineas: CreditoLineaInput[];
     manoObra?: CreditoManoObraInput | null;
+    servicios?: CreditoServicioInput[];
   };
 
   const abonoInicial = parseFloat(String(valorAbonado || 0));
@@ -617,9 +705,14 @@ router.post("/", async (req, res) => {
       })
       .returning();
 
-    const manoObraId = manoObra !== undefined
-      ? await syncManoObraCredito(tx, created, manoObra)
-      : null;
+    const servicioIds = servicios !== undefined
+      ? await syncServiciosCredito(tx, created, servicios)
+      : manoObra !== undefined
+        ? [await syncManoObraCredito(tx, created, manoObra)].filter(
+            (id): id is number => id !== null,
+          )
+        : [];
+    const manoObraId = servicioIds[0] ?? null;
 
     if (Array.isArray(lineas) && lineas.length > 0) {
       const lineasCreadas = await tx.insert(creditoLineasTable).values(
@@ -711,7 +804,12 @@ router.post("/", async (req, res) => {
             entidad: "credito_linea",
             valorLocal: String(linea.id),
           })),
-          ...(manoObraId === null
+          ...servicioIds.map((id, index) => ({
+                campo: `servicios.${index}.id`,
+                entidad: "mano_obra",
+                valorLocal: String(id),
+              })),
+          ...(manoObraId === null || servicios !== undefined
             ? []
             : [{
                 campo: "_syncManoObraId",
@@ -730,6 +828,7 @@ router.post("/", async (req, res) => {
     return {
       credito: created,
       manoObraId,
+      servicioIds,
       ventasGeneradas,
     };
     });
@@ -745,6 +844,9 @@ router.post("/", async (req, res) => {
     ...(credito.manoObraId === null
       ? {}
       : { _syncManoObraId: credito.manoObraId }),
+    ...(credito.servicioIds.length === 0
+      ? {}
+      : { _syncServicios: credito.servicioIds }),
     ...(credito.ventasGeneradas.length === 0
       ? {}
       : { _syncVentasGeneradas: credito.ventasGeneradas }),
@@ -771,6 +873,7 @@ router.put("/:id", async (req, res) => {
     valorCredito,
     lineas,
     manoObra,
+    servicios,
   } = req.body as {
     tipo?: string;
     concepto?: string | null;
@@ -783,6 +886,7 @@ router.put("/:id", async (req, res) => {
     valorCredito?: number;
     lineas?: CreditoLineaInput[];
     manoObra?: CreditoManoObraInput | null;
+    servicios?: CreditoServicioInput[];
   };
 
   const [existing] = await db.select().from(creditosTable).where(eq(creditosTable.id, id));
@@ -838,6 +942,7 @@ router.put("/:id", async (req, res) => {
     let referenciasLineasNuevas: Array<{ campo: string; entidad: string; valorLocal: string }> = [];
     let ventasGeneradas: Array<{ id: number }> = [];
     let manoObraId: number | null = null;
+    let servicioIds: number[] | null = null;
     const clienteId = creditoActual.clienteId ?? await resolverClienteId(
       tx,
       nombreCliente ?? creditoActual.nombreCliente,
@@ -942,15 +1047,24 @@ router.put("/:id", async (req, res) => {
     }
 
     // Sincronizar mano de obra solo si el campo viene en el body (undefined = sin cambios)
-    if (manoObra !== undefined) {
+    if (servicios !== undefined) {
+      servicioIds = await syncServiciosCredito(tx, updated, servicios);
+      manoObraId = servicioIds[0] ?? null;
+    } else if (manoObra !== undefined) {
       manoObraId = await syncManoObraCredito(tx, updated, manoObra);
     }
 
     const referenciasRespuesta = [
       ...referenciasLineasNuevas,
-      ...(manoObraId === null
-        ? []
-        : [{
+      ...(servicioIds !== null
+        ? servicioIds.map((servicioId, index) => ({
+            campo: `servicios.${index}.id`,
+            entidad: "mano_obra",
+            valorLocal: String(servicioId),
+          }))
+        : manoObraId === null
+          ? []
+          : [{
             campo: "_syncManoObraId",
             entidad: "mano_obra",
             valorLocal: String(manoObraId),
@@ -978,7 +1092,7 @@ router.put("/:id", async (req, res) => {
       });
     }
     await tx.insert(operacionesSincronizadasTable).values({ operationId, tipo: "credito", recursoId: id }).onConflictDoNothing();
-    return { credito: updated, manoObraId, ventasGeneradas };
+    return { credito: updated, manoObraId, servicioIds, ventasGeneradas };
     });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Error al actualizar el crédito" });
@@ -988,6 +1102,9 @@ router.put("/:id", async (req, res) => {
   res.json({
     ...(await mapCredito(credito.credito)),
     _syncManoObraId: credito.manoObraId,
+    ...(credito.servicioIds === null
+      ? {}
+      : { _syncServicios: credito.servicioIds }),
     _syncVentasGeneradas: credito.ventasGeneradas,
   });
 });
@@ -1410,7 +1527,7 @@ router.delete("/:id", async (req, res) => {
   await db.transaction(async (tx) => {
     // Revertir y eliminar la mano de obra vinculada (resta totalGanado de los trabajadores)
     const [existing] = await tx.select().from(creditosTable).where(eq(creditosTable.id, id));
-    if (existing) await syncManoObraCredito(tx, existing, null);
+    if (existing) await syncServiciosCredito(tx, existing, []);
     // Restaurar stock de todas las líneas con producto vinculado
     const lineasAEliminar = await tx
       .select()
@@ -1490,7 +1607,7 @@ async function crearFilaVentaPago(
   const etiqueta = credito.tipo === "nosdebe" ? "Nos Debe" : "crédito";
 
   if (pagaCompleto && esLineaManoObra(linea.productoNombre, linea.productoId)) {
-    const { nombres, detalle } = await trabajadoresManoObra(tx, credito.id);
+    const { nombres, detalle } = await trabajadoresManoObra(tx, credito.id, linea.productoNombre);
     const valor = toNum(linea.cantidad) * toNum(linea.precioVenta);
     const [venta] = await tx.insert(ventasDiariasTable).values({
       fecha,
@@ -1653,8 +1770,14 @@ async function rebuildVentasCredito(
 }
 
 /** Obtiene los trabajadores de la mano de obra vinculada a un crédito. */
-async function trabajadoresManoObra(tx: Tx, creditoId: number) {
-  const [mo] = await tx.select().from(manoObraTable).where(eq(manoObraTable.creditoId, creditoId));
+async function trabajadoresManoObra(tx: Tx, creditoId: number, tipoServicio: string) {
+  const filtroTipo = tipoServicio === "Mano de Obra"
+    ? or(eq(manoObraTable.tipoServicio, tipoServicio), isNull(manoObraTable.tipoServicio))
+    : eq(manoObraTable.tipoServicio, tipoServicio);
+  const [mo] = await tx
+    .select()
+    .from(manoObraTable)
+    .where(and(eq(manoObraTable.creditoId, creditoId), filtroTipo));
   if (!mo) return { nombres: "", detalle: "" };
   const dists = await tx.select().from(distribucionesTable).where(eq(distribucionesTable.manoObraId, mo.id));
   return {

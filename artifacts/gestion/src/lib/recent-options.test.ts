@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cargarIdsRecientes,
   guardarIdReciente,
+  ordenarOpcionesConPrioridad,
   ordenarOpcionesRecientes,
 } from "./recent-options";
 
@@ -31,6 +32,24 @@ describe("opciones usadas recientemente", () => {
       [{ id: "1" }, { id: "2" }, { id: "3" }],
       ["3", "1"],
     )).toEqual([{ id: "3" }, { id: "1" }, { id: "2" }]);
+  });
+
+  it("mantiene las opciones prioritarias al inicio antes de las recientes", () => {
+    expect(ordenarOpcionesConPrioridad(
+      [
+        { id: "servicio-1", alwaysFirst: true },
+        { id: "producto-1" },
+        { id: "servicio-2", alwaysFirst: true },
+        { id: "producto-2" },
+      ],
+      ["producto-2", "producto-1"],
+      true,
+    ).map(({ id }) => id)).toEqual([
+      "servicio-1",
+      "servicio-2",
+      "producto-2",
+      "producto-1",
+    ]);
   });
 
   it("permite recordar clientes por identificador sin guardar el nombre", () => {

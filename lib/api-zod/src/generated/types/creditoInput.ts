@@ -7,6 +7,7 @@
  */
 import type { CreditoLineaInput } from "./creditoLineaInput";
 import type { CreditoManoObraInput } from "./creditoManoObraInput";
+import type { CreditoServicioInput } from "./creditoServicioInput";
 
 export interface CreditoInput {
   tipo?: string;
@@ -23,5 +24,6 @@ export interface CreditoInput {
   abonoInicialRef?: string;
   abonoInicialFormaPago?: string;
   lineas: CreditoLineaInput[];
+  servicios?: CreditoServicioInput[];
   manoObra?: CreditoManoObraInput;
 }

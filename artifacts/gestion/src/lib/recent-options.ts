@@ -55,3 +55,20 @@ export function ordenarOpcionesRecientes<T extends { id: string; recentId?: stri
     (posiciones.get(b.recentId ?? b.id) ?? Number.MAX_SAFE_INTEGER),
   );
 }
+
+export function ordenarOpcionesConPrioridad<
+  T extends { id: string; recentId?: string; alwaysFirst?: boolean },
+>(
+  opciones: T[],
+  idsRecientes: string[],
+  priorizarRecientes: boolean,
+): T[] {
+  const prioritarias = opciones.filter((opcion) => opcion.alwaysFirst);
+  const restantes = opciones.filter((opcion) => !opcion.alwaysFirst);
+  return [
+    ...prioritarias,
+    ...(priorizarRecientes
+      ? ordenarOpcionesRecientes(restantes, idsRecientes)
+      : restantes),
+  ];
+}

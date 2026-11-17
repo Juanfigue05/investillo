@@ -1342,6 +1342,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CreditoLinea"
+        servicios:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditoServicio"
         abonos:
           type: array
           items:
@@ -1356,6 +1360,7 @@ components:
         - valorRestante
         - ordenImpresion
         - lineas
+        - servicios
         - abonos
 
     CreditoInput:
@@ -1398,6 +1403,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CreditoLineaInput"
+        servicios:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditoServicioInput"
         manoObra:
           $ref: "#/components/schemas/CreditoManoObraInput"
       required:
@@ -1426,6 +1435,63 @@ components:
               - id
               - nombre
       required:
+        - valor
+
+    CreditoServicio:
+      type: object
+      properties:
+        id:
+          type: integer
+        tipo:
+          type: string
+        valor:
+          type: number
+        trabajadores:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              nombre:
+                type: string
+              valor:
+                type: number
+            required:
+              - id
+              - nombre
+              - valor
+      required:
+        - id
+        - tipo
+        - valor
+        - trabajadores
+
+    CreditoServicioInput:
+      type: object
+      properties:
+        id:
+          type: integer
+        tipo:
+          type: string
+        valor:
+          type: number
+        trabajadores:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              nombre:
+                type: string
+              valor:
+                type: number
+            required:
+              - id
+              - nombre
+      required:
+        - tipo
         - valor
 
     CreditoUpdate:
@@ -1458,6 +1524,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CreditoLineaInput"
+        servicios:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditoServicioInput"
         manoObra:
           $ref: "#/components/schemas/CreditoManoObraInput"
 

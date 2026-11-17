@@ -7,6 +7,7 @@
  */
 import type { AbonoCredito } from "./abonoCredito";
 import type { CreditoLinea } from "./creditoLinea";
+import type { CreditoServicio } from "./creditoServicio";
 
 export interface Credito {
   id: number;
@@ -27,5 +28,6 @@ export interface Credito {
   creadoEn?: Date;
   actualizadoEn?: Date;
   lineas: CreditoLinea[];
+  servicios: CreditoServicio[];
   abonos: AbonoCredito[];
 }

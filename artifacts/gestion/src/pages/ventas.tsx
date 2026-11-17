@@ -39,6 +39,8 @@ const SERVICIOS_SOLDADURA: Record<string, string> = {
   soldadura: "Soldadura",
   chispeada: "Chispeada",
   pulida: "Pulida",
+  tensionada: "Tensionada",
+  prensa: "Prensa",
 };
 
 function agregarFilaOptimista(queryClient: any, fecha: string, fila: any) {
@@ -232,12 +234,14 @@ export default function VentasDiarias() {
   };
 
   const opcionesProducto: ProductoOpcion[] = [
-    { id: SPECIAL_MANOOBRA, nombre: "🔧 Mano de Obra", special: "manoobra" },
-    { id: `${SPECIAL_SOLDADURA}:soldadura`, nombre: "⚡ Soldadura", special: "manoobra" },
-    { id: `${SPECIAL_SOLDADURA}:chispeada`, nombre: "⚡ Chispeada", special: "manoobra" },
-    { id: `${SPECIAL_SOLDADURA}:pulida`, nombre: "⚡ Pulida", special: "manoobra" },
-    { id: SPECIAL_ABONO, nombre: "💳 Abono A", special: "abono" },
-    { id: SPECIAL_EXTERNO, nombre: "🧾 Producto externo (compra única)" },
+    { id: SPECIAL_MANOOBRA, nombre: "🔧 Mano de Obra", special: "manoobra", alwaysFirst: true },
+    { id: `${SPECIAL_SOLDADURA}:soldadura`, nombre: "⚡ Soldadura", special: "manoobra", alwaysFirst: true },
+    { id: `${SPECIAL_SOLDADURA}:pulida`, nombre: "⚡ Pulida", special: "manoobra", alwaysFirst: true },
+    { id: `${SPECIAL_SOLDADURA}:chispeada`, nombre: "⚡ Chispeada", special: "manoobra", alwaysFirst: true },
+    { id: `${SPECIAL_SOLDADURA}:tensionada`, nombre: "⚡ Tensionada", special: "manoobra", alwaysFirst: true },
+    { id: `${SPECIAL_SOLDADURA}:prensa`, nombre: "⚡ Prensa", special: "manoobra", alwaysFirst: true },
+    { id: SPECIAL_ABONO, nombre: "💳 Abono A", special: "abono", alwaysFirst: true },
+    { id: SPECIAL_EXTERNO, nombre: "🧾 Producto externo (compra única)", alwaysFirst: true },
     ...(productos || []).map((p) => ({
       id: String(p.id),
       nombre: p.nombre,

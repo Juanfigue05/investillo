@@ -52,7 +52,7 @@ export function FilaVentaSortable({
 
   const esServicioAmarillo = venta.tipoLinea === "manoobra" || (
     venta.origen === "pago_credito_antiguo" &&
-    ["Mano de Obra", "Soldadura", "Chispeada", "Pulida"].includes(venta.productoNombre)
+    ["Mano de Obra", "Soldadura", "Chispeada", "Pulida", "Tensionada", "Prensa"].includes(venta.productoNombre)
   );
   const rowCls = esServicioAmarillo ? "row-manoobra" : venta.tipoLinea === "credito" ? "row-credito" : "row-venta";
 
