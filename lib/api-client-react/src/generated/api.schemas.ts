@@ -143,6 +143,19 @@ export interface CreditoLinea {
   valorRestante: number;
 }
 
+export type CreditoServicioTrabajadoresItem = {
+  id: number;
+  nombre: string;
+  valor: number;
+};
+
+export interface CreditoServicio {
+  id: number;
+  tipo: string;
+  valor: number;
+  trabajadores: CreditoServicioTrabajadoresItem[];
+}
+
 export interface AbonoCredito {
   id: number;
   creditoId: number;
@@ -171,6 +184,7 @@ export interface Credito {
   creadoEn?: string;
   actualizadoEn?: string;
   lineas: CreditoLinea[];
+  servicios: CreditoServicio[];
   abonos: AbonoCredito[];
 }
 
@@ -184,6 +198,19 @@ export interface CreditoLineaInput {
   precioVenta: number;
   precioCompra: number;
   valorAbonado?: number;
+}
+
+export type CreditoServicioInputTrabajadoresItem = {
+  id: number;
+  nombre: string;
+  valor?: number;
+};
+
+export interface CreditoServicioInput {
+  id?: number;
+  tipo: string;
+  valor: number;
+  trabajadores?: CreditoServicioInputTrabajadoresItem[];
 }
 
 export type CreditoManoObraInputTrabajadoresItem = {
@@ -214,6 +241,7 @@ export interface CreditoInput {
   abonoInicialRef?: string;
   abonoInicialFormaPago?: string;
   lineas: CreditoLineaInput[];
+  servicios?: CreditoServicioInput[];
   manoObra?: CreditoManoObraInput;
 }
 
@@ -228,6 +256,7 @@ export interface CreditoUpdate {
   fechaFactura?: string;
   valorCredito?: number;
   lineas?: CreditoLineaInput[];
+  servicios?: CreditoServicioInput[];
   manoObra?: CreditoManoObraInput;
 }
 

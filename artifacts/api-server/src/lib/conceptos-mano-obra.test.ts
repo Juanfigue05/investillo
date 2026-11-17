@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { esLineaManoObra } from "./conceptos-mano-obra";
 
 describe("esLineaManoObra", () => {
-  it.each(["Mano de Obra", "Soldadura", "Chispeada", "Pulida"])(
+  it.each(["Mano de Obra", "Soldadura", "Chispeada", "Pulida", "Tensionada", "Prensa"])(
     "reconoce el concepto %s sin confundirlo con una venta",
     (concepto) => {
       expect(esLineaManoObra(concepto)).toBe(true);

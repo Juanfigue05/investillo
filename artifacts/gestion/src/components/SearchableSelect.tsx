@@ -5,7 +5,7 @@ import { coincideBusqueda, formatCurrencyDecimal } from "@/lib/utils";
 import {
   cargarIdsRecientes,
   guardarIdReciente,
-  ordenarOpcionesRecientes,
+  ordenarOpcionesConPrioridad,
 } from "@/lib/recent-options";
 
 export interface ProductoOpcion {
@@ -22,6 +22,7 @@ export interface ProductoOpcion {
   stockActual?: number;
   stockMinimo?: number;
   special?: "manoobra" | "abono";
+  alwaysFirst?: boolean;
 }
 
 type CampoDetalle = "codigo" | "marca" | "tipo" | "referencia" | "adicional" | "stock";
@@ -62,9 +63,11 @@ export function SearchableSelect({
   const coincidencias = opciones.filter((o) =>
     coincideBusqueda(busqueda, o.nombre, o.codigo, o.marca, o.tipo, o.referencia, o.adicional),
   );
-  const filtered = recentKey
-    ? ordenarOpcionesRecientes(coincidencias, idsRecientes)
-    : coincidencias;
+  const filtered = ordenarOpcionesConPrioridad(
+    coincidencias,
+    idsRecientes,
+    Boolean(recentKey),
+  );
   const hayRecientesVisibles = filtered.some((opcion) =>
     idsRecientes.includes(opcion.recentId ?? opcion.id),
   );

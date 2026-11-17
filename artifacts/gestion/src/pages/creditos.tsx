@@ -69,6 +69,7 @@ const API = `${import.meta.env.BASE_URL}api`
 
 const TIPO = "credito";
 const MO_NOMBRE = "Mano de Obra";
+const TIPOS_SERVICIO = [MO_NOMBRE, "Soldadura", "Pulida", "Chispeada", "Tensionada", "Prensa"];
 const IVA_NOMBRE = "IVA (19%)";
 const SPECIAL_EXTERNO = "__externo__";
 
@@ -135,23 +136,20 @@ function agregarFilaOptimista(
   ]);
 }
 
-interface ManoObraState {
-  activo: boolean;
+interface ServicioCreditoState {
+  id?: number;
+  lineaId?: number;
+  tipo: string;
   valor: string;
   trabajadores: number[];
-  fijados: Record<number, number>; // ← nuevo
+  fijados: Record<number, number>;
   marca: string;
-  lineaId?: number;
   valorAbonado?: number;
 }
 
-const emptyManoObra: ManoObraState = {
-  activo: false,
-  valor: "",
-  trabajadores: [],
-  marca: "",
-  fijados: {},
-};
+function nuevoServicio(tipo = MO_NOMBRE): ServicioCreditoState {
+  return { tipo, valor: "", trabajadores: [], fijados: {}, marca: "" };
+}
 
 interface LineaInput {
   id: number;
@@ -252,7 +250,7 @@ export default function Creditos() {
     "menorIgual" | "igual" | "hasta20"
   >("menorIgual");
   const [expandedAbonos, setExpandedAbonos] = useState<Set<number>>(new Set());
-  const [manoObra, setManoObra] = useState<ManoObraState>({ ...emptyManoObra });
+  const [servicios, setServicios] = useState<ServicioCreditoState[]>([]);
   const [aplicaIva, setAplicaIva] = useState(false);
   const [ivaLinea, setIvaLinea] = useState<{
     id?: number;
@@ -379,8 +377,11 @@ export default function Creditos() {
     }
   };
 
-  const manoObraValor = manoObra.activo ? parseFloat(manoObra.valor) || 0 : 0;
-  const baseTotal = totalLineas + manoObraValor;
+  const serviciosTotal = servicios.reduce(
+    (total, servicio) => total + (parseFloat(servicio.valor) || 0),
+    0,
+  );
+  const baseTotal = totalLineas + serviciosTotal;
   const ivaValor = aplicaIva ? Math.round(baseTotal * 0.19) : 0;
   const totalFinal = baseTotal + ivaValor;
   const referenciasRecientes = useMemo(() => {
@@ -401,13 +402,11 @@ export default function Creditos() {
     )].slice(0, 8);
   }, [creditos]);
 
-  const toggleTrabajadorMO = (id: number) =>
-    setManoObra((prev) => ({
+  const agregarServicio = () =>
+    setServicios((prev) => [
       ...prev,
-      trabajadores: prev.trabajadores.includes(id)
-        ? prev.trabajadores.filter((t) => t !== id)
-        : [...prev.trabajadores, id],
-    }));
+      nuevoServicio(TIPOS_SERVICIO.find((tipo) => !prev.some((servicio) => servicio.tipo === tipo)) || MO_NOMBRE),
+    ]);
 
   const openNew = () => {
     setEditingId(null);
@@ -423,7 +422,7 @@ export default function Creditos() {
         precioCompra: "0",
       },
     ]);
-    setManoObra({ ...emptyManoObra });
+    setServicios([]);
     setAplicaIva(false);
     setIvaLinea({});
     setEditingHasAbonos(false);
@@ -446,24 +445,35 @@ export default function Creditos() {
       abonoInicialFormaPago: "efectivo",
       descripcion: c.descripcion || "",
     });
-    const moLine = c.lineas.find((l: any) => l.productoNombre === MO_NOMBRE);
+    const serviceLines = c.lineas.filter(
+      (l: any) => !l.productoId && l.productoCodigo !== SPECIAL_EXTERNO && TIPOS_SERVICIO.includes(l.productoNombre),
+    );
     const ivaLine = c.lineas.find((l: any) => l.productoNombre === IVA_NOMBRE);
     const prodLines = c.lineas.filter(
-      (l: any) => l !== moLine && l !== ivaLine,
+      (l: any) => !serviceLines.includes(l) && l !== ivaLine,
     );
-    setManoObra(
-      moLine
-        ? {
-            activo: true,
-            valor: String(moLine.precioVenta),
-            trabajadores: (c.manoObra?.trabajadores || []).map((t: any) => t.id),
-            fijados: Object.fromEntries((c.manoObra?.trabajadores || []).map((t: any) => [t.id, t.valor])),
-            marca: moLine.productoMarca || "",
-            lineaId: moLine.id,
-            valorAbonado: moLine.valorAbonado,
-          }
-        : { ...emptyManoObra },
-    );
+    const serviciosGuardados = Array.isArray(c.servicios)
+      ? c.servicios
+      : c.manoObra
+        ? [{ ...c.manoObra, tipo: MO_NOMBRE }]
+        : [];
+    const lineasServicioUsadas = new Set<number>();
+    setServicios(serviciosGuardados.map((servicio: any) => {
+      const linea = serviceLines.find(
+        (actual: any) => actual.productoNombre === servicio.tipo && !lineasServicioUsadas.has(actual.id),
+      );
+      if (linea) lineasServicioUsadas.add(linea.id);
+      return {
+        id: servicio.id,
+        lineaId: linea?.id,
+        tipo: servicio.tipo || MO_NOMBRE,
+        valor: String(linea?.precioVenta ?? servicio.valor),
+        trabajadores: (servicio.trabajadores || []).map((trabajador: any) => trabajador.id),
+        fijados: Object.fromEntries((servicio.trabajadores || []).map((trabajador: any) => [trabajador.id, trabajador.valor])),
+        marca: linea?.productoMarca || "",
+        valorAbonado: linea?.valorAbonado,
+      };
+    }));
     setAplicaIva(!!ivaLine);
     setIvaLinea(
       ivaLine ? { id: ivaLine.id, valorAbonado: ivaLine.valorAbonado } : {},
@@ -510,13 +520,11 @@ export default function Creditos() {
     if (abonoInicialIngresado > 0 && !form.abonoInicialFecha)
       errors.push("La fecha del abono inicial es obligatoria");
     if (baseTotal <= 0) errors.push("Agrega al menos un producto con precio");
-    if (
-      manoObra.activo &&
-      manoObraValor > 0 &&
-      manoObra.trabajadores.length === 0 &&
-      !manoObra.lineaId
-    )
-      errors.push("Selecciona los trabajadores para la mano de obra");
+    for (const servicio of servicios) {
+      if ((parseFloat(servicio.valor) || 0) > 0 && servicio.trabajadores.length === 0) {
+        errors.push(`Selecciona los trabajadores para ${servicio.tipo}`);
+      }
+    }
     if (errors.length) {
       setFormErrors(errors);
       return;
@@ -569,12 +577,6 @@ export default function Creditos() {
       `Revisa estas alertas antes de guardar:\n\n${alertasAntesDeGuardar.map((alerta) => `• ${alerta}`).join("\n")}\n\nPuedes continuar si es correcto. ¿Deseas guardar de todas formas?`,
     )) return;
 
-    const nombresTrabajadores = manoObra.trabajadores
-      .map(
-        (tid) => trabajadores?.find((w) => w.id === tid)?.nombre || `T${tid}`,
-      )
-      .join(", ");
-
     type PendingLinea = {
       id?: number;
       productoId?: number | null;
@@ -601,16 +603,21 @@ export default function Creditos() {
         total: (parseFloat(l.cantidad) || 0) * parseNumberCO(l.precioVenta),
         prevAbonado: l.valorAbonado || 0,
       }));
-    if (manoObra.activo && manoObraValor > 0) {
+    for (const servicio of servicios) {
+      const valor = parseFloat(servicio.valor) || 0;
+      if (valor <= 0) continue;
+      const nombresTrabajadores = servicio.trabajadores
+        .map((id) => trabajadores?.find((trabajador) => trabajador.id === id)?.nombre || `T${id}`)
+        .join(", ");
       allLineas.push({
-        id: manoObra.lineaId,
+        id: servicio.lineaId,
         cantidad: 1,
-        productoNombre: MO_NOMBRE,
-        productoMarca: nombresTrabajadores || manoObra.marca || undefined,
-        precioVenta: manoObraValor,
+        productoNombre: servicio.tipo,
+        productoMarca: nombresTrabajadores || servicio.marca || undefined,
+        precioVenta: valor,
         precioCompra: 0,
-        total: manoObraValor,
-        prevAbonado: manoObra.valorAbonado || 0,
+        total: valor,
+        prevAbonado: servicio.valorAbonado || 0,
       });
     }
     if (aplicaIva && ivaValor > 0) {
@@ -665,28 +672,23 @@ export default function Creditos() {
           }
         : {}),
       lineas: payloadLineas,
-      // El servidor crea/actualiza/revierte la distribución de trabajadores de forma atómica
-      manoObra:
-        manoObra.activo && manoObraValor > 0
-          ? {
-              valor: manoObraValor,
-              ...(manoObra.trabajadores.length > 0
-                ? {
-                    trabajadores: calcularDistribucion(
-                      manoObraValor,
-                      manoObra.trabajadores,
-                      manoObra.fijados,
-                    ).map((d) => ({
-                      id: d.trabajadorId,
-                      nombre:
-                        trabajadores?.find((w) => w.id === d.trabajadorId)
-                          ?.nombre || `Trabajador ${d.trabajadorId}`,
-                      valor: d.valor,
-                    })),
-                  }
-                : {}),
-            }
-          : { valor: 0 },
+      servicios: servicios
+        .filter((servicio) => (parseFloat(servicio.valor) || 0) > 0)
+        .map((servicio) => ({
+          ...(servicio.id ? { id: servicio.id } : {}),
+          tipo: servicio.tipo,
+          valor: parseFloat(servicio.valor) || 0,
+          trabajadores: calcularDistribucion(
+            parseFloat(servicio.valor) || 0,
+            servicio.trabajadores,
+            servicio.fijados,
+          ).map((distribucion) => ({
+            id: distribucion.trabajadorId,
+            nombre: trabajadores?.find((trabajador) => trabajador.id === distribucion.trabajadorId)?.nombre
+              || `Trabajador ${distribucion.trabajadorId}`,
+            valor: distribucion.valor,
+          })),
+        })),
     };
 
     const options = {
@@ -707,7 +709,7 @@ export default function Creditos() {
             precioCompra: "0",
           },
         ]);
-        setManoObra({ ...emptyManoObra });
+        setServicios([]);
         setAplicaIva(false);
         setIvaLinea({});
         setEditingHasAbonos(false);
@@ -1822,31 +1824,37 @@ export default function Creditos() {
                     <Plus className="w-4 h-4" />
                     Producto externo
                   </button>
-                  {!manoObra.activo && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setManoObra((p) => ({ ...p, activo: true }))
-                      }
-                      className="flex items-center gap-2 rounded-lg border border-yellow-500/40 px-3 py-2 text-sm font-medium text-yellow-500 transition-colors hover:border-yellow-400 hover:bg-yellow-500/10"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Mano de Obra
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={agregarServicio}
+                    disabled={servicios.length >= TIPOS_SERVICIO.length}
+                    className="flex items-center gap-2 rounded-lg border border-yellow-500/40 px-3 py-2 text-sm font-medium text-yellow-500 transition-colors hover:border-yellow-400 hover:bg-yellow-500/10 disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Servicios
+                  </button>
                 </div>
               </div>
 
-              {/* Mano de Obra */}
-              {manoObra.activo && (
-                <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4 space-y-3 animate-in fade-in">
-                  <div className="flex justify-between items-center">
-                    <p className="text-sm font-medium text-yellow-500">
-                      🔧 Mano de Obra
-                    </p>
+              {servicios.map((servicio, indice) => (
+                <div key={servicio.id ?? `servicio-${indice}`} className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4 space-y-3 animate-in fade-in">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-sm font-medium text-yellow-500">
+                      Tipo de servicio
+                      <select
+                        value={servicio.tipo}
+                        onChange={(e) => setServicios((actuales) => actuales.map((item, i) => i === indice ? { ...item, tipo: e.target.value } : item))}
+                        className="ml-2 bg-background border border-border px-2 py-1 rounded-lg text-sm text-foreground"
+                      >
+                        {TIPOS_SERVICIO
+                          .filter((tipo) => tipo === servicio.tipo || !servicios.some((otro, i) => i !== indice && otro.tipo === tipo))
+                          .map((tipo) => <option key={tipo} value={tipo}>{tipo}</option>)}
+                      </select>
+                    </label>
                     <button
                       type="button"
-                      onClick={() => setManoObra({ ...emptyManoObra })}
+                      onClick={() => setServicios((actuales) => actuales.filter((_, i) => i !== indice))}
+                      aria-label={`Quitar ${servicio.tipo}`}
                       className="p-1 text-muted-foreground hover:text-destructive"
                     >
                       <X className="w-4 h-4" />
@@ -1861,10 +1869,8 @@ export default function Creditos() {
                         type="number"
                         min="0"
                         placeholder="0"
-                        value={manoObra.valor}
-                        onChange={(e) =>
-                          setManoObra((p) => ({ ...p, valor: e.target.value }))
-                        }
+                        value={servicio.valor}
+                        onChange={(e) => setServicios((actuales) => actuales.map((item, i) => i === indice ? { ...item, valor: e.target.value } : item))}
                         className="w-36 bg-background border border-border px-3 py-2 rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm"
                       />
                     </div>
@@ -1872,34 +1878,24 @@ export default function Creditos() {
                       <label className="block text-xs font-medium text-muted-foreground mb-1">
                         Trabajadores
                       </label>
-                      {editingId &&
-                        manoObra.marca &&
-                        manoObra.trabajadores.length === 0 && (
-                          <p className="text-xs text-muted-foreground mb-1">
-                            Asignada a: {manoObra.marca}
-                          </p>
-                        )}
-                      <div className="flex flex-wrap gap-2">
-                        <ManoObraSelector
-                          trabajadores={(trabajadores || []).filter(
-                            (t) => t.activo,
-                          )}
-                          total={manoObraValor}
-                          seleccionados={manoObra.trabajadores}
-                          fijados={manoObra.fijados}
-                          onChangeSeleccionados={(ids) =>
-                            setManoObra((p) => ({ ...p, trabajadores: ids }))
-                          }
-                          onChangeFijados={(fijados) =>
-                            setManoObra((p) => ({ ...p, fijados }))
-                          }
-                          recentKey="trabajadores-recientes"
-                        />
-                      </div>
+                      {editingId && servicio.marca && servicio.trabajadores.length === 0 && (
+                        <p className="text-xs text-muted-foreground mb-1">
+                          Asignada a: {servicio.marca}
+                        </p>
+                      )}
+                      <ManoObraSelector
+                        trabajadores={(trabajadores || []).filter((trabajador) => trabajador.activo)}
+                        total={parseFloat(servicio.valor) || 0}
+                        seleccionados={servicio.trabajadores}
+                        fijados={servicio.fijados}
+                        onChangeSeleccionados={(ids) => setServicios((actuales) => actuales.map((item, i) => i === indice ? { ...item, trabajadores: ids } : item))}
+                        onChangeFijados={(fijados) => setServicios((actuales) => actuales.map((item, i) => i === indice ? { ...item, fijados } : item))}
+                        recentKey="trabajadores-recientes"
+                      />
                     </div>
                   </div>
                 </div>
-              )}
+              ))}
 
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">
